@@ -1,6 +1,0 @@
-{
-  "loader": "dungeonblockvarient:ancient_block",
-  "textures": {
-    "particle": "minecraft:block/stone"
-  }
-}
