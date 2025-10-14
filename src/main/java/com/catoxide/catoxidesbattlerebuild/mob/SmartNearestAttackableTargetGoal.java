@@ -42,13 +42,13 @@ public class SmartNearestAttackableTargetGoal extends NearestAttackableTargetGoa
             return false;
         }
 
+        // 简化条件 - 只要有视线就可以攻击
         boolean canSee = zombie.getSensing().hasLineOfSight(target);
-        boolean canHear = aiManager.canHearTarget(target);
 
-        System.out.printf("canUse 检查 | 目标: %s | 可见: %s | 可听: %s | 结果: %s%n",
-                target.getName().getString(), canSee, canHear, (canSee || canHear));
+        System.out.printf("canUse 检查 | 目标: %s | 可见: %s | 结果: %s%n",
+                target.getName().getString(), canSee, canSee);
 
-        return canSee || canHear;
+        return canSee;
     }
 
     @Override

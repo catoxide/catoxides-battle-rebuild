@@ -121,6 +121,34 @@ public class ModularZombie extends Zombie implements GeoEntity {
     public boolean isWindingUp() {
         return this.entityData.get(DATA_WINDUP);
     }
+    public boolean isInPostAttackCooldown() {
+        return aiManager != null && aiManager.isInPostAttackCooldown();
+    }
+
+    public int getPostAttackCooldown() {
+        return aiManager != null ? aiManager.getPostAttackCooldown() : 0;
+    }
+    public void checkAndResumeNavigation() {
+        if (!this.level().isClientSide && this.getTarget() != null) {
+            LivingEntity target = this.getTarget();
+            double distance = this.distanceToSqr(target);
+            double attackRange = getAIManager().getCurrentAttackRange();
+
+            // 如果不在攻击范围内且导航停止了，重新启动
+            if (distance > (attackRange * attackRange) && this.getNavigation().isDone()) {
+                this.getNavigation().moveTo(target, 1.0D);
+            }
+        }
+    }
+    // 添加其他可能需要的方法
+    public boolean isAttacking() {
+        return isWindingUp() || isInPostAttackCooldown() || swinging;
+    }
+
+    public boolean isInCombatState() {
+        return hasTarget() && (isWindingUp() || isInPostAttackCooldown() || isAlerting());
+    }
+
 
     public double getLastDistanceToTarget() {
         return lastDistanceToTarget;
@@ -129,36 +157,30 @@ public class ModularZombie extends Zombie implements GeoEntity {
     public void setLastDistanceToTarget(double distance) {
         this.lastDistanceToTarget = distance;
     }
-
-    // 更新目标状态
+    public void setWindingUp(boolean windingUp) {
+        this.entityData.set(DATA_WINDUP, windingUp);
+    }
+    // 简化 updateTargetState 方法
     private void updateTargetState() {
         if (isHit()) {
             return;
         }
 
         LivingEntity currentTarget = this.getTarget();
-        boolean previousHasTarget = hasTarget();
+        boolean newHasTarget = currentTarget != null && currentTarget.isAlive();
 
-        boolean newHasTarget = currentTarget != null &&
-                currentTarget.isAlive() &&
-                hasAggressiveTarget();
-
-        if (newHasTarget != previousHasTarget) {
+        if (hasTarget() != newHasTarget) {
             this.entityData.set(DATA_HAS_TARGET, newHasTarget);
 
             if (newHasTarget) {
                 this.entityData.set(DATA_ALERTING, true);
                 this.entityData.set(DATA_ALERT_COMPLETED, false);
                 lastStateChangeTime = this.level().getGameTime();
-                System.out.println("目标发现！进入警戒状态");
             } else {
                 this.entityData.set(DATA_ALERTING, false);
                 this.entityData.set(DATA_ALERT_COMPLETED, false);
-                System.out.println("目标丢失！重置状态");
             }
         }
-
-        lastTarget = currentTarget;
     }
 
     // 攻击性目标检测
@@ -189,6 +211,7 @@ public class ModularZombie extends Zombie implements GeoEntity {
         return false;
     }
 
+
     // 修改 hurt 方法
     @Override
     public boolean hurt(DamageSource source, float amount) {
@@ -200,22 +223,24 @@ public class ModularZombie extends Zombie implements GeoEntity {
 
         if (hurt) {
             if (aiManager != null) {
-                aiManager.stopWindUp();
+                aiManager.onHurt();
             }
 
             if (this.getHealth() <= 0.0F) {
-                System.out.println("实体死亡，血量: " + this.getHealth());
                 resetAllStates();
                 return true;
             }
 
             // 设置受击状态
             this.entityData.set(DATA_IS_HIT, true);
-            hitTime = 25;
+            hitTime = 10;
             animationController.triggerHit();
 
-            this.getNavigation().stop();
-            System.out.println("受到伤害，进入受击状态，剩余血量: " + this.getHealth());
+            // 暂时停止导航，但设置一个计时器来恢复
+            getNavigation().stop();
+
+            // 3 ticks 后尝试恢复导航
+            this.hitTime = 3;
         }
 
         return hurt;
@@ -237,48 +262,20 @@ public class ModularZombie extends Zombie implements GeoEntity {
         System.out.println("死亡状态重置完成");
     }
 
-    // 在 tick 方法中统一调试输出
+
+    // 简化 tick 方法
     @Override
     public void tick() {
         super.tick();
 
         if (this.isDeadOrDying()) return;
 
-        // 更新距离跟踪
-        LivingEntity target = this.getTarget();
-        if (target != null) {
-            setLastDistanceToTarget(this.distanceTo(target));
-        } else {
-            setLastDistanceToTarget(0);
-        }
-
-        // 检查寻路状态
-        if (!this.level().isClientSide && hasTarget() && this.tickCount % 40 == 0) {
-            if (target != null) {
-                PathNavigation navigation = this.getNavigation();
-                boolean hasPath = navigation.getPath() != null;
-                boolean isDone = navigation.isDone();
-
-                System.out.printf("寻路状态检查 | 有路径: %s | 导航完成: %s | 目标距离: %.2f%n",
-                        hasPath, isDone, this.distanceTo(target));
-
-                // 如果应该有路径但没有，强制重新计算
-                if (!hasPath && !isDone && this.distanceTo(target) > 3.0) {
-                    System.out.println("强制重新计算路径");
-                    navigation.moveTo(target, 1.0D);
-                }
-            }
-        }
-
-        // 同步攻击前摇状态
+        // 同步攻击前摇状态 - 只在服务端更新
         if (!this.level().isClientSide) {
             boolean isWindingUp = aiManager.isWindingUp();
             if (this.isWindingUp() != isWindingUp) {
-                this.entityData.set(DATA_WINDUP, isWindingUp);
+                setWindingUp(isWindingUp);
             }
-
-            // 确保攻击前摇更新被调用
-            aiManager.updateWindUp();
         }
 
         // 受击状态期间暂停其他状态更新
@@ -291,38 +288,35 @@ public class ModularZombie extends Zombie implements GeoEntity {
             hitTime--;
             if (hitTime <= 0) {
                 this.entityData.set(DATA_IS_HIT, false);
-                System.out.println("受击状态结束");
             }
         }
 
         // 更新警戒完成状态
         if (isAlerting() && !isAlertCompleted()) {
-            if (this.level().getGameTime() - lastStateChangeTime > 15) {
+            if (this.level().getGameTime() - lastStateChangeTime > 10) {
                 this.entityData.set(DATA_ALERT_COMPLETED, true);
                 this.entityData.set(DATA_ALERTING, false);
-                System.out.println("警戒动画完成");
             }
+        }
+        if (this.tickCount % 10 == 0) { // 每10tick检查一次
+            checkAndResumeNavigation();
         }
 
         // 更新动画控制器
         animationController.tick();
 
-        // 更新 AI 管理器
+        // 更新 AI 管理器 - 只在服务端
         if (!this.level().isClientSide) {
             aiManager.tick();
         }
-
-        // 统一调试输出
-        if (!this.level().isClientSide && this.tickCount % 80 == 0) {
-            debugBehaviorState();
-        }
     }
-
     // 调试方法
     private void debugBehaviorState() {
         if (this.level().isClientSide) {
             return;
         }
+
+        LivingEntity target = this.getTarget(); // 使用 getTarget() 方法
 
         System.out.printf("行为状态调试 [Tick: %d] | 目标: %s | 目标实体: %s | 警戒中: %s | 警戒完成: %s | 受击中: %s | 移动: %s | AI状态: %s | 动画状态: %s%n",
                 this.tickCount,

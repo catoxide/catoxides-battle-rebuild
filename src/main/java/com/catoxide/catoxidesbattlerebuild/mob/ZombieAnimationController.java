@@ -15,7 +15,6 @@ public class ZombieAnimationController {
     private String currentAnimation = "";
     private boolean animationLocked = false;
     private int animationLockTime = 0;
-    private boolean attackTriggered = false;
 
     // 动画常量
     private static final RawAnimation IDLE_ANIMATION = RawAnimation.begin().thenLoop("animation.zombie.still");
@@ -32,12 +31,171 @@ public class ZombieAnimationController {
     }
 
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
-        // 主行为控制器 - 处理状态逻辑
-        controllers.add(new AnimationController<>(zombie, "Behavior", 5, this::behaviorPredicate).transitionLength(3));
-        // 攻击控制器 - 独立处理攻击
-        controllers.add(new AnimationController<>(zombie, "Attack", 2, this::attackPredicate).transitionLength(3));
-        // 受击控制器 - 独立处理受击
-        controllers.add(new AnimationController<>(zombie, "Hit", 2, this::hitPredicate).transitionLength(3));
+        // 只有一个主控制器处理所有动画
+        controllers.add(new AnimationController<>(zombie, "MainController", 5, this::mainControllerPredicate));
+    }
+
+    // 主控制器 - 处理所有动画状态
+    private PlayState mainControllerPredicate(AnimationState<ModularZombie> state) {
+        if (zombie.isDeadOrDying()) {
+            return PlayState.STOP;
+        }
+
+        // 动画状态优先级（从高到低）：
+        // 1. 受击动画
+        // 2. 攻击动画
+        // 3. 攻击前摇/攻击后冷却
+        // 4. 警戒动画
+        // 5. 移动动画
+        // 6. 空闲动画
+
+        // 1. 受击状态 - 最高优先级
+        if (zombie.isHit()) {
+            return handleHitAnimation(state);
+        }
+
+        // 2. 攻击动画 - 第二优先级
+        if (zombie.swinging) {
+            return handleAttackAnimation(state);
+        }
+
+        // 3. 攻击前摇和攻击后冷却状态
+        if (zombie.isWindingUp() || zombie.isInPostAttackCooldown()) {
+            return handleCombatAnimation(state);
+        }
+
+        // 4. 警戒动画
+        if (zombie.isAlerting() && !zombie.isAlertCompleted()) {
+            return handleAlertAnimation(state);
+        }
+
+        // 5. 有目标状态下的移动动画
+        if (zombie.hasTarget() && zombie.isAlertCompleted()) {
+            return handleTargetMovementAnimation(state);
+        }
+
+        // 6. 无目标状态下的移动动画
+        return handleIdleMovementAnimation(state);
+    }
+
+    // 处理受击动画
+    private PlayState handleHitAnimation(AnimationState<ModularZombie> state) {
+        animationLocked = true;
+        animationLockTime = 20;
+
+        RawAnimation hitAnim = zombie.getRandom().nextBoolean() ? HIT_FRONT_ANIMATION : HIT_BACK_ANIMATION;
+
+        if (!"hit".equals(currentAnimation)) {
+            currentAnimation = "hit";
+            System.out.println("播放受击动画: " + (hitAnim == HIT_FRONT_ANIMATION ? "正面" : "背面"));
+            return state.setAndContinue(hitAnim);
+        }
+
+        return PlayState.CONTINUE;
+    }
+
+    // 处理攻击动画
+    private PlayState handleAttackAnimation(AnimationState<ModularZombie> state) {
+        animationLocked = true;
+        animationLockTime = 20;
+
+        if (!"attack".equals(currentAnimation)) {
+            currentAnimation = "attack";
+            System.out.println("播放攻击动画");
+            return state.setAndContinue(ATTACK_ANIMATION);
+        }
+
+        return PlayState.CONTINUE;
+    }
+
+    // 处理战斗相关动画（攻击前摇、攻击后冷却）
+    private PlayState handleCombatAnimation(AnimationState<ModularZombie> state) {
+        if (!"aggressive".equals(currentAnimation)) {
+            currentAnimation = "aggressive";
+            System.out.println("切换到战斗姿态动画");
+            return state.setAndContinue(AGGRESSIVE_ANIMATION);
+        }
+
+        return PlayState.CONTINUE;
+    }
+
+    // 处理警戒动画
+    private PlayState handleAlertAnimation(AnimationState<ModularZombie> state) {
+        if (!"alert".equals(currentAnimation)) {
+            currentAnimation = "alert";
+            System.out.println("播放警戒动画");
+            return state.setAndContinue(ALERT_ANIMATION);
+        }
+
+        return PlayState.CONTINUE;
+    }
+
+    // 处理有目标时的移动动画
+    private PlayState handleTargetMovementAnimation(AnimationState<ModularZombie> state) {
+        if (shouldMoveToTarget()) {
+            // 需要移动 - 播放奔跑动画
+            if (!"running".equals(currentAnimation)) {
+                currentAnimation = "running";
+                System.out.println("切换到奔跑动画");
+                return state.setAndContinue(RUNNING_ANIMATION);
+            }
+        } else {
+            // 不需要移动 - 保持战斗姿态
+            if (!"aggressive".equals(currentAnimation)) {
+                currentAnimation = "aggressive";
+                System.out.println("切换到战斗待机动画");
+                return state.setAndContinue(AGGRESSIVE_ANIMATION);
+            }
+        }
+
+        return PlayState.CONTINUE;
+    }
+
+    // 处理空闲和移动动画
+    private PlayState handleIdleMovementAnimation(AnimationState<ModularZombie> state) {
+        if (zombie.getDeltaMovement().horizontalDistanceSqr() > 0.001) {
+            // 有移动 - 播放行走动画
+            if (!"walking".equals(currentAnimation)) {
+                currentAnimation = "walking";
+                System.out.println("切换到行走动画");
+                return state.setAndContinue(WALKING_ANIMATION);
+            }
+        } else {
+            // 无移动 - 播放空闲动画
+            if (!"idle".equals(currentAnimation)) {
+                currentAnimation = "idle";
+                System.out.println("切换到空闲动画");
+                return state.setAndContinue(IDLE_ANIMATION);
+            }
+        }
+
+        return PlayState.CONTINUE;
+    }
+
+    // 判断是否需要向目标移动
+    private boolean shouldMoveToTarget() {
+        if (!zombie.hasTarget()) {
+            return false;
+        }
+
+        LivingEntity target = zombie.getTarget();
+        if (target == null) {
+            return false;
+        }
+
+        // 检查距离 - 如果目标在攻击范围内，不需要移动
+        double distance = zombie.distanceTo(target);
+        double attackRange = zombie.getAIManager().getCurrentAttackRange();
+
+        if (distance <= attackRange) {
+            return false;
+        }
+
+        // 检查是否有有效的路径
+        PathNavigation navigation = zombie.getNavigation();
+        boolean hasPath = navigation.getPath() != null && !navigation.isDone();
+
+        return hasPath || distance > attackRange + 1.0;
     }
 
     // 更新动画状态
@@ -49,211 +207,32 @@ public class ZombieAnimationController {
                 animationLocked = false;
             }
         }
-
-        // 检测攻击状态
-        if (zombie.swinging && !attackTriggered) {
-            attackTriggered = true;
-            System.out.println("检测到攻击动作");
-        } else if (!zombie.swinging && attackTriggered) {
-            attackTriggered = false;
-        }
-    }
-
-    // 触发攻击动画
-    public void triggerAttack() {
-        attackTriggered = true;
     }
 
     // 触发受击动画
     public void triggerHit() {
         animationLocked = true;
-        animationLockTime = 25;
-        attackTriggered = false;
+        animationLockTime = 20;
     }
 
     // 重置动画状态
     public void reset() {
         currentAnimation = "idle";
         animationLocked = false;
-        attackTriggered = false;
     }
 
     // 获取当前动画状态信息
     public String getAnimationStateInfo() {
-        if (zombie.isHit()) return "受击动画";
-        if (attackTriggered) return "攻击动画";
-        if (zombie.isWindingUp()) return "攻击前摇动画";
-        if (zombie.isAlerting() && !zombie.isAlertCompleted()) return "警戒动画";
+        if (zombie.isHit()) return "受击状态";
+        if (zombie.swinging) return "攻击状态";
+        if (zombie.isWindingUp()) return "攻击前摇";
+        if (zombie.isInPostAttackCooldown()) return "攻击后冷却";
+        if (zombie.isAlerting() && !zombie.isAlertCompleted()) return "警戒中";
         if (zombie.hasTarget() && zombie.isAlertCompleted()) {
-            if (isPurposefulMoving()) return "奔跑动画";
-            else return "警戒待机动画";
+            return shouldMoveToTarget() ? "追击目标" : "警戒待机";
         }
-        if (zombie.getDeltaMovement().horizontalDistanceSqr() > 0.001) return "行走动画";
-        return "空闲动画";
-    }
-
-    // 行为动画谓词
-    private PlayState behaviorPredicate(AnimationState<ModularZombie> state) {
-        if (zombie.isDeadOrDying()) {
-            return PlayState.STOP;
-        }
-
-        // 受击状态优先级最高
-        if (zombie.isHit()) {
-            return PlayState.STOP;
-        }
-
-        // 攻击前摇状态
-        if (zombie.isWindingUp()) {
-            if (!"aggressive".equals(currentAnimation)) {
-                currentAnimation = "aggressive";
-                System.out.println("播放攻击前摇动画");
-            }
-            return state.setAndContinue(AGGRESSIVE_ANIMATION);
-        }
-
-        // 攻击动画期间停止行为动画
-        if (attackTriggered) {
-            return PlayState.STOP;
-        }
-
-        String desiredAnimation = getDesiredBehaviorAnimation();
-
-        if (desiredAnimation == null || desiredAnimation.isEmpty()) {
-            desiredAnimation = "idle";
-        }
-
-        // 只有当动画改变时才设置新动画
-        if (!desiredAnimation.equals(currentAnimation)) {
-            currentAnimation = desiredAnimation;
-            System.out.println("切换动画到: " + desiredAnimation);
-
-            switch (desiredAnimation) {
-                case "alert":
-                    return state.setAndContinue(ALERT_ANIMATION);
-                case "aggressive":
-                    return state.setAndContinue(AGGRESSIVE_ANIMATION);
-                case "running":
-                    return state.setAndContinue(RUNNING_ANIMATION);
-                case "walking":
-                    return state.setAndContinue(WALKING_ANIMATION);
-                case "idle":
-                default:
-                    return state.setAndContinue(IDLE_ANIMATION);
-            }
-        }
-
-        return PlayState.CONTINUE;
-    }
-
-    // 攻击动画谓词
-    private PlayState attackPredicate(AnimationState<ModularZombie> state) {
-        if (zombie.isDeadOrDying()) {
-            return PlayState.STOP;
-        }
-
-        // 受击状态优先于攻击
-        if (zombie.isHit()) {
-            return PlayState.STOP;
-        }
-
-        if (attackTriggered && !animationLocked) {
-            animationLocked = true;
-            animationLockTime = 20;
-            System.out.println("触发攻击动画");
-            return state.setAndContinue(ATTACK_ANIMATION);
-        }
-        return PlayState.STOP;
-    }
-
-    // 受击动画谓词
-    private PlayState hitPredicate(AnimationState<ModularZombie> state) {
-        if (zombie.isDeadOrDying()) {
-            return PlayState.STOP;
-        }
-
-        if (zombie.isHit()) {
-            // 确保受击期间不播放其他动画
-            animationLocked = true;
-            animationLockTime = 20;
-
-            RawAnimation hitAnim = zombie.getRandom().nextBoolean() ? HIT_FRONT_ANIMATION : HIT_BACK_ANIMATION;
-            System.out.println("播放受击动画: " + (hitAnim == HIT_FRONT_ANIMATION ? "正面" : "背面"));
-            return state.setAndContinue(hitAnim);
-        }
-        return PlayState.STOP;
-    }
-
-    // 获取期望的行为动画
-    private String getDesiredBehaviorAnimation() {
-        // 受击状态由受击控制器处理
-        if (zombie.isHit()) {
-            return "hit";
-        }
-
-        // 攻击前摇状态
-        if (zombie.isWindingUp()) {
-            return "aggressive"; // 使用警戒姿势作为前摇动画
-        }
-
-        // 警戒动画
-        if (zombie.isAlerting() && !zombie.isAlertCompleted()) {
-            return "alert";
-        }
-
-        // 有目标状态
-        if (zombie.hasTarget() && zombie.isAlertCompleted()) {
-            return "running";
-        }
-
-        // 无目标状态
-        if (zombie.getDeltaMovement().horizontalDistanceSqr() > 0.001) {
-            return "walking";
-        } else {
-            return "idle";
-        }
-    }
-
-    // 目的性移动检测
-    private boolean isPurposefulMoving() {
-        if (!zombie.hasTarget()) {
-            return false;
-        }
-
-        LivingEntity target = zombie.getTarget();
-        if (target == null) {
-            return false;
-        }
-
-        PathNavigation navigation = zombie.getNavigation();
-
-        // 更详细的移动检测
-        boolean isNavigating = !navigation.isDone();
-        boolean hasMovement = zombie.getDeltaMovement().horizontalDistanceSqr() > 0.001;
-        boolean isPathFinding = navigation.getPath() != null;
-
-        // 检查与目标的距离变化
-        boolean isClosingDistance = false;
-        double currentDistance = zombie.distanceTo(target);
-        if (zombie.getLastDistanceToTarget() > 0) {
-            isClosingDistance = currentDistance < zombie.getLastDistanceToTarget() - 0.5; // 增加阈值避免微小波动
-        }
-        zombie.setLastDistanceToTarget(currentDistance);
-
-        // 如果是攻击前摇，不算目的性移动
-        if (zombie.isWindingUp()) {
-            return false;
-        }
-
-        boolean result = isNavigating || hasMovement || isPathFinding || isClosingDistance;
-
-        // 调试输出
-        if (zombie.tickCount % 80 == 0) {
-            System.out.printf("目的性移动检查 | 导航中: %s | 有移动: %s | 有路径: %s | 接近中: %s | 结果: %s%n",
-                    isNavigating, hasMovement, isPathFinding, isClosingDistance, result);
-        }
-
-        return result;
+        if (zombie.getDeltaMovement().horizontalDistanceSqr() > 0.001) return "随机移动";
+        return "空闲状态";
     }
 
     // 调试方法
@@ -262,14 +241,9 @@ public class ZombieAnimationController {
             return;
         }
 
-        String desiredAnimation = getDesiredBehaviorAnimation();
-        String currentAnimDisplay = (currentAnimation == null || currentAnimation.isEmpty()) ? "空" : currentAnimation;
-
-        System.out.printf("动画状态调试 [Tick: %d] | 期望动画: %s | 当前动画: %s | 攻击触发: %s | 动画锁定: %s%n",
+        System.out.printf("动画状态调试 [Tick: %d] | 当前动画: %s | 动画锁定: %s%n",
                 zombie.tickCount,
-                desiredAnimation,
-                currentAnimDisplay,
-                attackTriggered,
+                currentAnimation,
                 animationLocked);
     }
 }
