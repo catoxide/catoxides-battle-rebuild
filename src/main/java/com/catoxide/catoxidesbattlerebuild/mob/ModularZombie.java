@@ -212,8 +212,6 @@ public class ModularZombie extends Zombie implements GeoEntity {
     }
 
 
-    // 修改 hurt 方法
-    @Override
     public boolean hurt(DamageSource source, float amount) {
         if (this.isDeadOrDying()) {
             return false;
@@ -222,6 +220,7 @@ public class ModularZombie extends Zombie implements GeoEntity {
         boolean hurt = super.hurt(source, amount);
 
         if (hurt) {
+            // 通知 AI 管理器受到伤害
             if (aiManager != null) {
                 aiManager.onHurt();
             }
@@ -231,16 +230,16 @@ public class ModularZombie extends Zombie implements GeoEntity {
                 return true;
             }
 
-            // 设置受击状态
+            // 设置受击状态 - 确保在客户端和服务端都同步
             this.entityData.set(DATA_IS_HIT, true);
-            hitTime = 10;
+            hitTime = 20; // 增加到20ticks，确保动画能完整播放
             animationController.triggerHit();
 
-            // 暂时停止导航，但设置一个计时器来恢复
-            getNavigation().stop();
+            // 添加调试输出
+            System.out.println("受到伤害，触发受击动画，hitTime=" + hitTime);
 
-            // 3 ticks 后尝试恢复导航
-            this.hitTime = 3;
+            // 停止当前移动
+            this.getNavigation().stop();
         }
 
         return hurt;
@@ -270,6 +269,15 @@ public class ModularZombie extends Zombie implements GeoEntity {
 
         if (this.isDeadOrDying()) return;
 
+        // 更新受击状态计时器 - 这个应该在所有状态之前检查
+        if (isHit()) {
+            hitTime--;
+            if (hitTime <= 0) {
+                this.entityData.set(DATA_IS_HIT, false);
+                System.out.println("受击状态结束");
+            }
+        }
+
         // 同步攻击前摇状态 - 只在服务端更新
         if (!this.level().isClientSide) {
             boolean isWindingUp = aiManager.isWindingUp();
@@ -283,23 +291,12 @@ public class ModularZombie extends Zombie implements GeoEntity {
             updateTargetState();
         }
 
-        // 更新受击状态计时器
-        if (isHit()) {
-            hitTime--;
-            if (hitTime <= 0) {
-                this.entityData.set(DATA_IS_HIT, false);
-            }
-        }
-
         // 更新警戒完成状态
         if (isAlerting() && !isAlertCompleted()) {
             if (this.level().getGameTime() - lastStateChangeTime > 10) {
                 this.entityData.set(DATA_ALERT_COMPLETED, true);
                 this.entityData.set(DATA_ALERTING, false);
             }
-        }
-        if (this.tickCount % 10 == 0) { // 每10tick检查一次
-            checkAndResumeNavigation();
         }
 
         // 更新动画控制器
@@ -308,6 +305,11 @@ public class ModularZombie extends Zombie implements GeoEntity {
         // 更新 AI 管理器 - 只在服务端
         if (!this.level().isClientSide) {
             aiManager.tick();
+        }
+
+        // 调试输出 - 每100tick输出一次
+        if (this.tickCount % 100 == 0) {
+            debugBehaviorState();
         }
     }
     // 调试方法
@@ -321,7 +323,7 @@ public class ModularZombie extends Zombie implements GeoEntity {
         System.out.printf("行为状态调试 [Tick: %d] | 目标: %s | 目标实体: %s | 警戒中: %s | 警戒完成: %s | 受击中: %s | 移动: %s | AI状态: %s | 动画状态: %s%n",
                 this.tickCount,
                 hasTarget(),
-                target != null ? target.getName().getString() : "null",
+                target != null ? target.getName().getContents() : "null",
                 isAlerting(),
                 isAlertCompleted(),
                 isHit(),

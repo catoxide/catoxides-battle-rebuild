@@ -2,11 +2,13 @@ package com.catoxide.catoxidesbattlerebuild.mob;
 
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.navigation.PathNavigation;
+import net.minecraft.world.phys.Vec3;
 import software.bernie.geckolib.core.animation.AnimatableManager;
 import software.bernie.geckolib.core.animation.AnimationController;
 import software.bernie.geckolib.core.animation.AnimationState;
 import software.bernie.geckolib.core.animation.RawAnimation;
 import software.bernie.geckolib.core.object.PlayState;
+import software.bernie.geckolib.loading.json.raw.Bone;
 
 public class ZombieAnimationController {
     private final ModularZombie zombie;
@@ -245,5 +247,18 @@ public class ZombieAnimationController {
                 zombie.tickCount,
                 currentAnimation,
                 animationLocked);
+    }
+    // 在 ZombieAnimationController 中添加获取骨骼位置的方法
+    public Vec3 getBoneWorldPosition(String boneName) {
+        // 获取 Geckolib 管理的模型骨骼数据
+        // 注意：具体API需参考 Geckolib 版本，此处为示例逻辑
+        AnimatedGeoModel<ModularZombie> model = zombie.getModel();
+        Bone bone = model.getBone(boneName);
+        if (bone == null) return Vec3.ZERO;
+
+        // 骨骼局部位置（相对于父骨骼）
+        Vec3 localPos = new Vec3(bone.getPositionX(), bone.getPositionY(), bone.getPositionZ());
+        // 转换为世界坐标（实体位置 + 骨骼局部位置）
+        return zombie.position().add(localPos);
     }
 }

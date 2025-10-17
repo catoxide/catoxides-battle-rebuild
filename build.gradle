@@ -146,7 +146,7 @@ dependencies {
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
     implementation fg.deobf("software.bernie.geckolib:geckolib-forge-${minecraft_version}:4.8.2")
     implementation("com.eliotlash.mclib:mclib:20")
-
+    implementation 'com.mojang:brigadier:1.0.18'
     // Example mod dependency with JEI - using fg.deobf() ensures the dependency is remapped to your development mappings
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly fg.deobf("mezz.jei:jei-${mc_version}-common-api:${jei_version}")
