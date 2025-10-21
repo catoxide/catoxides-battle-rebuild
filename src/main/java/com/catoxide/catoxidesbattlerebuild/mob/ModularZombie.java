@@ -1,5 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.mob;
 
+import com.catoxide.catoxidesbattlerebuild.client.model.ModularZombieModel;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -14,8 +15,11 @@ import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import software.bernie.geckolib.animatable.GeoEntity;
+import software.bernie.geckolib.cache.object.BakedGeoModel;
 import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
 import software.bernie.geckolib.core.animation.AnimatableManager;
+import software.bernie.geckolib.core.animation.AnimationState;
+import software.bernie.geckolib.model.GeoModel;
 import software.bernie.geckolib.util.GeckoLibUtil;
 
 public class ModularZombie extends Zombie implements GeoEntity {
@@ -24,6 +28,7 @@ public class ModularZombie extends Zombie implements GeoEntity {
     private LivingEntity lastTarget = null;
     private double lastDistanceToTarget = 0;
     private long lastStateChangeTime = 0;
+    private final GeoModel<ModularZombie> model = new ModularZombieModel();
 
     // 动画控制器
     private final ZombieAnimationController animationController;
@@ -39,15 +44,19 @@ public class ModularZombie extends Zombie implements GeoEntity {
             SynchedEntityData.defineId(ModularZombie.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Boolean> DATA_IS_HIT =
             SynchedEntityData.defineId(ModularZombie.class, EntityDataSerializers.BOOLEAN);
-
     // 怪物AI
     private AIManager aiManager;
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
+    // 模块血量系统 - 新增精确碰撞系统
+    private final BodyPartManager bodyPartManager;
+    private final BodyPartHealthSystem healthSystem;
 
     public ModularZombie(EntityType<? extends Zombie> entityType, Level level) {
         super(entityType, level);
         this.aiManager = new AIManager(this);
         this.animationController = new ZombieAnimationController(this);
+        this.bodyPartManager = new BodyPartManager(this);
+        this.healthSystem = new BodyPartHealthSystem(this, bodyPartManager);
     }
 
     public AIManager getAIManager() {
@@ -80,7 +89,14 @@ public class ModularZombie extends Zombie implements GeoEntity {
         this.targetSelector.addGoal(1, new SmartHurtByTargetGoal(this));
         this.targetSelector.addGoal(2, new SmartNearestAttackableTargetGoal(this, Player.class, true));
     }
-
+    @Override
+    public void onAddedToWorld() {
+        super.onAddedToWorld();
+        // 在实体添加到世界后生成碰撞箱
+        if (!this.level().isClientSide) {
+            this.bodyPartManager.spawnHitboxEntities();
+        }
+    }
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
         animationController.registerControllers(controllers);
@@ -257,6 +273,7 @@ public class ModularZombie extends Zombie implements GeoEntity {
 
         this.goalSelector.removeAllGoals(goal -> true);
         this.targetSelector.removeAllGoals(goal -> true);
+        bodyPartManager.discardAllHitboxes();
 
         System.out.println("死亡状态重置完成");
     }
@@ -306,11 +323,29 @@ public class ModularZombie extends Zombie implements GeoEntity {
         if (!this.level().isClientSide) {
             aiManager.tick();
         }
+        if (!this.level().isClientSide) {
+            aiManager.tick();
+            // 新增：更新精确碰撞箱位置
+            bodyPartManager.updateHitboxPositions();
+        }
 
         // 调试输出 - 每100tick输出一次
         if (this.tickCount % 100 == 0) {
             debugBehaviorState();
         }
+    }
+    // 新增：获取模块血量系统
+    public BodyPartManager getBodyPartManager() {
+        return bodyPartManager;
+    }
+
+    public BodyPartHealthSystem getHealthSystem() {
+        return healthSystem;
+    }
+
+    // 新增：处理部位伤害
+    public void onPartHit(String partName, float damage) {
+        healthSystem.onPartHit(partName, damage);
     }
     // 调试方法
     private void debugBehaviorState() {
@@ -336,4 +371,22 @@ public class ModularZombie extends Zombie implements GeoEntity {
     public String getCurrentStateInfo() {
         return animationController.getAnimationStateInfo();
     }
+    // 在 ModularZombie 类中添加这个方法
+
+
+    // 如果需要，添加获取模型的方法（根据你的 GeckoLib 实现）
+    public software.bernie.geckolib.core.animatable.GeoAnimatable getAnimatable() {
+        return this;
+    }
+
+    // 修正 getModel() 方法 - 返回 BakedGeoModel
+    public BakedGeoModel getModel(AnimationState<ModularZombie> state) {
+        return this.model.getBakedModel(this.model.getModelResource(this));
+    }
+
+    // 获取 GeoModel
+    public GeoModel<ModularZombie> getModel() {
+        return model;
+    }
+
 }
