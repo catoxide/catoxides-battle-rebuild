@@ -16,14 +16,37 @@ public class BodyPartHealthSystem {
         BodyPart part = partManager.getBodyPart(partName);
         if (part == null || part.isDestroyed()) return;
 
-        boolean destroyed = part.takeDamage(damage);
-        if (destroyed) {
+        // 记录部位被破坏前的状态
+        boolean wasIntact = !part.isDestroyed();
+
+        // 处理伤害，获取对主体的伤害值
+        float damageToMain = part.takeDamage(damage);
+
+        // 检查部位是否刚刚被破坏
+        boolean justDestroyed = wasIntact && part.isDestroyed();
+
+        // 对主体造成伤害
+        if (damageToMain > 0) {
+            // 这里需要实现对主体的伤害逻辑
+            applyDamageToMainEntity(damageToMain);
+        }
+
+        // 如果部位刚刚被破坏，触发被破坏事件
+        if (justDestroyed) {
             onPartDestroyed(partName);
         }
 
+        // 检查是否所有部位都被破坏
         if (isAllPartsDestroyed()) {
             parent.kill();
         }
+    }
+
+    // 对主体造成伤害的方法
+    private void applyDamageToMainEntity(float damage) {
+        // 这里需要实现具体的伤害逻辑
+        // 例如：parent.hurt(damageSource, damage);
+        System.out.println("对主体造成伤害: " + damage);
     }
 
     // 部位被摧毁的逻辑

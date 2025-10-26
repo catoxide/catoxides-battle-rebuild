@@ -1,8 +1,13 @@
 package com.catoxide.catoxidesbattlerebuild.mob;
 
+import com.catoxide.catoxidesbattlerebuild.damage.*;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
 
 public class HitboxPart extends Entity {
@@ -97,5 +102,92 @@ public class HitboxPart extends Entity {
 
     public float getDamageMultiplier() {
         return damageMultiplier;
+    }
+    // 在 HitboxPart.java 中添加伤害处理方法
+    public boolean hurt(DamageSource source, float amount) {
+        if (this.level().isClientSide || parent == null || !parent.isAlive()) {
+            return false;
+        }
+
+        // 将伤害转发给父实体的部位伤害系统
+        if (parent instanceof ModularZombie) {
+            ModularZombie zombie = (ModularZombie) parent;
+
+            // 使用正确的 CompositeDamage 构造函数
+            LivingEntity attacker = source.getEntity() instanceof LivingEntity ?
+                    (LivingEntity) source.getEntity() : null;
+
+            CompositeDamage compositeDamage = new CompositeDamage(source, attacker, zombie);
+
+            // 添加基础伤害组件 - 使用正确的 DamageType
+            DamageComponent baseDamage = new DamageComponent(DamageType.PHYSICS, amount);
+            compositeDamage.addComponent(baseDamage);
+
+            // 根据部位设置伤害倍率和标签
+            applyPartDamageMultiplier(compositeDamage, bodyPart);
+
+            // 计算伤害
+            DamageCalculator calculator = new DamageCalculator();
+            DamageResult result = calculator.calculateDamage(compositeDamage);
+
+            // 应用部位伤害
+            zombie.onPartHit(bodyPart, result.getTotalDamage());
+
+            // 触发伤害效果
+            applyPartDamageEffects(source, result);
+
+            return true;
+        }
+
+        return false;
+    }
+
+//    private CompositeDamage createCompositeDamageForPart(DamageSource source, float amount, String bodyPart) {
+//        // 创建针对特定部位的伤害组合
+//        CompositeDamage composite = new CompositeDamage(source, amount, bodyPart));
+//
+//        // 根据伤害来源和部位设置基础伤害
+//        DamageComponent baseDamage = new DamageComponent(DamageType.PHYSICS, amount);
+//        composite.addComponent(baseDamage);
+//
+//        // 根据部位设置伤害倍率
+//        applyPartDamageMultiplier(composite, bodyPart);
+//
+//        return composite;
+//    }
+
+    private void applyPartDamageMultiplier(CompositeDamage composite, String bodyPart) {
+        // 根据部位调整伤害
+        switch (bodyPart) {
+            case "head":
+            case "arm_left":
+            case "arm_right":
+            case "leg_left":
+            case "leg_right":
+        }
+    }
+
+    private DamageResult calculatePartDamage(CompositeDamage damage) {
+        // 使用你的伤害计算器
+        DamageCalculator calculator = new DamageCalculator();
+        return calculator.calculateDamage(damage);
+    }
+
+    private void applyPartDamageEffects(DamageSource source, DamageResult result) {
+        // 在服务端生成部位伤害特效
+        if (!level().isClientSide) {
+            ServerLevel serverLevel = (ServerLevel) level();
+
+            // 生成部位命中粒子
+            serverLevel.sendParticles(
+                    ParticleTypes.CRIT,
+                    getX(), getY() + getBbHeight() * 0.5, getZ(),
+                    3, // 粒子数量
+                    getBbWidth() * 0.3,
+                    getBbHeight() * 0.3,
+                    getBbWidth() * 0.3,
+                    0.1
+            );
+        }
     }
 }

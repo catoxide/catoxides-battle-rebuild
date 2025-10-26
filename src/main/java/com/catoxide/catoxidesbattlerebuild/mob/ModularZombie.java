@@ -1,6 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.mob;
 
 import com.catoxide.catoxidesbattlerebuild.client.model.ModularZombieModel;
+import com.catoxide.catoxidesbattlerebuild.mob.server.ServerAnimationSystem;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -29,6 +30,7 @@ public class ModularZombie extends Zombie implements GeoEntity {
     private double lastDistanceToTarget = 0;
     private long lastStateChangeTime = 0;
     private final GeoModel<ModularZombie> model = new ModularZombieModel();
+    private final ServerAnimationSystem serverAnimationSystem;
 
     // 动画控制器
     private final ZombieAnimationController animationController;
@@ -57,6 +59,7 @@ public class ModularZombie extends Zombie implements GeoEntity {
         this.animationController = new ZombieAnimationController(this);
         this.bodyPartManager = new BodyPartManager(this);
         this.healthSystem = new BodyPartHealthSystem(this, bodyPartManager);
+        this.serverAnimationSystem = new ServerAnimationSystem(this);
     }
 
     public AIManager getAIManager() {
@@ -319,14 +322,13 @@ public class ModularZombie extends Zombie implements GeoEntity {
         // 更新动画控制器
         animationController.tick();
 
+
         // 更新 AI 管理器 - 只在服务端
-        if (!this.level().isClientSide) {
-            aiManager.tick();
-        }
         if (!this.level().isClientSide) {
             aiManager.tick();
             // 新增：更新精确碰撞箱位置
             bodyPartManager.updateHitboxPositions();
+            serverAnimationSystem.serverTick();
         }
 
         // 调试输出 - 每100tick输出一次
@@ -387,6 +389,9 @@ public class ModularZombie extends Zombie implements GeoEntity {
     // 获取 GeoModel
     public GeoModel<ModularZombie> getModel() {
         return model;
+    }
+    public ServerAnimationSystem getServerAnimationSystem() {
+        return serverAnimationSystem;
     }
 
 }

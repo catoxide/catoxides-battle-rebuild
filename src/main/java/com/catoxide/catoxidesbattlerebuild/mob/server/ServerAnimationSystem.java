@@ -25,7 +25,7 @@ public class ServerAnimationSystem {
 
         updateAnimationState();
 
-        if (tickCount % 3 == 0) {
+        if (tickCount % 1 == 0) {
             updateBoneTransforms();
         }
         tickCount++;

@@ -1,5 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.mob;
 
+import com.catoxide.catoxidesbattlerebuild.mob.server.ServerGeoModelLoader;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.phys.Vec3;
@@ -20,6 +21,7 @@ public class ZombieAnimationController {
     private String currentAnimation = "";
     private boolean animationLocked = false;
     private int animationLockTime = 0;
+    //private final ServerGeoModelLoader geoModelLoader;
 
     // 动画常量
     private static final RawAnimation IDLE_ANIMATION = RawAnimation.begin().thenLoop("animation.zombie.still");
@@ -33,6 +35,7 @@ public class ZombieAnimationController {
 
     public ZombieAnimationController(ModularZombie zombie) {
         this.zombie = zombie;
+
     }
 
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
@@ -252,17 +255,17 @@ public class ZombieAnimationController {
                 animationLocked);
     }
     // 简化的骨骼位置获取方法 - 使用正确的 GeckoLib API
-    public Vec3 getBoneWorldPosition(String boneName) {
-        // 对于 GeckoLib 4，我们可能需要通过不同的方式获取骨骼位置
-        // 这里提供一个简化版本，只返回实体位置
-        return zombie.position();
-    }
 
-    // 简化的骨骼变换获取方法
+    public void setCurrentAnimation(String animation) {
+        this.currentAnimation = animation;
+    }// 在 ZombieAnimationController 类中替换这两个方法：
+
     public BoneTransform getBoneWorldTransform(String boneName) {
         try {
-            // 在 GeckoLib 4 中，我们可能需要通过不同的方式获取骨骼
-            // 这里返回一个基于实体位置的简化变换
+            // 确保这里调用了 ServerGeoModelLoader
+            if (zombie.getServerAnimationSystem() != null) {
+                return zombie.getServerAnimationSystem().calculateBoneTransform(boneName);
+            }
             return new BoneTransform(zombie.position());
         } catch (Exception e) {
             System.err.println("获取骨骼变换失败: " + e.getMessage());
@@ -270,8 +273,8 @@ public class ZombieAnimationController {
         }
     }
 
-    // 设置当前动画（新增方法）
-    public void setCurrentAnimation(String animation) {
-        this.currentAnimation = animation;
+    public Vec3 getBoneWorldPosition(String boneName) {
+        BoneTransform transform = getBoneWorldTransform(boneName);
+        return transform.position;
     }
 }

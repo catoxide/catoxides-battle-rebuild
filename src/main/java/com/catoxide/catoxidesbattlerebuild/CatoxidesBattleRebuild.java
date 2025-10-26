@@ -1,5 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild;
 
+import com.catoxide.catoxidesbattlerebuild.command.DebugCommands;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.CreativeModeTab;
@@ -8,8 +9,11 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -39,5 +43,18 @@ public class CatoxidesBattleRebuild {
 
         MixinBootstrap.init();
         Mixins.addConfiguration("catoxidesbattlerebuild.mixins.json");
+
+    }
+    @SubscribeEvent
+    public void registerCommands(RegisterCommandsEvent event) {
+        DebugCommands.register(event.getDispatcher());
+    }
+    public class ClientSetup {
+
+        @SubscribeEvent
+        public static void onClientSetup(FMLClientSetupEvent event) {
+            // 确保在客户端初始化
+            System.out.println("自定义碰撞箱渲染系统已加载");
+        }
     }
 }

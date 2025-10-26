@@ -21,6 +21,7 @@ public class ModEntities {
                             .sized(0.6f, 1.95f)
                             .build("modular_zombie"));
 
+
     // 注册 HitboxPart (用于多碰撞箱系统)
     public static final RegistryObject<EntityType<HitboxPart>> HITBOX_PART =
             ENTITIES.register("hitbox_part",
