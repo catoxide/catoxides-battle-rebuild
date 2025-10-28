@@ -2,6 +2,8 @@ package com.catoxide.catoxidesbattlerebuild.mob;
 
 import com.catoxide.catoxidesbattlerebuild.client.model.ModularZombieModel;
 import com.catoxide.catoxidesbattlerebuild.mob.server.ServerAnimationSystem;
+import com.catoxide.catoxidesbattlerebuild.network.HitboxRemovePacket;
+import com.catoxide.catoxidesbattlerebuild.network.NetworkHandler;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -277,6 +279,9 @@ public class ModularZombie extends Zombie implements GeoEntity {
         this.goalSelector.removeAllGoals(goal -> true);
         this.targetSelector.removeAllGoals(goal -> true);
         bodyPartManager.discardAllHitboxes();
+        if (!this.level().isClientSide) {
+            NetworkHandler.sendToAllTracking(new HitboxRemovePacket(this.getId()), this);
+        }
 
         System.out.println("死亡状态重置完成");
     }
@@ -329,6 +334,7 @@ public class ModularZombie extends Zombie implements GeoEntity {
             // 新增：更新精确碰撞箱位置
             bodyPartManager.updateHitboxPositions();
             serverAnimationSystem.serverTick();
+            bodyPartManager.syncHitboxesToClient();
         }
 
         // 调试输出 - 每100tick输出一次

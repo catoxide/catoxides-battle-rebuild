@@ -68,18 +68,18 @@ public class ServerGeoModelLoader {
             );
 
             // 调试输出
-            System.out.println("骨骼 " + boneName + " 变换信息:");
-            System.out.println("  世界位置 (Vector3d): " + animatedPosition);
-            System.out.println("  转换后位置 (Vector3f): " + position);
-            System.out.println("  旋转欧拉角: " + animatedRotation);
-            System.out.println("  缩放: " + animatedScale);
+//            System.out.println("骨骼 " + boneName + " 变换信息:");
+//            System.out.println("  世界位置 (Vector3d): " + animatedPosition);
+//            System.out.println("  转换后位置 (Vector3f): " + position);
+//            System.out.println("  旋转欧拉角: " + animatedRotation);
+//            System.out.println("  缩放: " + animatedScale);
 
             // 转换为世界坐标：加上实体位置
             Vec3 entityPos = entity.position();
             Vec3 worldPos = new Vec3(position.x, position.y, position.z);
 
-            System.out.println("实体位置: " + entityPos);
-            System.out.println("最终世界位置: " + worldPos);
+//            System.out.println("实体位置: " + entityPos);
+//            System.out.println("最终世界位置: " + worldPos);
 
             return new BoneTransform(worldPos, rotation, scale);
 

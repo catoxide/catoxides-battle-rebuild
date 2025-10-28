@@ -15,7 +15,7 @@ public class HitboxPartRenderer extends EntityRenderer<HitboxPart> {
     @Override
     public boolean shouldRender(HitboxPart livingEntity, Frustum camera, double camX, double camY, double camZ) {
         // 不渲染这个实体
-        return false;
+        return true;
     }
 
     @Override

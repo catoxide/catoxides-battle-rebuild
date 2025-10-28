@@ -1,6 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild;
 
 import com.catoxide.catoxidesbattlerebuild.command.DebugCommands;
+import com.catoxide.catoxidesbattlerebuild.network.NetworkHandler;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.CreativeModeTab;
@@ -38,9 +39,12 @@ public class CatoxidesBattleRebuild {
         CREATIVE_MODE_TABS.register(modEventBus);
         ModEntities.ENTITIES.register(modEventBus);
 
+        NetworkHandler.register();
+
         // 注册事件总线
         MinecraftForge.EVENT_BUS.register(this);
-
+        MinecraftForge.EVENT_BUS.register(com.catoxide.catoxidesbattlerebuild.client.renderer.CustomHitboxRenderer.class);
+        MinecraftForge.EVENT_BUS.register(com.catoxide.catoxidesbattlerebuild.client.renderer.KeyInputHandler.class);
         MixinBootstrap.init();
         Mixins.addConfiguration("catoxidesbattlerebuild.mixins.json");
 

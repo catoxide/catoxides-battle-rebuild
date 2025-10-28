@@ -1,4 +1,4 @@
-package com.catoxide.catoxidesbattlerebuild.client.renderer;
+package com.catoxide.catoxidesbattlerebuild.client;
 
 import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
 import net.minecraft.client.Minecraft;

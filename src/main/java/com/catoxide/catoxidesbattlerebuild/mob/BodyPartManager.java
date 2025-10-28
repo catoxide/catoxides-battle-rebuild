@@ -1,5 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.mob;
 
+import com.catoxide.catoxidesbattlerebuild.mob.server.HitboxSyncPacket;
+import com.catoxide.catoxidesbattlerebuild.network.NetworkHandler;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -469,8 +471,8 @@ public class BodyPartManager {
             BoneTransform boneTransform = parent.getAnimationController().getBoneWorldTransform(part.getBoneName());
             Vec3 boneWorldPos = boneTransform.position;
 
-            System.out.println("=== 更新部位 " + partName + " (" + part.getBoneName() + ") ===");
-            System.out.println("骨骼世界位置: " + boneWorldPos);
+//            System.out.println("=== 更新部位 " + partName + " (" + part.getBoneName() + ") ===");
+//            System.out.println("骨骼世界位置: " + boneWorldPos);
 
             // 更新单个碰撞箱 - 使用骨骼位置！
             HitboxPart singleHitbox = hitboxEntities.get(partName);
@@ -479,7 +481,7 @@ public class BodyPartManager {
                 singleHitbox.setPos(boneWorldPos.x, boneWorldPos.y, boneWorldPos.z);  // 关键：使用骨骼位置
                 singleHitbox.setBoundingBox(worldHitbox);
 
-                System.out.println("更新单个碰撞箱位置: " + boneWorldPos);
+//                System.out.println("更新单个碰撞箱位置: " + boneWorldPos);
             }
 
             // 更新精确碰撞箱集群 - 同样使用骨骼位置！
@@ -495,12 +497,12 @@ public class BodyPartManager {
                     preciseHitbox.setPos(center.x, center.y, center.z);  // 关键：使用骨骼位置
                     preciseHitbox.setBoundingBox(worldHitbox);
 
-                    System.out.println("更新精确碰撞箱 " + i + " 位置: " + center);
+//                    System.out.println("更新精确碰撞箱 " + i + " 位置: " + center);
                 }
             }
 
         } catch (Exception e) {
-            System.err.println("更新部位 " + partName + " 位置失败: " + e.getMessage());
+//            System.err.println("更新部位 " + partName + " 位置失败: " + e.getMessage());
             e.printStackTrace();
 
             // 失败时回退到父实体位置（临时方案）
@@ -672,5 +674,41 @@ public class BodyPartManager {
         long currentTime = System.currentTimeMillis();
         recentlyHitParts.entrySet().removeIf(entry ->
                 currentTime - entry.getValue() > 1000);
+    }
+    public void syncHitboxesToClient() {
+        if (parent.level().isClientSide) return;
+
+        List<HitboxSyncPacket.HitboxData> hitboxDataList = new ArrayList<>();
+
+        for (BodyPart part : bodyParts.values()) {
+            if (part.isDestroyed()) continue;
+
+            // 获取完整的骨骼变换（包括旋转）
+            BoneTransform boneTransform = parent.getServerAnimationSystem().getBoneTransform(part.getBoneName());
+            if (boneTransform != null) {
+                Vec3 boneWorldPos = boneTransform.position;
+                AABB baseHitbox = part.getBaseHitbox();
+                AABB worldHitbox = baseHitbox.move(boneWorldPos);
+
+                hitboxDataList.add(new HitboxSyncPacket.HitboxData(
+                        part.getPartName(),
+                        boneWorldPos,
+                        boneTransform.rotation,  // 传递旋转信息
+                        worldHitbox.minX, worldHitbox.minY, worldHitbox.minZ,
+                        worldHitbox.maxX, worldHitbox.maxY, worldHitbox.maxZ
+                ));
+
+                System.out.println("同步部位: " + part.getPartName());
+                System.out.println("  位置: " + boneWorldPos);
+                System.out.println("  旋转: " + boneTransform.rotation);
+                System.out.println("  AABB: " + worldHitbox);
+            }
+        }
+
+        // 发送网络数据包
+        if (!hitboxDataList.isEmpty()) {
+            HitboxSyncPacket packet = new HitboxSyncPacket(parent.getId(), hitboxDataList);
+            NetworkHandler.sendToAllTracking(packet, parent);
+        }
     }
 }

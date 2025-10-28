@@ -1,35 +1,41 @@
+// CustomHitboxRenderer.java - 修复版本
 package com.catoxide.catoxidesbattlerebuild.client.renderer;
 
-import com.catoxide.catoxidesbattlerebuild.mob.HitboxPart;
-import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
+import com.catoxide.catoxidesbattlerebuild.client.ClientHitboxManager;
+import com.catoxide.catoxidesbattlerebuild.mob.server.HitboxSyncPacket;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import org.joml.Quaternionf;
 
 import java.awt.*;
+import java.util.List;
+import java.util.Set;
+
+import static com.catoxide.catoxidesbattlerebuild.client.ClientHitboxManager.getAllParentIds;
 
 @OnlyIn(Dist.CLIENT)
 public class CustomHitboxRenderer {
 
-    // 控制是否渲染自定义碰撞箱
-    public static boolean renderCustomHitboxes = false;
+    // 添加回渲染开关（但默认开启）
+    public static boolean renderCustomHitboxes = true;
 
-    // 切换渲染状态的方法
+    // 添加回切换方法（为了兼容性）
     public static void toggleRendering() {
         renderCustomHitboxes = !renderCustomHitboxes;
         System.out.println("自定义碰撞箱渲染: " + (renderCustomHitboxes ? "开启" : "关闭"));
     }
 
-    // 设置渲染状态的方法
+    // 添加回设置方法（为了兼容性）
     public static void setRendering(boolean enabled) {
         renderCustomHitboxes = enabled;
         System.out.println("自定义碰撞箱渲染: " + (enabled ? "开启" : "关闭"));
@@ -37,6 +43,7 @@ public class CustomHitboxRenderer {
 
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent event) {
+        // 检查开关状态
         if (!renderCustomHitboxes || event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRIPWIRE_BLOCKS) {
             return;
         }
@@ -48,58 +55,107 @@ public class CustomHitboxRenderer {
         PoseStack poseStack = event.getPoseStack();
 
         // 渲染所有碰撞箱
-        renderAllHitboxParts(mc, poseStack, bufferSource);
+        renderAllHitboxData(poseStack, bufferSource);
 
         bufferSource.endBatch();
     }
 
-    private static void renderAllHitboxParts(Minecraft mc, PoseStack poseStack, MultiBufferSource bufferSource) {
-        // 遍历所有实体，找到HitboxPart
-        for (Entity entity : mc.level.entitiesForRendering()) {
-            if (entity instanceof HitboxPart) {
-                renderHitboxPart((HitboxPart) entity, poseStack, bufferSource);
+    private static void renderAllHitboxData(PoseStack poseStack, MultiBufferSource bufferSource) {
+        Set<Integer> parentIds = getAllParentIds();
+
+        // 如果没有数据，渲染一个调试立方体
+        if (parentIds.isEmpty()) {
+            renderDebugFallback(poseStack, bufferSource);
+            return;
+        }
+
+        System.out.println("渲染 " + parentIds.size() + " 个父实体的碰撞箱");
+
+        // 从客户端管理器获取所有碰撞箱数据并渲染
+        for (Integer parentId : parentIds) {
+            List<HitboxSyncPacket.HitboxData> hitboxDataList = ClientHitboxManager.getHitboxDataForParent(parentId);
+            if (hitboxDataList != null && !hitboxDataList.isEmpty()) {
+                System.out.println("父实体 " + parentId + " 有 " + hitboxDataList.size() + " 个碰撞箱");
+
+                for (HitboxSyncPacket.HitboxData data : hitboxDataList) {
+                    renderHitboxData(data, poseStack, bufferSource);
+                }
+            } else {
+                System.out.println("父实体 " + parentId + " 没有碰撞箱数据");
             }
         }
     }
 
-    private static void renderHitboxPart(HitboxPart hitboxPart, PoseStack poseStack, MultiBufferSource bufferSource) {
+    private static void renderHitboxData(HitboxSyncPacket.HitboxData hitboxData, PoseStack poseStack, MultiBufferSource bufferSource) {
         try {
-            AABB aabb = hitboxPart.getBoundingBox();
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player == null || mc.cameraEntity == null) return;
+
+            Vec3 cameraPos = mc.gameRenderer.getMainCamera().getPosition();
+
+            // 创建世界坐标的AABB
+            AABB worldAABB = new AABB(
+                    hitboxData.minX, hitboxData.minY, hitboxData.minZ,
+                    hitboxData.maxX, hitboxData.maxY, hitboxData.maxZ
+            );
+
+            // 转换为相机相对坐标的AABB
+            AABB relativeAABB = new AABB(
+                    worldAABB.minX - cameraPos.x,
+                    worldAABB.minY - cameraPos.y,
+                    worldAABB.minZ - cameraPos.z,
+                    worldAABB.maxX - cameraPos.x,
+                    worldAABB.maxY - cameraPos.y,
+                    worldAABB.maxZ - cameraPos.z
+            );
+
             VertexConsumer vertexConsumer = bufferSource.getBuffer(RenderType.lines());
+            Color color = getColorForPart(hitboxData.partName);
 
-            // 获取部位名称
-            String partName = getPartName(hitboxPart);
+            poseStack.pushPose();
 
-            // 选择颜色
-            Color color = getColorForPart(partName);
+            // 使用 OBB 渲染器
+            OBBRenderer.renderOBB(poseStack, vertexConsumer, relativeAABB,
+                    hitboxData.rotation != null ? hitboxData.rotation : new Quaternionf(),
+                    color, 1.0f);
 
-            // 渲染碰撞箱
-            LevelRenderer.renderLineBox(poseStack, vertexConsumer, aabb,
-                    color.getRed() / 255.0f,
-                    color.getGreen() / 255.0f,
-                    color.getBlue() / 255.0f,
-                    1.0f);
+            poseStack.popPose();
+
+            // 调试输出
+            if (mc.level.getGameTime() % 100 == 0) {
+                System.out.println("渲染OBB碰撞箱: " + hitboxData.partName +
+                        " | 位置: " + hitboxData.position +
+                        " | 旋转: " + (hitboxData.rotation != null ? hitboxData.rotation : "无") +
+                        " | 尺寸: " + (worldAABB.maxX - worldAABB.minX) + "x" +
+                        (worldAABB.maxY - worldAABB.minY) + "x" +
+                        (worldAABB.maxZ - worldAABB.minZ));
+            }
 
         } catch (Exception e) {
-            System.err.println("渲染碰撞箱时出错: " + e.getMessage());
+            System.err.println("渲染碰撞箱数据时出错: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
-    private static String getPartName(HitboxPart hitboxPart) {
-        // 尝试从实体名称推断部位
-        try {
-            String name = hitboxPart.getName().getString().toLowerCase();
-            if (name.contains("head")) return "head";
-            if (name.contains("torso") || name.contains("body")) return "torso";
-            if (name.contains("arm_left")) return "arm_left";
-            if (name.contains("arm_right")) return "arm_right";
-            if (name.contains("leg_left")) return "leg_left";
-            if (name.contains("leg_right")) return "leg_right";
-        } catch (Exception e) {
-            System.err.println("获取部位名称失败: " + e.getMessage());
-        }
 
-        return "unknown";
+    // 调试回退渲染 - 当没有数据时显示
+    private static void renderDebugFallback(PoseStack poseStack, MultiBufferSource bufferSource) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return;
+
+        // 在玩家位置渲染一个测试立方体
+        AABB testAABB = new AABB(
+                mc.player.getX() - 0.5, mc.player.getY(), mc.player.getZ() - 0.5,
+                mc.player.getX() + 0.5, mc.player.getY() + 1, mc.player.getZ() + 0.5
+        );
+
+        VertexConsumer vertexConsumer = bufferSource.getBuffer(RenderType.lines());
+        LevelRenderer.renderLineBox(poseStack, vertexConsumer, testAABB, 1.0f, 0.0f, 0.0f, 1.0f);
+
+        // 每5秒输出一次调试信息
+        if (mc.level.getGameTime() % 100 == 0) {
+            System.out.println("没有碰撞箱数据，渲染了调试立方体");
+        }
     }
 
     private static Color getColorForPart(String partName) {
