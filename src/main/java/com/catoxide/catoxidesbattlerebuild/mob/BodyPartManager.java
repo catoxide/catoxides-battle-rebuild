@@ -24,7 +24,7 @@ import java.util.*;
 public class BodyPartManager {
     private final ModularZombie parent;
     private final Map<String, BodyPart> bodyParts = new HashMap<>();
-    private final Map<String, HitboxPart> hitboxEntities = new HashMap<>();
+    // 移除单个碰撞箱映射，只保留精确碰撞箱集群
     private final Map<String, List<HitboxPart>> preciseHitboxClusters = new HashMap<>();
     private final GeometryModel geometryModel;
 
@@ -125,14 +125,15 @@ public class BodyPartManager {
 
             GeometryModel.Bone bone = geometryModel.bones.get(boneName);
             if (bone != null) {
-                // 为每个骨骼创建精确碰撞箱
-                List<AABB> hitboxes = createHitboxesFromCubes(bone.cubes);
+                // 直接存储立方体，而不是转换为AABB
+                List<GeometryModel.Cube> cubes = bone.cubes;
 
                 // 设置部位属性
                 float health = getHealthForPart(partName);
                 float damageMultiplier = getDamageMultiplierForPart(partName);
 
-                bodyParts.put(partName, new BodyPart(partName, boneName, hitboxes, health, damageMultiplier,false));
+                // 修改：传入立方体而不是AABB列表
+                bodyParts.put(partName, new BodyPart(partName, boneName, cubes, health, damageMultiplier, false));
             }
         }
     }
@@ -348,187 +349,95 @@ public class BodyPartManager {
     }
 
 
+
     public void spawnHitboxEntities() {
         System.out.println("=== 开始生成碰撞箱实体 ===");
 
         for (BodyPart part : bodyParts.values()) {
             try {
-                // 获取骨骼的世界变换
-                BoneTransform boneTransform = parent.getAnimationController().getBoneWorldTransform(part.getBoneName());
-                Vec3 boneWorldPos = boneTransform.position;
+                // 使用 ServerAnimationSystem 获取完整的骨骼变换
+                BoneTransform boneTransform = parent.getServerAnimationSystem().getBoneTransform(part.getBoneName());
 
-                System.out.println("生成部位: " + part.getPartName() + " | 骨骼: " + part.getBoneName() + " | 位置: " + boneWorldPos);
+                System.out.println("生成部位: " + part.getPartName() + " | 骨骼: " + part.getBoneName());
+                System.out.println("  骨骼变换 - 位置: " + boneTransform.position + ", 旋转: " + boneTransform.rotation + ", 缩放: " + boneTransform.scale);
 
-                // === 创建单个碰撞箱 ===
-                HitboxPart singleHitbox = new HitboxPart(ModEntities.HITBOX_PART.get(), parent.level());
-                singleHitbox.initialize(parent, part.getPartName());
-
-                // 使用骨骼位置设置初始位置和碰撞箱
-                singleHitbox.setPos(boneWorldPos.x, boneWorldPos.y, boneWorldPos.z);
-                AABB worldHitbox = part.getBaseHitbox().move(boneWorldPos);
-                singleHitbox.setBoundingBox(worldHitbox);
-
-                // 添加到世界和管理器
-                parent.level().addFreshEntity(singleHitbox);
-                hitboxEntities.put(part.getPartName(), singleHitbox);
-
-                System.out.println("  单个碰撞箱创建成功: " + part.getPartName() + " | 位置: " + boneWorldPos);
-
-                // === 创建精确碰撞箱集群 ===
+                // 创建精确碰撞箱集群
                 List<HitboxPart> cluster = new ArrayList<>();
-                List<AABB> preciseHitboxes = part.getPreciseHitboxes();
+                List<GeometryModel.Cube> cubes = part.getCubes();
 
-                System.out.println("  生成精确碰撞箱: " + preciseHitboxes.size() + " 个");
+                for (int i = 0; i < cubes.size(); i++) {
+                    GeometryModel.Cube cube = cubes.get(i);
 
-                for (int i = 0; i < preciseHitboxes.size(); i++) {
+                    // 变换立方体的所有顶点到世界坐标
+                    List<Vec3> worldVertices = new ArrayList<>();
+                    for (Vertex vertex : cube.getVertices()) {
+                        Vec3 worldVertex = transformVertex(vertex, boneTransform);
+                        worldVertices.add(worldVertex);
+                    }
+
+                    // 从变换后的顶点创建OBB
+                    AABB worldOBB = createOBBFromTransformedVertices(worldVertices);
+                    Vec3 center = getAABBCenter(worldOBB);
+
                     HitboxPart preciseHitbox = new HitboxPart(ModEntities.HITBOX_PART.get(), parent.level());
                     preciseHitbox.initialize(parent, part.getPartName() + "_precise_" + i);
 
-                    // 使用骨骼位置设置精确碰撞箱
-                    AABB localHitbox = preciseHitboxes.get(i);
-                    AABB preciseWorldHitbox = localHitbox.move(boneWorldPos);
-                    Vec3 center = getAABBCenter(preciseWorldHitbox);
-
                     preciseHitbox.setPos(center.x, center.y, center.z);
-                    preciseHitbox.setBoundingBox(preciseWorldHitbox);
+                    preciseHitbox.setBoundingBox(worldOBB);
 
-                    // 添加到世界和集群
                     parent.level().addFreshEntity(preciseHitbox);
                     cluster.add(preciseHitbox);
+
+                    System.out.println("  立方体 " + i + " 世界OBB: " + worldOBB);
                 }
 
                 preciseHitboxClusters.put(part.getPartName(), cluster);
-                System.out.println("  精确碰撞箱集群创建完成: " + part.getPartName());
 
             } catch (Exception e) {
                 System.err.println("生成部位 " + part.getPartName() + " 的碰撞箱失败: " + e.getMessage());
                 e.printStackTrace();
-
-                // 失败时回退到父实体位置
-                Vec3 entityPos = parent.position();
-
-                // 创建单个碰撞箱（回退）
-                HitboxPart singleHitbox = new HitboxPart(ModEntities.HITBOX_PART.get(), parent.level());
-                singleHitbox.initialize(parent, part.getPartName());
-                singleHitbox.setPos(entityPos.x, entityPos.y, entityPos.z);
-                AABB worldHitbox = part.getBaseHitbox().move(entityPos);
-                singleHitbox.setBoundingBox(worldHitbox);
-                parent.level().addFreshEntity(singleHitbox);
-                hitboxEntities.put(part.getPartName(), singleHitbox);
-
-                // 创建精确碰撞箱集群（回退）
-                List<HitboxPart> cluster = new ArrayList<>();
-                List<AABB> preciseHitboxes = part.getPreciseHitboxes();
-
-                for (int i = 0; i < preciseHitboxes.size(); i++) {
-                    HitboxPart preciseHitbox = new HitboxPart(ModEntities.HITBOX_PART.get(), parent.level());
-                    preciseHitbox.initialize(parent, part.getPartName() + "_precise_" + i);
-
-                    AABB localHitbox = preciseHitboxes.get(i);
-                    AABB preciseWorldHitbox = localHitbox.move(entityPos);
-                    Vec3 center = getAABBCenter(preciseWorldHitbox);
-
-                    preciseHitbox.setPos(center.x, center.y, center.z);
-                    preciseHitbox.setBoundingBox(preciseWorldHitbox);
-
-                    parent.level().addFreshEntity(preciseHitbox);
-                    cluster.add(preciseHitbox);
-                }
-
-                preciseHitboxClusters.put(part.getPartName(), cluster);
             }
         }
-
-        // 最终统计
-        int totalHitboxes = hitboxEntities.size() +
-                preciseHitboxClusters.values().stream()
-                        .mapToInt(List::size)
-                        .sum();
-
-        System.out.println("=== 碰撞箱生成完成 ===");
-        System.out.println("单个碰撞箱: " + hitboxEntities.size() + " 个");
-        System.out.println("精确碰撞箱: " + preciseHitboxClusters.values().stream().mapToInt(List::size).sum() + " 个");
-        System.out.println("总计: " + totalHitboxes + " 个碰撞箱");
-
     }
 
     // 更新碰撞箱位置
     public void updateHitboxPositions() {
-        for (Map.Entry<String, BodyPart> entry : bodyParts.entrySet()) {
-            String partName = entry.getKey();
-            BodyPart part = entry.getValue();
-
-            if (part.isDestroyed()) continue;
-
-            updateHitboxPositionsSimple(partName, part);
-        }
-    }
-
-    // 简化版本的位置更新
-    private void updateHitboxPositionsSimple(String partName, BodyPart part) {
         try {
-            // 获取骨骼的世界变换
-            BoneTransform boneTransform = parent.getAnimationController().getBoneWorldTransform(part.getBoneName());
-            Vec3 boneWorldPos = boneTransform.position;
+            for (Map.Entry<String, BodyPart> entry : bodyParts.entrySet()) {
+                String partName = entry.getKey();  // 获取部位名称
+                BodyPart part = entry.getValue();  // 获取部位对象 - 这里定义了 part 变量
 
-//            System.out.println("=== 更新部位 " + partName + " (" + part.getBoneName() + ") ===");
-//            System.out.println("骨骼世界位置: " + boneWorldPos);
+                if (part.isDestroyed()) continue;
+                // 使用 ServerAnimationSystem 获取完整的骨骼变换
+                BoneTransform boneTransform = parent.getServerAnimationSystem().getBoneTransform(part.getBoneName());
 
-            // 更新单个碰撞箱 - 使用骨骼位置！
-            HitboxPart singleHitbox = hitboxEntities.get(partName);
-            if (singleHitbox != null) {
-                AABB worldHitbox = part.getBaseHitbox().move(boneWorldPos);  // 关键：使用骨骼位置
-                singleHitbox.setPos(boneWorldPos.x, boneWorldPos.y, boneWorldPos.z);  // 关键：使用骨骼位置
-                singleHitbox.setBoundingBox(worldHitbox);
+                // 更新精确碰撞箱集群
+                List<HitboxPart> cluster = preciseHitboxClusters.get(partName);
+                if (cluster != null) {
+                    List<GeometryModel.Cube> cubes = part.getCubes();
+                    for (int i = 0; i < cubes.size() && i < cluster.size(); i++) {
+                        GeometryModel.Cube cube = cubes.get(i);
+                        HitboxPart preciseHitbox = cluster.get(i);
 
-//                System.out.println("更新单个碰撞箱位置: " + boneWorldPos);
-            }
+                        // 变换立方体的所有顶点到世界坐标
+                        List<Vec3> worldVertices = new ArrayList<>();
+                        for (Vertex vertex : cube.getVertices()) {
+                            Vec3 worldVertex = transformVertex(vertex, boneTransform);
+                            worldVertices.add(worldVertex);
+                        }
 
-            // 更新精确碰撞箱集群 - 同样使用骨骼位置！
-            List<HitboxPart> cluster = preciseHitboxClusters.get(partName);
-            if (cluster != null) {
-                List<AABB> preciseHitboxes = part.getPreciseHitboxes();
-                for (int i = 0; i < preciseHitboxes.size() && i < cluster.size(); i++) {
-                    HitboxPart preciseHitbox = cluster.get(i);
-                    AABB localHitbox = preciseHitboxes.get(i);
-                    AABB worldHitbox = localHitbox.move(boneWorldPos);  // 关键：使用骨骼位置
-                    Vec3 center = getAABBCenter(worldHitbox);
-
-                    preciseHitbox.setPos(center.x, center.y, center.z);  // 关键：使用骨骼位置
-                    preciseHitbox.setBoundingBox(worldHitbox);
-
-//                    System.out.println("更新精确碰撞箱 " + i + " 位置: " + center);
+                        // 从变换后的顶点创建OBB
+                        AABB worldOBB = createOBBFromTransformedVertices(worldVertices);
+                        Vec3 center = getAABBCenter(worldOBB);
+                        preciseHitbox.setPos(center.x, center.y, center.z);
+                        preciseHitbox.setBoundingBox(worldOBB);
+                    }
                 }
             }
 
         } catch (Exception e) {
-//            System.err.println("更新部位 " + partName + " 位置失败: " + e.getMessage());
+            System.err.println("更新部位 " + " 的碰撞箱失败: " + e.getMessage());
             e.printStackTrace();
-
-            // 失败时回退到父实体位置（临时方案）
-            Vec3 entityPos = parent.position();
-            System.err.println("回退到父实体位置: " + entityPos);
-
-            HitboxPart singleHitbox = hitboxEntities.get(partName);
-            if (singleHitbox != null) {
-                AABB worldHitbox = part.getBaseHitbox().move(entityPos);
-                singleHitbox.setPos(entityPos.x, entityPos.y, entityPos.z);
-                singleHitbox.setBoundingBox(worldHitbox);
-            }
-
-            List<HitboxPart> cluster = preciseHitboxClusters.get(partName);
-            if (cluster != null) {
-                List<AABB> preciseHitboxes = part.getPreciseHitboxes();
-                for (int i = 0; i < preciseHitboxes.size() && i < cluster.size(); i++) {
-                    HitboxPart preciseHitbox = cluster.get(i);
-                    AABB localHitbox = preciseHitboxes.get(i);
-                    AABB worldHitbox = localHitbox.move(entityPos);
-                    Vec3 center = getAABBCenter(worldHitbox);
-
-                    preciseHitbox.setPos(center.x, center.y, center.z);
-                    preciseHitbox.setBoundingBox(worldHitbox);
-                }
-            }
         }
     }
 
@@ -545,6 +454,44 @@ public class BodyPartManager {
                 (aabb.minZ + aabb.maxZ) / 2
         );
     }
+    // 变换顶点到世界坐标（考虑旋转和缩放）
+    private Vec3 transformVertex(Vertex vertex, BoneTransform transform) {
+        // 将模型坐标转换为世界坐标（除以16，因为Minecraft中1格=16像素）
+        float scaleFactor = 1.0f / 16.0f;
+        Vector3f localPos = new Vector3f(vertex.x * scaleFactor, vertex.y * scaleFactor, vertex.z * scaleFactor);
+
+        // 应用缩放
+        localPos.mul(transform.scale);
+
+        // 应用旋转
+        Vector3f rotatedPos = transform.rotation.transform(localPos);
+
+        // 应用位置偏移
+        return new Vec3(
+                transform.position.x + rotatedPos.x,
+                transform.position.y + rotatedPos.y,
+                transform.position.z + rotatedPos.z
+        );
+    }
+    private AABB createOBBFromTransformedVertices(List<Vec3> worldVertices) {
+        if (worldVertices.isEmpty()) {
+            return new AABB(0, 0, 0, 0, 0, 0);
+        }
+
+        double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, minZ = Double.MAX_VALUE;
+        double maxX = -Double.MAX_VALUE, maxY = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+
+        for (Vec3 vertex : worldVertices) {
+            minX = Math.min(minX, vertex.x);
+            minY = Math.min(minY, vertex.y);
+            minZ = Math.min(minZ, vertex.z);
+            maxX = Math.max(maxX, vertex.x);
+            maxY = Math.max(maxY, vertex.y);
+            maxZ = Math.max(maxZ, vertex.z);
+        }
+
+        return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+    }
 
     // 获取部位数据
     public BodyPart getBodyPart(String partName) {
@@ -556,17 +503,11 @@ public class BodyPartManager {
         return bodyParts;
     }
 
-    // 获取单个碰撞箱实体
-    public HitboxPart getHitboxEntity(String partName) {
-        return hitboxEntities.get(partName);
-    }
-
     // 获取精确碰撞箱集群
     public List<HitboxPart> getPreciseHitboxCluster(String partName) {
         return preciseHitboxClusters.get(partName);
     }
 
-    // 精确射线检测
     public String rayTracePreciseParts(Vec3 start, Vec3 end) {
         double closestDistance = Double.MAX_VALUE;
         String hitPart = null;
@@ -578,7 +519,8 @@ public class BodyPartManager {
             if (part.isDestroyed()) continue;
 
             try {
-                BoneTransform boneTransform = parent.getAnimationController().getBoneWorldTransform(part.getBoneName());
+                // 改为使用 ServerAnimationSystem
+                BoneTransform boneTransform = parent.getServerAnimationSystem().getBoneTransform(part.getBoneName());
                 List<AABB> hitboxes = part.getPreciseHitboxes();
 
                 for (AABB hitbox : hitboxes) {
@@ -600,15 +542,10 @@ public class BodyPartManager {
         return hitPart;
     }
 
+
     // 清理所有碰撞箱
     public void discardAllHitboxes() {
-        hitboxEntities.values().forEach(hitbox -> {
-            if (hitbox != null) {
-                hitbox.discard();
-            }
-        });
-        hitboxEntities.clear();
-
+        // 只清理精确碰撞箱集群
         preciseHitboxClusters.values().forEach(cluster -> {
             if (cluster != null) {
                 cluster.forEach(hitbox -> {
@@ -626,6 +563,7 @@ public class BodyPartManager {
         StringBuilder sb = new StringBuilder();
         sb.append("Body Parts: ").append(bodyParts.size()).append("\n");
         sb.append("Geometry Bones: ").append(geometryModel.bones.size()).append("\n");
+        sb.append("Precise Hitbox Clusters: ").append(preciseHitboxClusters.size()).append("\n");
 
         for (Map.Entry<String, BodyPart> entry : bodyParts.entrySet()) {
             BodyPart part = entry.getValue();
@@ -638,6 +576,7 @@ public class BodyPartManager {
 
         return sb.toString();
     }
+
     // 客户端状态跟踪
     private final Map<String, Long> recentlyHitParts = new HashMap<>();
     private final Map<String, Boolean> destroyedParts = new HashMap<>();
@@ -675,6 +614,7 @@ public class BodyPartManager {
         recentlyHitParts.entrySet().removeIf(entry ->
                 currentTime - entry.getValue() > 1000);
     }
+
     public void syncHitboxesToClient() {
         if (parent.level().isClientSide) return;
 

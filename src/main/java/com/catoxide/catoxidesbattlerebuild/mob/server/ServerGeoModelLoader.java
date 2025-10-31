@@ -47,7 +47,6 @@ public class ServerGeoModelLoader {
             Vector3d animatedPosition = bone.getWorldPosition();
             Vector3d animatedRotation = bone.getRotationVector();
             Vector3d animatedScale = bone.getScaleVector();
-
             // 转换为 Vector3f
             Vector3f position = new Vector3f(
                     (float) animatedPosition.x,
@@ -57,9 +56,10 @@ public class ServerGeoModelLoader {
 
             // 将欧拉角转换为四元数
             Quaternionf rotation = new Quaternionf()
-                    .rotateZ((float) Math.toRadians(animatedRotation.z))
-                    .rotateY((float) Math.toRadians(animatedRotation.y))
-                    .rotateX((float) Math.toRadians(animatedRotation.x));
+                    .rotateX((float)animatedRotation.x)
+                    .rotateY((float)animatedRotation.y)
+                    .rotateZ((float)animatedRotation.z);
+
 
             Vector3f scale = new Vector3f(
                     (float) animatedScale.x,
@@ -68,11 +68,11 @@ public class ServerGeoModelLoader {
             );
 
             // 调试输出
-//            System.out.println("骨骼 " + boneName + " 变换信息:");
-//            System.out.println("  世界位置 (Vector3d): " + animatedPosition);
-//            System.out.println("  转换后位置 (Vector3f): " + position);
-//            System.out.println("  旋转欧拉角: " + animatedRotation);
-//            System.out.println("  缩放: " + animatedScale);
+            System.out.println("骨骼 " + boneName + " 变换信息:");
+            System.out.println("  世界位置 (Vector3d): " + animatedPosition);
+            System.out.println("  转换后位置 (Vector3f): " + position);
+            System.out.println("  旋转欧拉角: " + animatedRotation);
+            System.out.println("  缩放: " + animatedScale);
 
             // 转换为世界坐标：加上实体位置
             Vec3 entityPos = entity.position();
@@ -91,19 +91,21 @@ public class ServerGeoModelLoader {
     }
 
     private Matrix4f calculateWorldTransform(GeoBone bone) {
-        // 收集从根骨骼到当前骨骼的路径
         List<GeoBone> bonePath = new ArrayList<>();
         GeoBone current = bone;
+
+        // 构建从根到当前骨骼的路径
         while (current != null) {
-            bonePath.add(0, current); // 插入到开头，保持从根到子的顺序
+            bonePath.add(0, current);
             current = current.getParent();
         }
 
         Matrix4f transform = new Matrix4f().identity();
-        // 按正确顺序应用变换：从根骨骼到当前骨骼
+
+        // 应用每个骨骼的局部变换
         for (GeoBone pathBone : bonePath) {
             Matrix4f localTransform = getLocalTransform(pathBone);
-            transform = transform.mul(localTransform); // 注意乘法顺序
+            transform.mul(localTransform); // 矩阵乘法顺序很重要
         }
 
         return transform;
