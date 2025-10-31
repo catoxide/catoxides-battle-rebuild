@@ -16,6 +16,7 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 import java.awt.*;
 import java.util.List;
@@ -99,7 +100,7 @@ public class CustomHitboxRenderer {
                     hitboxData.maxX, hitboxData.maxY, hitboxData.maxZ
             );
 
-            // 转换为相机相对坐标的AABB
+            // 转换为相机相对坐标
             AABB relativeAABB = new AABB(
                     worldAABB.minX - cameraPos.x,
                     worldAABB.minY - cameraPos.y,
@@ -114,29 +115,25 @@ public class CustomHitboxRenderer {
 
             poseStack.pushPose();
 
-            // 使用 OBB 渲染器
+            // 计算枢轴点（使用骨骼位置）
+            Vector3f pivot = new Vector3f(
+                    (float)(hitboxData.position.x - cameraPos.x),
+                    (float)(hitboxData.position.y - cameraPos.y),
+                    (float)(hitboxData.position.z - cameraPos.z)
+            );
+
+            // 使用修复的OBB渲染器
             OBBRenderer.renderOBB(poseStack, vertexConsumer, relativeAABB,
                     hitboxData.rotation != null ? hitboxData.rotation : new Quaternionf(),
-                    color, 1.0f);
+                    color, 1.0f, pivot);
 
             poseStack.popPose();
 
-            // 调试输出
-            if (mc.level.getGameTime() % 100 == 0) {
-                System.out.println("渲染OBB碰撞箱: " + hitboxData.partName +
-                        " | 位置: " + hitboxData.position +
-                        " | 旋转: " + (hitboxData.rotation != null ? hitboxData.rotation : "无") +
-                        " | 尺寸: " + (worldAABB.maxX - worldAABB.minX) + "x" +
-                        (worldAABB.maxY - worldAABB.minY) + "x" +
-                        (worldAABB.maxZ - worldAABB.minZ));
-            }
-
         } catch (Exception e) {
-            System.err.println("渲染碰撞箱数据时出错: " + e.getMessage());
+            System.err.println("渲染OBB时出错: " + e.getMessage());
             e.printStackTrace();
         }
     }
-
 
     // 调试回退渲染 - 当没有数据时显示
     private static void renderDebugFallback(PoseStack poseStack, MultiBufferSource bufferSource) {

@@ -22,6 +22,7 @@ public class BodyPart {
     // 可破坏模块属性
     private float currentHealth;
     private final float maxHealth;
+    private final float[] pivot;
 
     // 伤害倍率属性（所有模块都有）
     private final float damageMultiplierToMain;
@@ -33,7 +34,7 @@ public class BodyPart {
 
     // 可破坏模块构造器（使用立方体）
     public BodyPart(String partName, String boneName, List<GeometryModel.Cube> cubes,
-                    float maxHealth, float damageMultiplierToMain, boolean lethalWhenDestroyed) {
+                    float maxHealth, float damageMultiplierToMain, boolean lethalWhenDestroyed,float[] pivot) {
         this.partName = partName;
         this.boneName = boneName;
         this.cubes = cubes;
@@ -43,11 +44,12 @@ public class BodyPart {
         this.currentHealth = maxHealth;
         this.damageMultiplierToMain = damageMultiplierToMain;
         this.lethalWhenDestroyed = lethalWhenDestroyed;
+        this.pivot = pivot;
     }
 
     // 不可破坏模块构造器（使用立方体）
     public BodyPart(String partName, String boneName, List<GeometryModel.Cube> cubes,
-                    float damageMultiplierToMain) {
+                    float damageMultiplierToMain, float[] pivot) {
         this.partName = partName;
         this.boneName = boneName;
         this.cubes = cubes;
@@ -57,6 +59,7 @@ public class BodyPart {
         this.currentHealth = 0;
         this.damageMultiplierToMain = damageMultiplierToMain;
         this.lethalWhenDestroyed = false;
+        this.pivot = pivot;
     }
 
     // 设置致命性
@@ -208,6 +211,10 @@ public class BodyPart {
     public List<AABB> getPreciseHitboxes() {
         // 返回空列表，因为我们现在使用立方体
         return new ArrayList<>();
+    }
+
+    public float[] getPivot() {
+        return pivot;
     }
 
     // 治疗模块（新增方法）

@@ -133,7 +133,7 @@ public class BodyPartManager {
                 float damageMultiplier = getDamageMultiplierForPart(partName);
 
                 // 修改：传入立方体而不是AABB列表
-                bodyParts.put(partName, new BodyPart(partName, boneName, cubes, health, damageMultiplier, false));
+                bodyParts.put(partName, new BodyPart(partName, boneName, cubes, health, damageMultiplier, false, bone.pivot));
             }
         }
     }
@@ -371,7 +371,7 @@ public class BodyPartManager {
                     // 变换立方体的所有顶点到世界坐标
                     List<Vec3> worldVertices = new ArrayList<>();
                     for (Vertex vertex : cube.getVertices()) {
-                        Vec3 worldVertex = transformVertex(vertex, boneTransform);
+                        Vec3 worldVertex = transformVertexWithPivot(vertex, boneTransform, part.getPivot());
                         worldVertices.add(worldVertex);
                     }
 
@@ -422,7 +422,7 @@ public class BodyPartManager {
                         // 变换立方体的所有顶点到世界坐标
                         List<Vec3> worldVertices = new ArrayList<>();
                         for (Vertex vertex : cube.getVertices()) {
-                            Vec3 worldVertex = transformVertex(vertex, boneTransform);
+                            Vec3 worldVertex = transformVertexWithPivot(vertex, boneTransform, part.getPivot());
                             worldVertices.add(worldVertex);
                         }
 
@@ -471,6 +471,28 @@ public class BodyPartManager {
                 transform.position.x + rotatedPos.x,
                 transform.position.y + rotatedPos.y,
                 transform.position.z + rotatedPos.z
+        );
+    }
+    // 在 transformVertex 方法旁边添加这个新方法
+    private Vec3 transformVertexWithPivot(Vertex vertex, BoneTransform transform, float[] pivot) {
+        float scaleFactor = 1.0f / 16.0f;
+
+        // 1. 将顶点转换为相对于枢轴点的坐标
+        Vector3f relativeToPivot = new Vector3f(
+                (vertex.x - pivot[0]) * scaleFactor,  // 减去枢轴点X
+                (vertex.y - pivot[1]) * scaleFactor,  // 减去枢轴点Y
+                (vertex.z - pivot[2]) * scaleFactor   // 减去枢轴点Z
+        );
+
+        // 2. 应用缩放和旋转（现在绕枢轴点旋转）
+        relativeToPivot.mul(transform.scale);
+        Vector3f rotatedPos = transform.rotation.transform(relativeToPivot);
+
+        // 3. 转换回世界坐标，加上枢轴点的偏移
+        return new Vec3(
+                transform.position.x + rotatedPos.x + pivot[0] * scaleFactor,
+                transform.position.y + rotatedPos.y + pivot[1] * scaleFactor,
+                transform.position.z + rotatedPos.z + pivot[2] * scaleFactor
         );
     }
     private AABB createOBBFromTransformedVertices(List<Vec3> worldVertices) {
@@ -650,5 +672,28 @@ public class BodyPartManager {
             HitboxSyncPacket packet = new HitboxSyncPacket(parent.getId(), hitboxDataList);
             NetworkHandler.sendToAllTracking(packet, parent);
         }
+    }
+    // 新增：使用枢轴点的顶点变换方法
+    private Vec3 transformVertexWithPivot(Vertex vertex, BoneTransform transform, GeometryModel.Bone bone) {
+        float scaleFactor = 1.0f / 16.0f;
+        float[] pivot = bone.pivot;
+
+        // 1. 将顶点转换为相对于枢轴点的局部坐标
+        Vector3f relativeToPivot = new Vector3f(
+                (vertex.x - pivot[0]) * scaleFactor,
+                (vertex.y - pivot[1]) * scaleFactor,
+                (vertex.z - pivot[2]) * scaleFactor
+        );
+
+        // 2. 应用缩放和旋转（现在绕枢轴点旋转）
+        relativeToPivot.mul(transform.scale);
+        Vector3f rotatedPos = transform.rotation.transform(relativeToPivot);
+
+        // 3. 转换回世界坐标，包括枢轴点的偏移
+        return new Vec3(
+                transform.position.x + rotatedPos.x + pivot[0] * scaleFactor,
+                transform.position.y + rotatedPos.y + pivot[1] * scaleFactor,
+                transform.position.z + rotatedPos.z + pivot[2] * scaleFactor
+        );
     }
 }

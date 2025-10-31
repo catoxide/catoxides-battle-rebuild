@@ -1,6 +1,7 @@
 // NetworkHandler.java
 package com.catoxide.catoxidesbattlerebuild.network;
 
+import com.catoxide.catoxidesbattlerebuild.mob.server.BoneDebugPacket;
 import com.catoxide.catoxidesbattlerebuild.mob.server.HitboxSyncPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -25,13 +26,14 @@ public class NetworkHandler {
                 PROTOCOL_VERSION::equals
         );
 
-        // 注册 HitboxSyncPacket
         CHANNEL.registerMessage(packetId++, HitboxSyncPacket.class,
                 HitboxSyncPacket::encode, HitboxSyncPacket::new, HitboxSyncPacket::handle);
 
-        // 注册 HitboxRemovePacket
         CHANNEL.registerMessage(packetId++, HitboxRemovePacket.class,
                 HitboxRemovePacket::encode, HitboxRemovePacket::new, HitboxRemovePacket::handle);
+
+        CHANNEL.registerMessage(packetId++, BoneDebugPacket.class,
+                BoneDebugPacket::encode, BoneDebugPacket::new, BoneDebugPacket::handle);
     }
 
     // 添加安全检查方法
@@ -50,6 +52,12 @@ public class NetworkHandler {
         checkChannelInitialized();
         CHANNEL.send(PacketDistributor.TRACKING_ENTITY.with(() -> entity), packet);
     }
+
+    public static void sendToAllTracking(BoneDebugPacket packet, Entity entity) {
+        checkChannelInitialized();
+        CHANNEL.send(PacketDistributor.TRACKING_ENTITY.with(() -> entity), packet);
+    }
+
 
     public static void sendToPlayer(HitboxSyncPacket packet, ServerPlayer player) {
         checkChannelInitialized();
