@@ -66,7 +66,7 @@ public class BoneRotationManager {
      * 获取骨骼在标准姿势下的变换
      */
     public BoneTransform getStandardPoseTransform(String boneName) {
-        BodyPartManager.GeometryModel.Bone bone = parent.getBodyPartManager().getGeometryModel().bones.get(boneName);
+        GeometryModel.Bone bone = parent.getBodyPartManager().getGeometryModel().bones.get(boneName);
         if (bone != null) {
             float scaleFactor = 1.0f / 16.0f;
             Vec3 standardPos = new Vec3(

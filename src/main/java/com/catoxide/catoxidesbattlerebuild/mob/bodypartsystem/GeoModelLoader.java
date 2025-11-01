@@ -11,12 +11,12 @@ import java.nio.file.Files;
 import java.util.*;
 
 public class GeoModelLoader {
-    private static final Map<String, BodyPartManager.GeometryModel> MODEL_CACHE = new HashMap<>();
+    private static final Map<String, GeometryModel> MODEL_CACHE = new HashMap<>();
 
-    public static BodyPartManager.GeometryModel loadModel(String modelPath) {
+    public static GeometryModel loadModel(String modelPath) {
         return MODEL_CACHE.computeIfAbsent(modelPath, path -> {
             String content = getGeoJsonContent(path);
-            return new BodyPartManager.GeometryModel(content);
+            return new GeometryModel(content);
         });
     }
 

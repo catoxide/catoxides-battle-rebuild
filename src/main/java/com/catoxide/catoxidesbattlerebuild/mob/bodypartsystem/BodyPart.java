@@ -1,6 +1,5 @@
 package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
 
-import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.BodyPartManager.GeometryModel;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
@@ -130,7 +129,7 @@ public class BodyPart {
         List<Vec3> worldVertices = new ArrayList<>();
         float scaleFactor = 1.0f / 16.0f;
 
-        for (BodyPartManager.Vertex vertex : cube.getVertices()) {
+        for (Vertex vertex : cube.getVertices()) {
             // 将模型坐标转换为世界坐标
             Vector3f localPos = new Vector3f(
                     vertex.x * scaleFactor,

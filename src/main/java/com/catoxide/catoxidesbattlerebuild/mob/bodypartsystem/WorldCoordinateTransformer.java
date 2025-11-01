@@ -43,7 +43,7 @@ public class WorldCoordinateTransformer {
     /**
      * 变换顶点考虑骨骼枢轴点
      */
-    public Vec3 transformVertexWithPivot(BodyPartManager.Vertex vertex, BoneTransform animationTransform, float[] pivot) {
+    public Vec3 transformVertexWithPivot(Vertex vertex, BoneTransform animationTransform, float[] pivot) {
         float scaleFactor = 1.0f / 16.0f;
 
         // 1. 获取顶点在标准姿势下的位置（相对于枢轴点）
