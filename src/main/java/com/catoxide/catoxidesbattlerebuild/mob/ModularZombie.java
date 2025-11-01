@@ -1,10 +1,11 @@
 package com.catoxide.catoxidesbattlerebuild.mob;
 
 import com.catoxide.catoxidesbattlerebuild.client.model.ModularZombieModel;
+import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.BodyPartHealthSystem;
+import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.BodyPartManager;
 import com.catoxide.catoxidesbattlerebuild.mob.server.ServerAnimationSystem;
 import com.catoxide.catoxidesbattlerebuild.network.HitboxRemovePacket;
 import com.catoxide.catoxidesbattlerebuild.network.NetworkHandler;
-import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -13,7 +14,6 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.*;
-import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;

@@ -1,6 +1,7 @@
-package com.catoxide.catoxidesbattlerebuild.mob;
+package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
 
 import com.catoxide.catoxidesbattlerebuild.damage.*;
+import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;

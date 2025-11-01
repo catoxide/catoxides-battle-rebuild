@@ -1,6 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.mob.server;
 
-import com.catoxide.catoxidesbattlerebuild.mob.BoneTransform;
+import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.BoneTransform;
 import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
@@ -14,7 +14,6 @@ import software.bernie.geckolib.model.GeoModel;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 public class ServerGeoModelLoader {
     private final ModularZombie entity;

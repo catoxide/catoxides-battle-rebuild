@@ -1,4 +1,4 @@
-package com.catoxide.catoxidesbattlerebuild.mob;
+package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
 
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;

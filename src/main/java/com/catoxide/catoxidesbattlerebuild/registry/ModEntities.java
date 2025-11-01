@@ -1,7 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.registry;
 
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuild;
-import com.catoxide.catoxidesbattlerebuild.mob.HitboxPart;
+import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.HitboxPart;
 import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;

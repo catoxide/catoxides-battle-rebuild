@@ -1,6 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.client.renderer;
 
-import com.catoxide.catoxidesbattlerebuild.mob.HitboxPart;
+import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.HitboxPart;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;

@@ -1,6 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.mob.server;
 
-import com.catoxide.catoxidesbattlerebuild.mob.BoneTransform;
+import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.BoneTransform;
 import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
 import com.catoxide.catoxidesbattlerebuild.network.NetworkHandler;
 import net.minecraft.world.phys.Vec3;

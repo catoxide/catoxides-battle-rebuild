@@ -1,9 +1,8 @@
-package com.catoxide.catoxidesbattlerebuild.mob;
+package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
 
-import com.catoxide.catoxidesbattlerebuild.mob.BodyPartManager.GeometryModel;
+import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.BodyPartManager.GeometryModel;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import java.util.ArrayList;

@@ -1,18 +1,16 @@
 // DebugCommands.java - 简化版本
 package com.catoxide.catoxidesbattlerebuild.command;
 
-import com.catoxide.catoxidesbattlerebuild.mob.HitboxPart;
+import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.HitboxPart;
 import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
 import com.mojang.brigadier.CommandDispatcher;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class DebugCommands {
 

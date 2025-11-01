@@ -1,13 +1,12 @@
-package com.catoxide.catoxidesbattlerebuild.mob;
+package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
 
+import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
 import com.catoxide.catoxidesbattlerebuild.mob.server.HitboxSyncPacket;
 import com.catoxide.catoxidesbattlerebuild.network.NetworkHandler;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
@@ -740,5 +739,8 @@ public class BodyPartManager {
             HitboxSyncPacket packet = new HitboxSyncPacket(parent.getId(), hitboxDataList);
             NetworkHandler.sendToAllTracking(packet, parent);
         }
+    }
+    public GeometryModel getGeometryModel() {
+        return geometryModel;
     }
 }

@@ -1,4 +1,6 @@
-package com.catoxide.catoxidesbattlerebuild.mob;
+package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
+
+import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
 
 import java.util.List;
 
