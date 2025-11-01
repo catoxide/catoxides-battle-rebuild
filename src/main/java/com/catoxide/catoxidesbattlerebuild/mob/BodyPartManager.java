@@ -137,7 +137,21 @@ public class BodyPartManager {
             }
         }
     }
-
+    // 获取部位在标准姿势下的基础变换
+    private BoneTransform getStandardPoseTransform(String boneName) {
+        // 这里需要从几何模型中获取骨骼在标准姿势下的位置
+        GeometryModel.Bone bone = geometryModel.bones.get(boneName);
+        if (bone != null) {
+            float scaleFactor = 1.0f / 16.0f;
+            Vec3 standardPos = new Vec3(
+                    bone.pivot[0] * scaleFactor,
+                    bone.pivot[1] * scaleFactor,
+                    bone.pivot[2] * scaleFactor
+            );
+            return new BoneTransform(standardPos, new Quaternionf(), new Vector3f(1, 1, 1));
+        }
+        return BoneTransform.IDENTITY;
+    }
     // 从立方体创建碰撞箱
     private List<AABB> createHitboxesFromCubes(List<GeometryModel.Cube> cubes) {
         List<AABB> hitboxes = new ArrayList<>();
@@ -400,45 +414,96 @@ public class BodyPartManager {
         }
     }
 
-    // 更新碰撞箱位置
+    // 在 BodyPartManager.java 中修正碰撞箱位置和旋转
+    // 完全重写 updateHitboxPositions 方法
     public void updateHitboxPositions() {
-        try {
-            for (Map.Entry<String, BodyPart> entry : bodyParts.entrySet()) {
-                String partName = entry.getKey();  // 获取部位名称
-                BodyPart part = entry.getValue();  // 获取部位对象 - 这里定义了 part 变量
+        for (Map.Entry<String, List<HitboxPart>> entry : preciseHitboxClusters.entrySet()) {
+            String partName = entry.getKey();
+            List<HitboxPart> cluster = entry.getValue();
+            BodyPart part = bodyParts.get(partName);
+            if (part == null) continue;
 
-                if (part.isDestroyed()) continue;
-                // 使用 ServerAnimationSystem 获取完整的骨骼变换
-                BoneTransform boneTransform = parent.getServerAnimationSystem().getBoneTransform(part.getBoneName());
+            String boneName = part.getBoneName();
+            BoneTransform boneTransform = parent.getServerAnimationSystem().calculateBoneTransform(boneName);
 
-                // 更新精确碰撞箱集群
-                List<HitboxPart> cluster = preciseHitboxClusters.get(partName);
-                if (cluster != null) {
-                    List<GeometryModel.Cube> cubes = part.getCubes();
-                    for (int i = 0; i < cubes.size() && i < cluster.size(); i++) {
-                        GeometryModel.Cube cube = cubes.get(i);
-                        HitboxPart preciseHitbox = cluster.get(i);
+            if (boneTransform != null) {
+                // 重新计算每个立方体的世界 OBB（就像在 spawn 时做的那样）
+                List<GeometryModel.Cube> cubes = part.getCubes();
 
-                        // 变换立方体的所有顶点到世界坐标
-                        List<Vec3> worldVertices = new ArrayList<>();
-                        for (Vertex vertex : cube.getVertices()) {
-                            Vec3 worldVertex = transformVertexWithPivot(vertex, boneTransform, part.getPivot());
-                            worldVertices.add(worldVertex);
-                        }
+                for (int i = 0; i < cubes.size() && i < cluster.size(); i++) {
+                    HitboxPart hitbox = cluster.get(i);
+                    GeometryModel.Cube cube = cubes.get(i);
 
-                        // 从变换后的顶点创建OBB
-                        AABB worldOBB = createOBBFromTransformedVertices(worldVertices);
-                        Vec3 center = getAABBCenter(worldOBB);
-                        preciseHitbox.setPos(center.x, center.y, center.z);
-                        preciseHitbox.setBoundingBox(worldOBB);
+                    // 重新计算变换后的顶点和 OBB
+                    List<Vec3> worldVertices = new ArrayList<>();
+                    for (Vertex vertex : cube.getVertices()) {
+                        Vec3 worldVertex = transformVertexWithPivot(vertex, boneTransform, part.getPivot());
+                        worldVertices.add(worldVertex);
                     }
+
+                    AABB worldOBB = createOBBFromTransformedVertices(worldVertices);
+                    Vec3 center = getAABBCenter(worldOBB);
+
+                    hitbox.setPos(center.x, center.y, center.z);
+                    hitbox.setBoundingBox(worldOBB);
                 }
             }
-
-        } catch (Exception e) {
-            System.err.println("更新部位 " + " 的碰撞箱失败: " + e.getMessage());
-            e.printStackTrace();
         }
+    }
+    // 新增：更新考虑旋转的 AABB
+    private void updateHitboxAABB(HitboxPart hitbox, BoneTransform transform) {
+        // 获取原始的局部 AABB
+        AABB localAABB = hitbox.getLocalAABB();
+
+        // 修复：检查旋转是否为 null 或单位四元数
+        if (transform.rotation == null || isIdentityQuaternion(transform.rotation)) {
+            hitbox.setBoundingBox(localAABB.move(transform.position));
+            return;
+        }
+
+        // 计算考虑旋转的 AABB
+        AABB rotatedAABB = calculateRotatedAABB(localAABB, transform.rotation);
+        hitbox.setBoundingBox(rotatedAABB.move(transform.position));
+    }
+    private boolean isIdentityQuaternion(Quaternionf rotation) {
+        return rotation.x == 0 && rotation.y == 0 && rotation.z == 0 && rotation.w == 1;
+    }
+    // 计算旋转后的 AABB
+    private AABB calculateRotatedAABB(AABB aabb, Quaternionf rotation) {
+        // 获取 AABB 的 8 个顶点
+        Vec3[] vertices = getAABBVertices(aabb);
+
+        // 应用旋转到所有顶点
+        double minX = Double.MAX_VALUE, minY = Double.MAX_VALUE, minZ = Double.MAX_VALUE;
+        double maxX = Double.MIN_VALUE, maxY = Double.MIN_VALUE, maxZ = Double.MIN_VALUE;
+
+        for (Vec3 vertex : vertices) {
+            Vector3f vec = new Vector3f((float)vertex.x, (float)vertex.y, (float)vertex.z);
+            Vector3f rotated = rotation.transform(vec);
+
+            minX = Math.min(minX, rotated.x);
+            minY = Math.min(minY, rotated.y);
+            minZ = Math.min(minZ, rotated.z);
+            maxX = Math.max(maxX, rotated.x);
+            maxY = Math.max(maxY, rotated.y);
+            maxZ = Math.max(maxZ, rotated.z);
+        }
+
+        return new AABB(minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    // 获取 AABB 的 8 个顶点
+    private Vec3[] getAABBVertices(AABB aabb) {
+        return new Vec3[] {
+                new Vec3(aabb.minX, aabb.minY, aabb.minZ),
+                new Vec3(aabb.maxX, aabb.minY, aabb.minZ),
+                new Vec3(aabb.minX, aabb.maxY, aabb.minZ),
+                new Vec3(aabb.maxX, aabb.maxY, aabb.minZ),
+                new Vec3(aabb.minX, aabb.minY, aabb.maxZ),
+                new Vec3(aabb.maxX, aabb.minY, aabb.maxZ),
+                new Vec3(aabb.minX, aabb.maxY, aabb.maxZ),
+                new Vec3(aabb.maxX, aabb.maxY, aabb.maxZ)
+        };
     }
 
     // 简化的变换方法
@@ -473,26 +538,29 @@ public class BodyPartManager {
                 transform.position.z + rotatedPos.z
         );
     }
-    // 在 transformVertex 方法旁边添加这个新方法
-    private Vec3 transformVertexWithPivot(Vertex vertex, BoneTransform transform, float[] pivot) {
+    // 修正的顶点变换方法 - 先标准姿势，再应用动画旋转
+    private Vec3 transformVertexWithPivot(Vertex vertex, BoneTransform animationTransform, float[] pivot) {
         float scaleFactor = 1.0f / 16.0f;
 
-        // 1. 将顶点转换为相对于枢轴点的坐标
-        Vector3f relativeToPivot = new Vector3f(
-                (vertex.x - pivot[0]) * scaleFactor,  // 减去枢轴点X
-                (vertex.y - pivot[1]) * scaleFactor,  // 减去枢轴点Y
-                (vertex.z - pivot[2]) * scaleFactor   // 减去枢轴点Z
+        // 1. 获取顶点在标准姿势下的位置（相对于枢轴点）
+        Vector3f standardPos = new Vector3f(
+                (vertex.x - pivot[0]) * scaleFactor,
+                (vertex.y - pivot[1]) * scaleFactor,
+                (vertex.z - pivot[2]) * scaleFactor
         );
 
-        // 2. 应用缩放和旋转（现在绕枢轴点旋转）
-        relativeToPivot.mul(transform.scale);
-        Vector3f rotatedPos = transform.rotation.transform(relativeToPivot);
+        // 2. 应用动画旋转（但不应用动画位置）
+        Vector3f rotatedPos = animationTransform.rotation.transform(standardPos);
 
-        // 3. 转换回世界坐标，加上枢轴点的偏移
+        // 3. 应用缩放
+        rotatedPos.mul(animationTransform.scale);
+
+        // 4. 加上标准姿势的枢轴点位置（已转换为世界坐标）
+        // 5. 最后加上实体位置
         return new Vec3(
-                transform.position.x + rotatedPos.x + pivot[0] * scaleFactor,
-                transform.position.y + rotatedPos.y + pivot[1] * scaleFactor,
-                transform.position.z + rotatedPos.z + pivot[2] * scaleFactor
+                animationTransform.position.x + rotatedPos.x + pivot[0] * scaleFactor,
+                animationTransform.position.y + rotatedPos.y + pivot[1] * scaleFactor,
+                animationTransform.position.z + rotatedPos.z + pivot[2] * scaleFactor
         );
     }
     private AABB createOBBFromTransformedVertices(List<Vec3> worldVertices) {
@@ -672,28 +740,5 @@ public class BodyPartManager {
             HitboxSyncPacket packet = new HitboxSyncPacket(parent.getId(), hitboxDataList);
             NetworkHandler.sendToAllTracking(packet, parent);
         }
-    }
-    // 新增：使用枢轴点的顶点变换方法
-    private Vec3 transformVertexWithPivot(Vertex vertex, BoneTransform transform, GeometryModel.Bone bone) {
-        float scaleFactor = 1.0f / 16.0f;
-        float[] pivot = bone.pivot;
-
-        // 1. 将顶点转换为相对于枢轴点的局部坐标
-        Vector3f relativeToPivot = new Vector3f(
-                (vertex.x - pivot[0]) * scaleFactor,
-                (vertex.y - pivot[1]) * scaleFactor,
-                (vertex.z - pivot[2]) * scaleFactor
-        );
-
-        // 2. 应用缩放和旋转（现在绕枢轴点旋转）
-        relativeToPivot.mul(transform.scale);
-        Vector3f rotatedPos = transform.rotation.transform(relativeToPivot);
-
-        // 3. 转换回世界坐标，包括枢轴点的偏移
-        return new Vec3(
-                transform.position.x + rotatedPos.x + pivot[0] * scaleFactor,
-                transform.position.y + rotatedPos.y + pivot[1] * scaleFactor,
-                transform.position.z + rotatedPos.z + pivot[2] * scaleFactor
-        );
     }
 }

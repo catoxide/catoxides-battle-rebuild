@@ -9,11 +9,15 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
+import org.joml.Quaternionf;
 
 public class HitboxPart extends Entity {
     private ModularZombie parent;
     private String bodyPart;
     private float damageMultiplier;
+    private Quaternionf rotation = new Quaternionf();
+    private AABB localAABB;
 
     public HitboxPart(EntityType<? extends HitboxPart> type, Level level) {
         super(type, level);
@@ -190,4 +194,21 @@ public class HitboxPart extends Entity {
             );
         }
     }
+    public void setRotation(Quaternionf rotation) {
+        this.rotation = rotation != null ? new Quaternionf(rotation) : new Quaternionf();
+    }
+
+    public Quaternionf getRotation() {
+        return new Quaternionf(rotation);
+    }
+
+    public AABB getLocalAABB() {
+        return localAABB;
+    }
+
+    public void setLocalAABB(AABB aabb) {
+        this.localAABB = aabb;
+    }
+
+
 }
