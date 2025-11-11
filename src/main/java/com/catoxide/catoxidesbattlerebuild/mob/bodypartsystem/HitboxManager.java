@@ -169,10 +169,10 @@ public class HitboxManager {
                         worldHitbox.maxX, worldHitbox.maxY, worldHitbox.maxZ
                 ));
 
-                System.out.println("同步部位: " + part.getPartName());
-                System.out.println("  位置: " + boneWorldPos);
-                System.out.println("  旋转: " + boneTransform.rotation);
-                System.out.println("  AABB: " + worldHitbox);
+//                System.out.println("同步部位: " + part.getPartName());
+//                System.out.println("  位置: " + boneWorldPos);
+//                System.out.println("  旋转: " + boneTransform.rotation);
+//                System.out.println("  AABB: " + worldHitbox);
             }
         }
 
@@ -192,23 +192,12 @@ public class HitboxManager {
 
     // 工具方法
     private Vec3 transformVertexWithPivot(Vertex vertex, BoneTransform animationTransform, float[] pivot) {
-        float scaleFactor = 1.0f / 16.0f;
-        Vector3f standardPos = new Vector3f(
-                (vertex.x - pivot[0]) * scaleFactor,
-                (vertex.y - pivot[1]) * scaleFactor,
-                (vertex.z - pivot[2]) * scaleFactor
-        );
-
-        Vector3f rotatedPos = animationTransform.rotation.transform(standardPos);
-        rotatedPos.mul(animationTransform.scale);
-
-        return new Vec3(
-                animationTransform.position.x + rotatedPos.x + pivot[0] * scaleFactor,
-                animationTransform.position.y + rotatedPos.y + pivot[1] * scaleFactor,
-                animationTransform.position.z + rotatedPos.z + pivot[2] * scaleFactor
-        );
+        // 使用模块化变换管道
+        return parent.getBodyPartManager().getTransformPipeline()
+                .transformVertex(vertex, animationTransform, pivot);
     }
 
+    // 删除旧的 transformCubeVertices 方法，使用新的模块化方法
     private List<Vec3> transformCubeVertices(GeometryModel.Cube cube, BoneTransform transform, float[] pivot) {
         List<Vec3> worldVertices = new ArrayList<>();
         for (Vertex vertex : cube.getVertices()) {

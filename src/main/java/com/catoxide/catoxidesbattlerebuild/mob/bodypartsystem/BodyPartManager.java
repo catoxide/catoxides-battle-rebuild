@@ -1,6 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
 
 import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
+import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.debug.EnhancedDebugManager;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -11,28 +12,29 @@ public class BodyPartManager {
     private final ModularZombie parent;
     private final Map<String, BodyPart> bodyParts = new HashMap<>();
 
-    // 模块化组件
+    // 新的模块化组件
     private final GeometryModel geometryModel;
     private final HitboxManager hitboxManager;
-    private final ModelRotationManager rotationManager;
-    private final WorldCoordinateTransformer coordinateTransformer;
-
-    // 客户端状态跟踪
-    private final Map<String, Long> recentlyHitParts = new HashMap<>();
-    private final Map<String, Boolean> destroyedParts = new HashMap<>();
+    private final ModularTransformPipeline transformPipeline; // 新增：替换旧的变换管理器
 
     public BodyPartManager(ModularZombie parent) {
         this.parent = parent;
 
-        // 初始化模块化组件
+        // 新的初始化 - 更简洁
         this.geometryModel = new GeometryModel(getGeoJsonContent());
         this.hitboxManager = new HitboxManager(parent, this);
-        this.rotationManager = new ModelRotationManager();
-        this.coordinateTransformer = new WorldCoordinateTransformer(parent);
+        this.transformPipeline = new ModularTransformPipeline(); // 新增
+
+        // 初始化调试系统
+        EnhancedDebugManager.initialize(transformPipeline);
 
         initBodyPartsFromGeometry();
     }
 
+    // 提供变换管道的访问方法
+    public ModularTransformPipeline getTransformPipeline() {
+        return transformPipeline;
+    }
     // 从几何模型初始化身体部位
     private void initBodyPartsFromGeometry() {
         Map<String, String> boneMapping = new HashMap<>();
@@ -53,7 +55,7 @@ public class BodyPartManager {
                 float health = getHealthForPart(partName);
                 float damageMultiplier = getDamageMultiplierForPart(partName);
 
-                bodyParts.put(partName, new BodyPart(partName, boneName, cubes, health, damageMultiplier, false, bone.pivot));
+                bodyParts.put(partName, new BodyPart(this,partName, boneName, cubes, health, damageMultiplier, false, bone.pivot));
             }
         }
     }
@@ -95,42 +97,6 @@ public class BodyPartManager {
 
     public List<HitboxPart> getPreciseHitboxCluster(String partName) {
         return hitboxManager.getPreciseHitboxCluster(partName);
-    }
-
-    // 旋转管理
-    public ModelRotationManager getRotationManager() {
-        return rotationManager;
-    }
-
-    // 坐标变换
-    public WorldCoordinateTransformer getCoordinateTransformer() {
-        return coordinateTransformer;
-    }
-
-    // 客户端状态管理
-    public void markPartAsRecentlyHit(String partName) {
-        recentlyHitParts.put(partName, System.currentTimeMillis());
-    }
-
-    public boolean isPartRecentlyHit(String partName) {
-        Long hitTime = recentlyHitParts.get(partName);
-        if (hitTime == null) return false;
-        return System.currentTimeMillis() - hitTime < 1000;
-    }
-
-    public void markPartAsDestroyed(String partName) {
-        destroyedParts.put(partName, true);
-        ////hitboxManager.onPartDestroyed(partName);
-    }
-
-    public boolean isPartDestroyed(String partName) {
-        return destroyedParts.getOrDefault(partName, false);
-    }
-
-    public void cleanupHitStates() {
-        long currentTime = System.currentTimeMillis();
-        recentlyHitParts.entrySet().removeIf(entry ->
-                currentTime - entry.getValue() > 1000);
     }
 
     // 工具方法
@@ -208,13 +174,37 @@ public class BodyPartManager {
             return content.toString();
         }
     }
+    // 新增调试方法
+    public void enableDebugMode() {
+        EnhancedDebugManager.enableAllTransforms();
+    }
 
-    // 调试信息
+    public void skipPositionTransforms() {
+        EnhancedDebugManager.skipPositionOnly();
+    }
+
+    public void skipRotationTransforms() {
+        EnhancedDebugManager.skipRotationOnly();
+    }
+
+    public void skipPivotTransforms() {
+        EnhancedDebugManager.skipPivotOnly();
+    }
+
+    public void skipAllTransforms() {
+        EnhancedDebugManager.skipAllTransforms();
+    }
+
+    public String getTransformDebugInfo() {
+        return EnhancedDebugManager.getPipelineStatus();
+    }
+
+    // 在现有的调试信息中添加变换状态
     public String getDebugInfo() {
         StringBuilder sb = new StringBuilder();
         sb.append("Body Parts: ").append(bodyParts.size()).append("\n");
         sb.append("Geometry Bones: ").append(geometryModel.bones.size()).append("\n");
-        ////sb.append("Hitbox Manager: ").append(hitboxManager.getDebugInfo()).append("\n");
+        sb.append("Transform Pipeline:\n").append(getTransformDebugInfo()).append("\n"); // 新增
 
         for (Map.Entry<String, BodyPart> entry : bodyParts.entrySet()) {
             BodyPart part = entry.getValue();

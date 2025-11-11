@@ -1,4 +1,4 @@
-// SkipSystem.java
+// SkipSystem.java - 增强版
 package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.debug;
 
 import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.BoneTransform;
@@ -11,52 +11,125 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 轻量级跳过系统 - 用于调试变换问题
+ * 增强版跳过系统 - 集成所有变换跳过逻辑
  */
 public class SkipSystem {
-    // 使用位标志来最小化内存开销
+    // 跳过标志位
     private static final int SKIP_POSITION = 1;
     private static final int SKIP_ROTATION = 2;
     private static final int SKIP_SCALE = 4;
     private static final int SKIP_PIVOT = 8;
     private static final int SKIP_ANIMATION = 16;
 
-    private int skipFlags = 0; // 所有位都为0表示不跳过任何步骤
-
-    // 启用/禁用整个跳过系统
+    private int skipFlags = 0;
     private boolean enabled = false;
 
-    public SkipSystem() {}
+    // === 核心跳过逻辑 ===
 
     /**
-     * 启用或禁用跳过系统
+     * 应用跳过系统到骨骼变换
      */
-    public void setEnabled(boolean enabled) {
-        this.enabled = enabled;
-        System.out.println("跳过系统 " + (enabled ? "启用" : "禁用"));
-    }
-
-    public boolean isEnabled() {
-        return enabled;
-    }
-
-    /**
-     * 设置跳过标志
-     */
-    public void setSkip(int flag, boolean skip) {
-        if (skip) {
-            skipFlags |= flag;
-        } else {
-            skipFlags &= ~flag;
+    public BoneTransform applyToBoneTransform(BoneTransform originalTransform) {
+        if (!enabled || !shouldSkip(SKIP_ANIMATION)) {
+            return originalTransform;
         }
+        return new BoneTransform(Vec3.ZERO, new Quaternionf(), new Vector3f(1, 1, 1));
     }
 
     /**
-     * 检查是否跳过某个步骤
+     * 应用跳过系统到顶点变换
      */
-    public boolean shouldSkip(int flag) {
-        return enabled && (skipFlags & flag) != 0;
+    public Vec3 applyToVertex(Vertex vertex, BoneTransform transform, float[] pivot) {
+        if (!enabled) {
+            return transformVertexStandard(vertex, transform, pivot);
+        }
+        return transformVertexWithSkips(vertex, transform, pivot);
     }
+
+    /**
+     * 带跳过的顶点变换
+     */
+    private Vec3 transformVertexWithSkips(Vertex vertex, BoneTransform transform, float[] pivot) {
+        float scaleFactor = 1.0f / 16.0f;
+        Vector3f pos = new Vector3f(vertex.x * scaleFactor, vertex.y * scaleFactor, vertex.z * scaleFactor);
+
+        // 应用跳过逻辑
+        if (!shouldSkip(SKIP_PIVOT)) {
+            pos = new Vector3f(
+                    (vertex.x - pivot[0]) * scaleFactor,
+                    (vertex.y - pivot[1]) * scaleFactor,
+                    (vertex.z - pivot[2]) * scaleFactor
+            );
+        }
+
+        if (!shouldSkip(SKIP_ROTATION)) {
+            pos = transform.rotation.transform(pos);
+        }
+        if (!shouldSkip(SKIP_SCALE)) {
+            pos.mul(transform.scale);
+        }
+
+        double x = pos.x, y = pos.y, z = pos.z;
+
+        if (!shouldSkip(SKIP_POSITION)) {
+            x += transform.position.x;
+            y += transform.position.y;
+            z += transform.position.z;
+        }
+
+        if (!shouldSkip(SKIP_PIVOT)) {
+            x += pivot[0] * scaleFactor;
+            y += pivot[1] * scaleFactor;
+            z += pivot[2] * scaleFactor;
+        }
+
+        return new Vec3(x, y, z);
+    }
+
+    /**
+     * 标准顶点变换（无跳过）
+     */
+    private Vec3 transformVertexStandard(Vertex vertex, BoneTransform transform, float[] pivot) {
+        float scaleFactor = 1.0f / 16.0f;
+        Vector3f standardPos = new Vector3f(
+                (vertex.x - pivot[0]) * scaleFactor,
+                (vertex.y - pivot[1]) * scaleFactor,
+                (vertex.z - pivot[2]) * scaleFactor
+        );
+
+        Vector3f rotatedPos = transform.rotation.transform(standardPos);
+        rotatedPos.mul(transform.scale);
+
+        return new Vec3(
+                transform.position.x + rotatedPos.x + pivot[0] * scaleFactor,
+                transform.position.y + rotatedPos.y + pivot[1] * scaleFactor,
+                transform.position.z + rotatedPos.z + pivot[2] * scaleFactor
+        );
+    }
+
+    // === 便捷变换方法 ===
+
+    /**
+     * 快速顶点变换（带跳过检查）
+     */
+    public Vec3 quickTransform(Vertex vertex, BoneTransform transform, float[] pivot) {
+        return applyToVertex(vertex, transform, pivot);
+    }
+
+    /**
+     * 快速骨骼变换（带跳过检查）
+     */
+    public BoneTransform quickTransform(BoneTransform transform) {
+        return applyToBoneTransform(transform);
+    }
+
+    // === 原有控制方法保持不变 ===
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public boolean isEnabled() { return enabled; }
+    public void setSkip(int flag, boolean skip) {
+        if (skip) skipFlags |= flag; else skipFlags &= ~flag;
+    }
+    public boolean shouldSkip(int flag) { return enabled && (skipFlags & flag) != 0; }
 
     // 便捷方法
     public void skipPosition(boolean skip) { setSkip(SKIP_POSITION, skip); }
@@ -64,119 +137,8 @@ public class SkipSystem {
     public void skipScale(boolean skip) { setSkip(SKIP_SCALE, skip); }
     public void skipPivot(boolean skip) { setSkip(SKIP_PIVOT, skip); }
     public void skipAnimation(boolean skip) { setSkip(SKIP_ANIMATION, skip); }
+    public void reset() { skipFlags = 0; }
 
-    /**
-     * 应用跳过系统到骨骼变换
-     */
-    public BoneTransform applySkips(BoneTransform originalTransform) {
-        if (!enabled || !shouldSkip(SKIP_ANIMATION)) {
-            return originalTransform;
-        }
-
-        // 跳过动画：返回单位变换
-        return new BoneTransform(
-                Vec3.ZERO,
-                new Quaternionf(),
-                new Vector3f(1, 1, 1)
-        );
-    }
-
-    /**
-     * 在顶点变换中应用跳过
-     */
-    public Vec3 applySkipsToVertex(Vertex vertex, BoneTransform transform, float[] pivot) {
-        if (!enabled) {
-            // 系统未启用，执行标准变换
-            return transformVertexStandard(vertex, transform, pivot);
-        }
-
-        float scaleFactor = 1.0f / 16.0f;
-
-        // 如果跳过枢轴点变换，直接使用原始顶点
-        if (shouldSkip(SKIP_PIVOT)) {
-            Vector3f pos = new Vector3f(
-                    vertex.x * scaleFactor,
-                    vertex.y * scaleFactor,
-                    vertex.z * scaleFactor
-            );
-
-            // 应用变换（考虑跳过）
-            if (!shouldSkip(SKIP_ROTATION)) {
-                pos = transform.rotation.transform(pos);
-            }
-            if (!shouldSkip(SKIP_SCALE)) {
-                pos.mul(transform.scale);
-            }
-
-            double x = pos.x;
-            double y = pos.y;
-            double z = pos.z;
-
-            if (!shouldSkip(SKIP_POSITION)) {
-                x += transform.position.x;
-                y += transform.position.y;
-                z += transform.position.z;
-            }
-
-            return new Vec3(x, y, z);
-        }
-
-        // 标准变换流程
-        return transformVertexStandard(vertex, transform, pivot);
-    }
-
-    /**
-     * 标准顶点变换（考虑跳过标志）
-     */
-    private Vec3 transformVertexStandard(Vertex vertex, BoneTransform transform, float[] pivot) {
-        float scaleFactor = 1.0f / 16.0f;
-
-        Vector3f standardPos = new Vector3f(
-                (vertex.x - pivot[0]) * scaleFactor,
-                (vertex.y - pivot[1]) * scaleFactor,
-                (vertex.z - pivot[2]) * scaleFactor
-        );
-
-        // 应用变换（考虑跳过）
-        Vector3f transformedPos = standardPos;
-
-        if (!shouldSkip(SKIP_ROTATION)) {
-            transformedPos = transform.rotation.transform(transformedPos);
-        }
-        if (!shouldSkip(SKIP_SCALE)) {
-            transformedPos.mul(transform.scale);
-        }
-
-        double finalX = transformedPos.x;
-        double finalY = transformedPos.y;
-        double finalZ = transformedPos.z;
-
-        if (!shouldSkip(SKIP_POSITION)) {
-            finalX += transform.position.x;
-            finalY += transform.position.y;
-            finalZ += transform.position.z;
-        }
-
-        if (!shouldSkip(SKIP_PIVOT)) {
-            finalX += pivot[0] * scaleFactor;
-            finalY += pivot[1] * scaleFactor;
-            finalZ += pivot[2] * scaleFactor;
-        }
-
-        return new Vec3(finalX, finalY, finalZ);
-    }
-
-    /**
-     * 重置所有跳过设置
-     */
-    public void reset() {
-        skipFlags = 0;
-        System.out.println("跳过系统已重置");
-    }
-
-    /**
-     * 获取调试信息
-     */
     public String getDebugInfo() {
         if (!enabled) {
             return "跳过系统: 禁用";

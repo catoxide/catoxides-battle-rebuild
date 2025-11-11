@@ -35,7 +35,7 @@ public class PartHitPacket {
             ModularZombie zombie = (ModularZombie) entity;
 
             // 更新客户端的视觉效果
-            zombie.getBodyPartManager().markPartAsRecentlyHit(partName);
+//TODO            zombie.getBodyPartManager().markPartAsRecentlyHit(partName);
 
             // 显示粒子效果或声音
             spawnHitParticles(zombie, partName);

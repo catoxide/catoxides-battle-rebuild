@@ -399,5 +399,29 @@ public class ModularZombie extends Zombie implements GeoEntity {
     public ServerAnimationSystem getServerAnimationSystem() {
         return serverAnimationSystem;
     }
+    public void handleDebugCommand(String command) {
+        BodyPartManager manager = getBodyPartManager();
+        if (manager == null) return;
 
+        switch (command.toLowerCase()) {
+            case "debug_position":
+                manager.skipPositionTransforms();
+                break;
+            case "debug_rotation":
+                manager.skipRotationTransforms();
+                break;
+            case "debug_pivot":
+                manager.skipPivotTransforms();
+                break;
+            case "debug_all":
+                manager.skipAllTransforms();
+                break;
+            case "debug_enable":
+                manager.enableDebugMode();
+                break;
+            case "debug_status":
+                System.out.println(manager.getTransformDebugInfo());
+                break;
+        }
+    }
 }

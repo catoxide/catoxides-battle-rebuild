@@ -1,5 +1,8 @@
 package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
 
+import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.debug.DebugManager;
+import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.debug.EnhancedDebugManager;
+import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.debug.SkipSystem;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
@@ -7,11 +10,12 @@ import org.joml.Vector3f;
 import java.util.ArrayList;
 import java.util.List;
 
+
 public class BodyPart {
     private final String partName;
     private final String boneName;
-    private final List<GeometryModel.Cube> cubes; // 改为存储立方体数据
-    private AABB baseHitbox; // 缓存的基础碰撞箱
+    private final List<GeometryModel.Cube> cubes;
+    private AABB baseHitbox;
 
     // 模块类型属性
     private final PartType partType;
@@ -22,17 +26,27 @@ public class BodyPart {
     private final float maxHealth;
     private final float[] pivot;
 
-    // 伤害倍率属性（所有模块都有）
+    // 伤害倍率属性
     private final float damageMultiplierToMain;
 
+    // 新增：bodyPartManager 字段声明
+    private BodyPartManager bodyPartManager;
+
     public enum PartType {
-        DESTRUCTIBLE,    // 可破坏模块（有独立血量）
-        INDESTRUCTIBLE   // 不可破坏模块（无独立血量）
+        DESTRUCTIBLE,
+        INDESTRUCTIBLE
     }
 
-    // 可破坏模块构造器（使用立方体）
-    public BodyPart(String partName, String boneName, List<GeometryModel.Cube> cubes,
-                    float maxHealth, float damageMultiplierToMain, boolean lethalWhenDestroyed,float[] pivot) {
+    // 移除静态初始化块，因为它使用了实例字段
+    // static {
+    //     // 初始化调试管理器
+    //     EnhancedDebugManager.initialize(transformPipeline);
+    // }
+
+    // 可破坏模块构造器
+    public BodyPart(BodyPartManager manager, String partName, String boneName, List<GeometryModel.Cube> cubes,
+                    float maxHealth, float damageMultiplierToMain, boolean lethalWhenDestroyed, float[] pivot) {
+        this.bodyPartManager = manager;  // 初始化 bodyPartManager
         this.partName = partName;
         this.boneName = boneName;
         this.cubes = cubes;
@@ -45,9 +59,10 @@ public class BodyPart {
         this.pivot = pivot;
     }
 
-    // 不可破坏模块构造器（使用立方体）
-    public BodyPart(String partName, String boneName, List<GeometryModel.Cube> cubes,
+    // 不可破坏模块构造器 - 也需要 BodyPartManager 参数
+    public BodyPart(BodyPartManager manager, String partName, String boneName, List<GeometryModel.Cube> cubes,
                     float damageMultiplierToMain, float[] pivot) {
+        this.bodyPartManager = manager;  // 初始化 bodyPartManager
         this.partName = partName;
         this.boneName = boneName;
         this.cubes = cubes;
@@ -59,6 +74,22 @@ public class BodyPart {
         this.lethalWhenDestroyed = false;
         this.pivot = pivot;
     }
+
+    // 修改变换方法 - 使用单例模式简化
+    private List<Vec3> transformCubeVertices(GeometryModel.Cube cube, BoneTransform transform) {
+        List<Vec3> worldVertices = new ArrayList<>();
+
+        // 直接使用单例模式，避免复杂的依赖关系
+        ModularTransformPipeline pipeline = ModularTransformPipeline.getInstance();
+
+        for (Vertex vertex : cube.getVertices()) {
+            Vec3 worldVertex = pipeline.transformVertex(vertex, transform, this.pivot);
+            worldVertices.add(worldVertex);
+        }
+
+        return worldVertices;
+    }
+
 
     // 设置致命性
     public void setLethalWhenDestroyed(boolean lethalWhenDestroyed) {
@@ -122,38 +153,6 @@ public class BodyPart {
             transformedHitboxes.add(createOBBFromVertices(worldVertices));
         }
         return transformedHitboxes;
-    }
-
-    // 变换立方体顶点到世界坐标（新增方法）
-    private List<Vec3> transformCubeVertices(GeometryModel.Cube cube, BoneTransform transform) {
-        List<Vec3> worldVertices = new ArrayList<>();
-        float scaleFactor = 1.0f / 16.0f;
-
-        for (Vertex vertex : cube.getVertices()) {
-            // 将模型坐标转换为世界坐标
-            Vector3f localPos = new Vector3f(
-                    vertex.x * scaleFactor,
-                    vertex.y * scaleFactor,
-                    vertex.z * scaleFactor
-            );
-
-            // 应用缩放
-            localPos.mul(transform.scale);
-
-            // 应用旋转
-            Vector3f rotatedPos = transform.rotation.transform(localPos);
-
-            // 应用位置偏移
-            Vec3 worldVertex = new Vec3(
-                    transform.position.x + rotatedPos.x,
-                    transform.position.y + rotatedPos.y,
-                    transform.position.z + rotatedPos.z
-            );
-
-            worldVertices.add(worldVertex);
-        }
-
-        return worldVertices;
     }
 
     // 从顶点创建OBB（新增方法）

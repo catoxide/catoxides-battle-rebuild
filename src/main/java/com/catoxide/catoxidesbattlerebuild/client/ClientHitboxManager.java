@@ -19,14 +19,14 @@ public class ClientHitboxManager {
         clientHitboxData.put(packet.getParentId(), packet.getHitboxDataList());
 
         // 调试输出
-        System.out.println("客户端收到碰撞箱同步数据 - 父实体ID: " + packet.getParentId() +
-                ", 碰撞箱数量: " + packet.getHitboxDataList().size());
-
-        for (HitboxSyncPacket.HitboxData data : packet.getHitboxDataList()) {
-            System.out.println("  部位: " + data.partName +
-                    ", 位置: " + data.position +
-                    ", AABB: " + new AABB(data.minX, data.minY, data.minZ, data.maxX, data.maxY, data.maxZ));
-        }
+//        System.out.println("客户端收到碰撞箱同步数据 - 父实体ID: " + packet.getParentId() +
+//                ", 碰撞箱数量: " + packet.getHitboxDataList().size());
+//
+//        for (HitboxSyncPacket.HitboxData data : packet.getHitboxDataList()) {
+//            System.out.println("  部位: " + data.partName +
+//                    ", 位置: " + data.position +
+//                    ", AABB: " + new AABB(data.minX, data.minY, data.minZ, data.maxX, data.maxY, data.maxZ));
+//        }
     }
 
     public static List<HitboxSyncPacket.HitboxData> getHitboxDataForParent(int parentId) {

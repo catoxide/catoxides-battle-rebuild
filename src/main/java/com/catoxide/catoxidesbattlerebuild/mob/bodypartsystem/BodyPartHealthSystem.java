@@ -113,7 +113,8 @@ public class BodyPartHealthSystem {
     private void syncPartDestroyedState(String partName) {
         // 这里可以实现网络同步逻辑
         // 例如发送数据包通知客户端该部位已被摧毁
-        partManager.markPartAsDestroyed(partName);
+//TODO        partManager.markPartAsDestroyed(partName);
+
     }
 
     // 检查是否所有部位都被摧毁

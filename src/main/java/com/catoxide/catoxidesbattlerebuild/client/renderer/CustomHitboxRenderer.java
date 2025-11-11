@@ -70,7 +70,7 @@ public class CustomHitboxRenderer {
             return;
         }
 
-        System.out.println("渲染 " + parentIds.size() + " 个父实体的碰撞箱");
+    //    System.out.println("渲染 " + parentIds.size() + " 个父实体的碰撞箱");
 
         // 从客户端管理器获取所有碰撞箱数据并渲染
         for (Integer parentId : parentIds) {
