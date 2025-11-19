@@ -53,4 +53,7 @@ public class BoneTransform {
         // 将四元数转换为欧拉角
         return rotation.getEulerAnglesXYZ(new Vector3f());
     }
+//    public void setEntityRotation(float yaw, float pitch, float roll) {
+//        this.entityRotation.rotationYXZ(yaw, pitch, roll);
+//    }
 }

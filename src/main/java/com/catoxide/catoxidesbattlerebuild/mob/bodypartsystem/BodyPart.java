@@ -1,6 +1,5 @@
 package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
 
-import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.debug.DebugManager;
 import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.debug.EnhancedDebugManager;
 import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.debug.SkipSystem;
 import net.minecraft.world.phys.AABB;

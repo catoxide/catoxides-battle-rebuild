@@ -17,10 +17,11 @@ public class ModularTransformPipeline {
 
     // 构造函数
     public ModularTransformPipeline() {
-        modules.add(new PivotModule());      // 第一步：处理枢轴点偏移
-        modules.add(new ScaleModule());      // 第二步：应用缩放
-        modules.add(new RotationModule());   // 第三步：应用旋转
-        modules.add(new PositionModule());   // 第四步：应用位置
+        modules.add(new EntityRotationModule()); // 第一步：应用生物整体旋转
+        modules.add(new ScaleModule());          // 第二步：缩放
+        modules.add(new PivotModule());          // 第三步：枢轴点变换
+        modules.add(new LocalRotationModule());  // 第四步：局部动画旋转
+        modules.add(new PositionModule());       // 第五步：位置
     }
 
     /**

@@ -19,9 +19,7 @@ public class ScaleModule extends TransformModule {
                 (float) context.currentPosition.z
         );
 
-        // 应用骨骼缩放
         pos.mul(context.boneTransform.scale);
-
         return new Vec3(pos.x, pos.y, pos.z);
     }
 }

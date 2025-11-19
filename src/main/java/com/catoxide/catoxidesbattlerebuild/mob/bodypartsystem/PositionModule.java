@@ -1,9 +1,8 @@
-// PositionModule.java - 位置变换模块
+// PositionModule.java - 修复后的版本
 package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
 
 import net.minecraft.world.phys.Vec3;
 
-// 修复 PositionModule.java
 public class PositionModule extends TransformModule {
     private static final float SCALE_FACTOR = 1.0f / 16.0f;
 
@@ -16,14 +15,25 @@ public class PositionModule extends TransformModule {
         Vec3 result = context.currentPosition;
 
         if (enabled) {
-            // 应用骨骼位置
-            result = result.add(context.boneTransform.position);
-
-            // 重新添加枢轴点位置（在世界坐标中）
+            // 1. 添加回枢轴点位置
             result = result.add(
-                    context.pivot[0] * SCALE_FACTOR,
-                    context.pivot[1] * SCALE_FACTOR,
-                    context.pivot[2] * SCALE_FACTOR
+                    context.pivot[0],
+                    context.pivot[1],
+                    context.pivot[2]
+            );
+
+            // 2. 添加骨骼位置偏移
+            result = result.add(
+                    context.boneTransform.position.x,
+                    context.boneTransform.position.y,
+                    context.boneTransform.position.z
+            );
+
+            // 3. 转换为世界坐标
+            result = new Vec3(
+                    result.x * SCALE_FACTOR,
+                    result.y * SCALE_FACTOR,
+                    result.z * SCALE_FACTOR
             );
         }
 

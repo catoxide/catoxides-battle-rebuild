@@ -3,7 +3,6 @@ package com.catoxide.catoxidesbattlerebuild.command;
 
 import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.HitboxPart;
 import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
-import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.debug.DebugManager;
 import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.debug.EnhancedDebugManager;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
