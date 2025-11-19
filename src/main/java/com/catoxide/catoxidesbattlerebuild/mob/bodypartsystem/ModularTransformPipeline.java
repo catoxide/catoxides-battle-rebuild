@@ -15,13 +15,12 @@ public class ModularTransformPipeline {
     private final List<TransformModule> modules = new ArrayList<>();
     private boolean pipelineEnabled = true;
 
-    // 构造函数
     public ModularTransformPipeline() {
-        modules.add(new EntityRotationModule()); // 第一步：应用生物整体旋转
-        modules.add(new ScaleModule());          // 第二步：缩放
-        modules.add(new PivotModule());          // 第三步：枢轴点变换
-        modules.add(new LocalRotationModule());  // 第四步：局部动画旋转
-        modules.add(new PositionModule());       // 第五步：位置
+        // 使用新的变换顺序
+        modules.add(new ScaleModule());      // 第一步：缩放
+        modules.add(new PivotModule());      // 第二步：枢轴点平移
+        modules.add(new BoneRotationModule());   // 第三步：旋转（骨骼动画 + 实体旋转）
+        modules.add(new PositionModule());   // 第四步：位置和坐标转换
     }
 
     /**
@@ -125,15 +124,13 @@ public class ModularTransformPipeline {
     /**
      * 执行完整的变换管道
      */
-    public Vec3 transformVertex(Vertex vertex, BoneTransform boneTransform, float[] pivot) {
+    public Vec3 transformVertex(Vertex vertex, BoneTransform transform, float[] pivot) {
         if (!pipelineEnabled) {
-            // 如果管道禁用，返回原始位置
             return new Vec3(vertex.x / 16.0, vertex.y / 16.0, vertex.z / 16.0);
         }
 
-        TransformContext context = new TransformContext(vertex, boneTransform, pivot);
+        TransformContext context = new TransformContext(vertex, transform, pivot);
 
-        // 按顺序执行所有模块
         for (TransformModule module : modules) {
             if (module.isEnabled()) {
                 context.currentPosition = module.process(context);

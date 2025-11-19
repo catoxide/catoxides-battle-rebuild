@@ -26,7 +26,10 @@ public class BoneRotationManager {
                 .getBoneTransform(boneName);
 
         // 应用额外旋转
-        return applyAdditionalRotation(boneName, animationTransform);
+        BoneTransform finalTransform = applyAdditionalRotation(boneName, animationTransform);
+
+        // 创建包含实体旋转的变换
+        return BoneTransform.fromEntity(parent, finalTransform.rotation, finalTransform.position);
     }
 
     /**
@@ -100,14 +103,13 @@ public class BoneRotationManager {
      * 更新所有骨骼变换（每tick调用）
      */
     public void updateBoneTransforms() {
-        // 可以在这里处理旋转的插值、缓动等
         boneTransforms.clear();
 
         for (String boneName : getCollisionBones()) {
+            // 使用包含实体旋转的变换
             boneTransforms.put(boneName, getBoneTransform(boneName));
         }
     }
-
     private java.util.List<String> getCollisionBones() {
         return java.util.Arrays.asList("head", "body", "left_arm", "right_arm", "left_leg", "right_leg");
     }

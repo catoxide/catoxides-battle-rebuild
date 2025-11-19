@@ -1,5 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
 
+import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 import org.joml.Quaternionf;
@@ -8,19 +9,40 @@ public class BoneTransform {
     public final Vec3 position;
     public final Quaternionf rotation;
     public final Vector3f scale;
+    public final Quaternionf entityRotation;
 
-    public BoneTransform(Vec3 position, Quaternionf rotation, Vector3f scale) {
+    public BoneTransform(Vec3 position, Quaternionf rotation, Vector3f scale,Quaternionf entityRotation) {
         this.position = position;
         this.rotation = rotation;
         this.scale = scale;
+        this.entityRotation = entityRotation != null ? entityRotation : new Quaternionf();
+    }
+
+    public BoneTransform(Vec3 position, Quaternionf rotation, Vector3f scale) {
+        this(position, rotation, scale, new Quaternionf());
     }
 
     public BoneTransform(Vec3 position, Quaternionf rotation) {
-        this(position, rotation, new Vector3f(1, 1, 1));
+        this(position, rotation, new Vector3f(1, 1, 1), new Quaternionf());
     }
 
     public BoneTransform(Vec3 position) {
-        this(position, new Quaternionf(), new Vector3f(1, 1, 1));
+        this(position, new Quaternionf(), new Vector3f(1, 1, 1), new Quaternionf());
+    }
+    public static BoneTransform withEntityRotation(Vec3 position, Quaternionf rotation, Quaternionf entityRotation) {
+        return new BoneTransform(position, rotation, new Vector3f(1, 1, 1), entityRotation);
+    }
+    public static BoneTransform fromEntity(ModularZombie entity, Quaternionf boneRotation, Vec3 bonePosition) {
+        Quaternionf entityRotation = createEntityRotation(entity);
+        return new BoneTransform(bonePosition, boneRotation, new Vector3f(1, 1, 1), entityRotation);
+    }
+
+    // 创建实体旋转四元数
+    private static Quaternionf createEntityRotation(ModularZombie entity) {
+        Quaternionf rotation = new Quaternionf();
+        float yawRad = (float) Math.toRadians(-entity.getYRot());
+        rotation.rotationY(yawRad);
+        return rotation;
     }
 
     // 添加 IDENTITY 常量

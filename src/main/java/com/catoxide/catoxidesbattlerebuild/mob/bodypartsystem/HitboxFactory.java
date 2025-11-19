@@ -32,8 +32,7 @@ public class HitboxFactory {
 
     private HitboxPart createSingleHitbox(BodyPart bodyPart, GeometryModel.Cube cube, int index, BoneTransform transform) {
         try {
-            // 使用变换管道计算世界坐标
-            ModularTransformPipeline pipeline = parent.getBodyPartManager().getTransformPipeline();
+            ModularTransformPipeline pipeline = ModularTransformPipeline.getInstance();
             List<Vec3> worldVertices = new ArrayList<>();
 
             for (Vertex vertex : cube.getVertices()) {

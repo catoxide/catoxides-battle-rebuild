@@ -77,8 +77,6 @@ public class BodyPart {
     // 修改变换方法 - 使用单例模式简化
     private List<Vec3> transformCubeVertices(GeometryModel.Cube cube, BoneTransform transform) {
         List<Vec3> worldVertices = new ArrayList<>();
-
-        // 直接使用单例模式，避免复杂的依赖关系
         ModularTransformPipeline pipeline = ModularTransformPipeline.getInstance();
 
         for (Vertex vertex : cube.getVertices()) {

@@ -23,11 +23,7 @@ public class PositionModule extends TransformModule {
             );
 
             // 2. 添加骨骼位置偏移
-            result = result.add(
-                    context.boneTransform.position.x,
-                    context.boneTransform.position.y,
-                    context.boneTransform.position.z
-            );
+            result = result.add(context.transform.position);
 
             // 3. 转换为世界坐标
             result = new Vec3(

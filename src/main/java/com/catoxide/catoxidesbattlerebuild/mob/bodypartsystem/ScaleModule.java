@@ -13,13 +13,13 @@ public class ScaleModule extends TransformModule {
     public Vec3 process(TransformContext context) {
         if (!enabled) return context.currentPosition;
 
-        Vector3f pos = new Vector3f(
+        org.joml.Vector3f pos = new org.joml.Vector3f(
                 (float) context.currentPosition.x,
                 (float) context.currentPosition.y,
                 (float) context.currentPosition.z
         );
 
-        pos.mul(context.boneTransform.scale);
+        pos.mul(context.transform.scale);
         return new Vec3(pos.x, pos.y, pos.z);
     }
 }
