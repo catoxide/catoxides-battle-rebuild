@@ -23,10 +23,10 @@ public class BodyPartManager {
         // 新的初始化 - 更简洁
         this.geometryModel = new GeometryModel(getGeoJsonContent());
         this.hitboxManager = new HitboxManager(parent, this);
-        this.transformPipeline = new ModularTransformPipeline(); // 新增
+        this.transformPipeline = ModularTransformPipeline.getInstance();
 
         // 初始化调试系统
-        EnhancedDebugManager.initialize(transformPipeline);
+        ModularTransformPipeline.getInstance();
 
         initBodyPartsFromGeometry();
     }
@@ -176,27 +176,27 @@ public class BodyPartManager {
     }
     // 新增调试方法
     public void enableDebugMode() {
-        EnhancedDebugManager.enableAllTransforms();
+        EnhancedDebugManager.enableAll();
     }
 
     public void skipPositionTransforms() {
-        EnhancedDebugManager.skipPositionOnly();
+        EnhancedDebugManager.skipPosition();
     }
 
     public void skipRotationTransforms() {
-        EnhancedDebugManager.skipRotationOnly();
+        EnhancedDebugManager.skipRotation();
     }
 
     public void skipPivotTransforms() {
-        EnhancedDebugManager.skipPivotOnly();
+        EnhancedDebugManager.skipPivot();
     }
 
     public void skipAllTransforms() {
-        EnhancedDebugManager.skipAllTransforms();
+        EnhancedDebugManager.skipAll();
     }
 
     public String getTransformDebugInfo() {
-        return EnhancedDebugManager.getPipelineStatus();
+        return EnhancedDebugManager.getStatus();
     }
 
     // 在现有的调试信息中添加变换状态

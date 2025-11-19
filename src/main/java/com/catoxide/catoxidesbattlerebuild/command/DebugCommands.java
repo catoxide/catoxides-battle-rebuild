@@ -10,6 +10,7 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 
@@ -60,11 +61,9 @@ public class DebugCommands {
 
                             int removedCount = 0;
                             for (HitboxPart hitbox : hitboxes) {
-                                hitbox.remove(com.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+                                hitbox.remove(Entity.RemovalReason.DISCARDED);
                                 removedCount++;
                             }
-
-                            source.sendSuccess(() -> Component.literal("已清除 " + removedCount + " 个碰撞箱实体"), true);
                             return 1;
                         })
                 )

@@ -3,6 +3,7 @@ package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
 
 import net.minecraft.world.phys.Vec3;
 
+// 修复 PositionModule.java
 public class PositionModule extends TransformModule {
     private static final float SCALE_FACTOR = 1.0f / 16.0f;
 
@@ -17,10 +18,8 @@ public class PositionModule extends TransformModule {
         if (enabled) {
             // 应用骨骼位置
             result = result.add(context.boneTransform.position);
-        }
 
-        // 重新添加枢轴点位置（如果需要）
-        if (shouldAddPivotBack()) {
+            // 重新添加枢轴点位置（在世界坐标中）
             result = result.add(
                     context.pivot[0] * SCALE_FACTOR,
                     context.pivot[1] * SCALE_FACTOR,
@@ -29,10 +28,5 @@ public class PositionModule extends TransformModule {
         }
 
         return result;
-    }
-
-    private boolean shouldAddPivotBack() {
-        // 这里可以根据需要添加逻辑来决定是否添加枢轴点
-        return true;
     }
 }

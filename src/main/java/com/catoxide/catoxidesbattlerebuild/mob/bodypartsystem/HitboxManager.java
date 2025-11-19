@@ -190,11 +190,23 @@ public class HitboxManager {
         return "Precise Hitbox Clusters: " + preciseHitboxClusters.size();
     }
 
-    // 工具方法
     private Vec3 transformVertexWithPivot(Vertex vertex, BoneTransform animationTransform, float[] pivot) {
-        // 使用模块化变换管道
-        return parent.getBodyPartManager().getTransformPipeline()
-                .transformVertex(vertex, animationTransform, pivot);
+        System.out.println("=== 变换顶点开始 ===");
+        System.out.println("输入顶点: " + vertex);
+        System.out.println("骨骼变换: pos=" + animationTransform.position +
+                ", rot=" + animationTransform.rotation);
+        System.out.println("枢轴点: " + Arrays.toString(pivot));
+
+        // 获取变换管道
+        ModularTransformPipeline pipeline = parent.getBodyPartManager().getTransformPipeline();
+        System.out.println("变换管道状态: " + pipeline.getStatusSummary());
+
+        Vec3 result = pipeline.transformVertex(vertex, animationTransform, pivot);
+
+        System.out.println("变换结果: " + result);
+        System.out.println("=== 变换顶点结束 ===");
+
+        return result;
     }
 
     // 删除旧的 transformCubeVertices 方法，使用新的模块化方法

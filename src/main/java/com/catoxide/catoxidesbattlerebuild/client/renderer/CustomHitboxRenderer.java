@@ -76,7 +76,7 @@ public class CustomHitboxRenderer {
         for (Integer parentId : parentIds) {
             List<HitboxSyncPacket.HitboxData> hitboxDataList = ClientHitboxManager.getHitboxDataForParent(parentId);
             if (hitboxDataList != null && !hitboxDataList.isEmpty()) {
-                System.out.println("父实体 " + parentId + " 有 " + hitboxDataList.size() + " 个碰撞箱");
+    //          System.out.println("父实体 " + parentId + " 有 " + hitboxDataList.size() + " 个碰撞箱");
 
                 for (HitboxSyncPacket.HitboxData data : hitboxDataList) {
                     renderHitboxData(data, poseStack, bufferSource);
