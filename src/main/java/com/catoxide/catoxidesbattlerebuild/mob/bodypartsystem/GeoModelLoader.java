@@ -61,15 +61,18 @@ public class GeoModelLoader {
 
     private static String readFromExternalFile(String path) {
         try {
+            // 移除路径开头的斜杠（如果存在），因为外部文件路径不需要
+            String cleanPath = path.startsWith("/") ? path.substring(1) : path;
+
             String[] possiblePaths = {
-                    "src/main/resources" + path,
-                    "." + path,
-                    path
+                    "src/main/resources/" + cleanPath,
+                    "./" + cleanPath,
+                    cleanPath
             };
 
             for (String filePath : possiblePaths) {
                 File file = new File(filePath);
-                if (file.exists()) {
+                if (file.exists() && file.isFile()) {
                     return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
                 }
             }
@@ -77,5 +80,19 @@ public class GeoModelLoader {
             System.err.println("外部文件读取失败: " + e.getMessage());
         }
         return null;
+    }
+
+    /**
+     * 清除缓存（用于开发时重新加载模型）
+     */
+    public static void clearCache() {
+        MODEL_CACHE.clear();
+    }
+
+    /**
+     * 清除指定路径的缓存
+     */
+    public static void clearCache(String modelPath) {
+        MODEL_CACHE.remove(modelPath);
     }
 }

@@ -334,7 +334,7 @@ public class ModularZombie extends Zombie implements GeoEntity {
             // 新增：更新精确碰撞箱位置
             bodyPartManager.updateHitboxPositions();
             serverAnimationSystem.serverTick();
-            bodyPartManager.syncHitboxesToClient();
+            bodyPartManager.syncALLToClient();
         }
 
         // 调试输出 - 每100tick输出一次

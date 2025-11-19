@@ -124,9 +124,9 @@ public class BodyPartHealthSystem {
     }
 
     // 精确射线检测
-    public String rayTracePreciseParts(net.minecraft.world.phys.Vec3 start, net.minecraft.world.phys.Vec3 end) {
-        return partManager.rayTracePreciseParts(start, end);
-    }
+//    public String rayTracePreciseParts(net.minecraft.world.phys.Vec3 start, net.minecraft.world.phys.Vec3 end) {
+//        return partManager.rayTracePreciseParts(start, end);
+//    }
 
     // 获取部位健康状态信息（用于调试或UI显示）
     public String getPartHealthInfo() {

@@ -3,9 +3,6 @@ package com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem;
 import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
 import com.catoxide.catoxidesbattlerebuild.mob.bodypartsystem.debug.EnhancedDebugManager;
 
-import java.io.*;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.*;
 
 public class BodyPartManager {
@@ -14,27 +11,34 @@ public class BodyPartManager {
 
     // 新的模块化组件
     private final GeometryModel geometryModel;
-    private final HitboxManager hitboxManager;
-    private final ModularTransformPipeline transformPipeline; // 新增：替换旧的变换管理器
+    private final ModularTransformPipeline transformPipeline;
+    private final HitboxFactory hitboxFactory;
+    private final HitboxLifecycleManager hitboxLifecycleManager;
+    private final SyncManager syncManager;
+
+    private static final ModelManager modelManager = new ModelManager();
+    private static final String MODEL_PATH = "/assets/catoxidesbattlerebuild/geo/modular_zombie.geo.json";
 
     public BodyPartManager(ModularZombie parent) {
         this.parent = parent;
-
-        // 新的初始化 - 更简洁
-        this.geometryModel = new GeometryModel(getGeoJsonContent());
-        this.hitboxManager = new HitboxManager(parent, this);
-        this.transformPipeline = ModularTransformPipeline.getInstance();
-
         // 初始化调试系统
         ModularTransformPipeline.getInstance();
+
+        // 先加载几何模型，再初始化身体部位
+        this.geometryModel = loadGeometryModel(MODEL_PATH);
+        this.hitboxFactory = new HitboxFactory(parent);
+        this.hitboxLifecycleManager = new HitboxLifecycleManager(parent);
+        this.syncManager = new SyncManager(parent, this);
+        this.transformPipeline = ModularTransformPipeline.getInstance();
 
         initBodyPartsFromGeometry();
     }
 
-    // 提供变换管道的访问方法
-    public ModularTransformPipeline getTransformPipeline() {
-        return transformPipeline;
+    // 使用ModelManager加载几何模型
+    private GeometryModel loadGeometryModel(String modelPath) {
+        return modelManager.loadModel(modelPath);
     }
+
     // 从几何模型初始化身体部位
     private void initBodyPartsFromGeometry() {
         Map<String, String> boneMapping = new HashMap<>();
@@ -55,30 +59,67 @@ public class BodyPartManager {
                 float health = getHealthForPart(partName);
                 float damageMultiplier = getDamageMultiplierForPart(partName);
 
-                bodyParts.put(partName, new BodyPart(this,partName, boneName, cubes, health, damageMultiplier, false, bone.pivot));
+                bodyParts.put(partName, new BodyPart(this, partName, boneName, cubes, health, damageMultiplier, false, bone.pivot));
             }
         }
     }
 
     // 代理方法到各个管理器
     public void spawnHitboxEntities() {
-        hitboxManager.spawnHitboxEntities();
+        System.out.println("=== 开始生成碰撞箱实体 ===");
+
+        for (BodyPart part : bodyParts.values()) {
+            try {
+                BoneTransform boneTransform = parent.getServerAnimationSystem().getBoneTransform(part.getBoneName());
+                System.out.println("生成部位: " + part.getPartName() + " | 骨骼: " + part.getBoneName());
+
+                // 使用工厂创建碰撞箱集群
+                List<HitboxPart> cluster = hitboxFactory.createHitboxCluster(part, boneTransform);
+
+                // 使用生命周期管理器注册
+                hitboxLifecycleManager.registerHitboxCluster(part.getPartName(), cluster);
+
+            } catch (Exception e) {
+                System.err.println("生成部位 " + part.getPartName() + " 的碰撞箱失败: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
     }
 
     public void updateHitboxPositions() {
-        hitboxManager.updateHitboxPositions();
+        for (BodyPart part : bodyParts.values()) {
+            if (hitboxLifecycleManager.isPartDestroyed(part.getPartName())) {
+                continue;
+            }
+
+            BoneTransform boneTransform = parent.getServerAnimationSystem().calculateBoneTransform(part.getBoneName());
+            if (boneTransform != null) {
+                // 使用工厂创建新的碰撞箱集群
+                List<HitboxPart> newCluster = hitboxFactory.createHitboxCluster(part, boneTransform);
+
+                // 更新生命周期管理器
+                hitboxLifecycleManager.updateHitboxCluster(part.getPartName(), newCluster);
+            }
+        }
     }
 
     public void discardAllHitboxes() {
-       hitboxManager.discardAllHitboxes();
+        hitboxLifecycleManager.cleanupAllHitboxes();
     }
 
-    public String rayTracePreciseParts(net.minecraft.world.phys.Vec3 start, net.minecraft.world.phys.Vec3 end) {
-        return hitboxManager.rayTracePreciseParts(start, end);
+    // 射线检测方法（TODO）
+//    public String rayTracePreciseParts(net.minecraft.world.phys.Vec3 start, net.minecraft.world.phys.Vec3 end) {
+//        return raycastService.rayTracePreciseParts(start, end);
+//    }
+
+    // 部位破坏处理方法(TODO)
+    public void onPartDestroyed(String partName) {
+        hitboxLifecycleManager.markPartAsDestroyed(partName);
+        syncManager.syncAll(); // 同步状态变化
     }
 
-    public void syncHitboxesToClient() {
-        hitboxManager.syncHitboxesToClient();
+    public void syncAllToClient() {
+        syncManager.syncAll();
     }
 
     // 几何模型相关方法
@@ -95,8 +136,14 @@ public class BodyPartManager {
         return bodyParts;
     }
 
+    // 修复：使用HitboxLifecycleManager替代不存在的hitboxManager
     public List<HitboxPart> getPreciseHitboxCluster(String partName) {
-        return hitboxManager.getPreciseHitboxCluster(partName);
+        return hitboxLifecycleManager.getHitboxCluster(partName);
+    }
+
+    // 提供变换管道的访问方法
+    public ModularTransformPipeline getTransformPipeline() {
+        return transformPipeline;
     }
 
     // 工具方法
@@ -124,56 +171,6 @@ public class BodyPartManager {
         }
     }
 
-    private String getGeoJsonContent() {
-        // 原有的文件读取逻辑
-        String classLoaderContent = readFromClassLoader();
-        if (classLoaderContent != null) return classLoaderContent;
-
-        String externalFileContent = readFromExternalFile();
-        if (externalFileContent != null) return externalFileContent;
-
-        throw new RuntimeException("无法读取geometry文件");
-    }
-
-    private String readFromClassLoader() {
-        try {
-            InputStream inputStream = getClass().getResourceAsStream("/assets/catoxidesbattlerebuild/geo/modular_zombie.geo.json");
-            if (inputStream != null) return readStream(inputStream);
-        } catch (Exception e) {
-            System.err.println("ClassLoader读取失败: " + e.getMessage());
-        }
-        return null;
-    }
-
-    private String readFromExternalFile() {
-        try {
-            String[] possiblePaths = {
-                    "src/main/resources/assets/catoxidesbattlerebuild/geometry/modular_zombie.geo.json",
-                    "assets/catoxidesbattlerebuild/geometry/modular_zombie.geo.json",
-                    "./modular_zombie.geo.json"
-            };
-            for (String path : possiblePaths) {
-                File file = new File(path);
-                if (file.exists()) {
-                    return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("外部文件读取失败: " + e.getMessage());
-        }
-        return null;
-    }
-
-    private String readStream(InputStream inputStream) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-            StringBuilder content = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                content.append(line).append("\n");
-            }
-            return content.toString();
-        }
-    }
     // 新增调试方法
     public void enableDebugMode() {
         EnhancedDebugManager.enableAll();
@@ -204,7 +201,7 @@ public class BodyPartManager {
         StringBuilder sb = new StringBuilder();
         sb.append("Body Parts: ").append(bodyParts.size()).append("\n");
         sb.append("Geometry Bones: ").append(geometryModel.bones.size()).append("\n");
-        sb.append("Transform Pipeline:\n").append(getTransformDebugInfo()).append("\n"); // 新增
+        sb.append("Transform Pipeline:\n").append(getTransformDebugInfo()).append("\n");
 
         for (Map.Entry<String, BodyPart> entry : bodyParts.entrySet()) {
             BodyPart part = entry.getValue();

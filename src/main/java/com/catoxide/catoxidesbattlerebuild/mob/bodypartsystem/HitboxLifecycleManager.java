@@ -15,13 +15,11 @@ public class HitboxLifecycleManager {
 
     public void registerHitboxCluster(String partName, List<HitboxPart> cluster) {
         activeHitboxes.put(partName, new ArrayList<>(cluster));
+        destroyedParts.remove(partName); // 注册新集群时重置破坏状态
     }
 
     public void updateHitboxCluster(String partName, List<HitboxPart> newCluster) {
-        // 清理旧的碰撞箱
         cleanupHitboxCluster(partName);
-
-        // 注册新的碰撞箱
         registerHitboxCluster(partName, newCluster);
     }
 
@@ -48,7 +46,7 @@ public class HitboxLifecycleManager {
     }
 
     public void cleanupAllHitboxes() {
-        activeHitboxes.keySet().forEach(this::cleanupHitboxCluster);
+        new ArrayList<>(activeHitboxes.keySet()).forEach(this::cleanupHitboxCluster);
         activeHitboxes.clear();
         destroyedParts.clear();
     }
