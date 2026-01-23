@@ -1,4 +1,4 @@
-package com.catoxide.catoxidesbattlerebuild.mob.server;
+package com.catoxide.catoxidesbattlerebuild.server;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -9,10 +9,6 @@ import software.bernie.geckolib.core.animatable.model.CoreGeoModel;
 import software.bernie.geckolib.core.animation.AnimatableManager;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
 import software.bernie.geckolib.core.animation.AnimationState;
-import software.bernie.geckolib.loading.FileLoader;
-import software.bernie.geckolib.loading.json.raw.Model;
-import software.bernie.geckolib.loading.object.BakedModelFactory;
-import software.bernie.geckolib.loading.object.GeometryTree;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -25,13 +21,14 @@ public class ServerGeoModelManager {
     public record ModelCollection(
             CoreGeoModel coreModel,
             BakedGeoModel bakedModel,
-            AnimationProcessor processorTemplate
+            AnimationProcessor animationProcessor
     ) {}
 
     private static final ServerGeoModelManager INSTANCE = new ServerGeoModelManager();
     private Map<ResourceLocation,ModelCollection> modelShelf = new ConcurrentHashMap<>();
     private final Map<ResourceLocation, AnimationProcessor> animationProcessors = new HashMap<>();
     private boolean initialized = false;
+    private final ModelCollectionFactory factory = new ModelCollectionFactory();
 
     private ServerGeoModelManager() {}
 
@@ -42,56 +39,50 @@ public class ServerGeoModelManager {
     //初始化管理器
     public void initialize(ResourceManager resourceManager, Executor executor) {
         if (initialized) return;
-
-        loadModels(executor, resourceManager, this::addModel).join();
-
+        loadModels(executor, resourceManager).join();
         // 将 ModelShelf 设为不可修改
         this.modelShelf = Collections.unmodifiableMap(this.modelShelf);
         this.initialized = true;
-
         GeckoLib.LOGGER.info("ServerGeoModelManager initialized with " + modelShelf.size() + " models");
     }
 
-    private void addModel(ResourceLocation resource, ServerCoreGeoModel<GeoAnimatable> coreModel,
-                          BakedGeoModel bakedModel, AnimationProcessor processorTemplate) {
-        ModelCollection collection = new ModelCollection(coreModel, bakedModel, processorTemplate);
-        modelShelf.put(resource, collection);
-    }
-
     //从文件加载模型内容
-    private CompletableFuture<Void> loadModels(Executor executor, ResourceManager resourceManager,
-                                               ModelConsumer modelConsumer){
+    private CompletableFuture<Void> loadModels(Executor executor, ResourceManager resourceManager) {
         return CompletableFuture.supplyAsync(
-                        () -> resourceManager.listResources("geo", fileName -> fileName.toString().endsWith(".json")), executor)
-                .thenComposeAsync(resources -> {
-                    List<CompletableFuture<Void>> loadFutures = new ArrayList<>();
+                () -> resourceManager.listResources("geo", fileName -> fileName.toString().endsWith(".json")),
+                executor
+        ).thenComposeAsync(resources -> {
+            List<CompletableFuture<Void>> loadFutures = new ArrayList<>();
 
-                    for (ResourceLocation resource : resources.keySet()) {
-                        CompletableFuture<Void> loadFuture = CompletableFuture.runAsync(() ->{
-                            try {
-                                ServerCoreGeoModel<GeoAnimatable> coreModel = new ServerCoreGeoModel<>(resource);
-                                Model model = FileLoader.loadModelFile(resource, resourceManager);
-                                BakedGeoModel bakedModel = BakedModelFactory.getForNamespace(resource.getNamespace()) .constructGeoModel(GeometryTree.fromModel(model));
-                                AnimationProcessor processorTemplate = new AnimationProcessor(coreModel);
-                                ModelCollection collection = new ModelCollection(coreModel,bakedModel, processorTemplate);
-                                modelConsumer.accept(resource, coreModel, bakedModel, processorTemplate);
-                            } catch (Exception e) {
-                                GeckoLib.LOGGER.error("Error loading model " + resource, e);
-                                throw new RuntimeException("Failed to create CoreGeoModel", e);
-                            }
-                        }, executor);
-                        loadFutures.add(loadFuture);
+            for (ResourceLocation resource : resources.keySet()) {
+                CompletableFuture<Void> loadFuture = CompletableFuture.runAsync(() -> {
+                    try {
+                        // 关键：使用工厂创建完整的ModelCollection
+                        ServerGeoModelManager.ModelCollection collection =
+                                factory.createModelCollection(resource, resourceManager);
+
+                        // 直接存储到modelShelf
+                        modelShelf.put(resource, collection);
+
+                        GeckoLib.LOGGER.debug("Successfully loaded model: {}", resource);
+                    } catch (Exception e) {
+                        GeckoLib.LOGGER.error("Factory failed to create model for: {}", resource, e);
                     }
-                    return CompletableFuture.allOf(loadFutures.toArray(new CompletableFuture[0]));
-                });
-    }
-    @FunctionalInterface
-    private interface ModelConsumer {
-        void accept(ResourceLocation resource, ServerCoreGeoModel<GeoAnimatable> coreModel,
-                    BakedGeoModel bakedModel, AnimationProcessor processorTemplate);
-    }
+                }, executor);
 
+                loadFutures.add(loadFuture);
+            }
 
+            return CompletableFuture.allOf(loadFutures.toArray(new CompletableFuture[0]));
+        });
+    }
+    public void clearCache() {
+        factory.clearCache();
+        modelShelf.clear();
+        animationProcessors.clear();
+        initialized = false;
+        GeckoLib.LOGGER.info("ServerGeoModelManager cache cleared");
+    }
     //获取Baked模型
     public BakedGeoModel getBakedModel(ResourceLocation modelLocation) {
         ensureInitialized();

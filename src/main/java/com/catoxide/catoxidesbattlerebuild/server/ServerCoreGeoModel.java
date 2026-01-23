@@ -1,14 +1,14 @@
-package com.catoxide.catoxidesbattlerebuild.mob.server;
+package com.catoxide.catoxidesbattlerebuild.server;
 
 import net.minecraft.resources.ResourceLocation;
+import software.bernie.geckolib.GeckoLib;
+import software.bernie.geckolib.cache.object.BakedGeoModel;
 import software.bernie.geckolib.core.animatable.GeoAnimatable;
 import software.bernie.geckolib.core.animatable.model.CoreGeoModel;
 import software.bernie.geckolib.core.animatable.model.CoreBakedGeoModel;
 import software.bernie.geckolib.core.animation.Animation;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
 import software.bernie.geckolib.core.animation.AnimationState;
-
-import java.util.Optional;
 
 /**
  * Server-side implementation of CoreGeoModel that can work with any GeoAnimatable type.
@@ -17,19 +17,22 @@ import java.util.Optional;
 public class ServerCoreGeoModel<E extends GeoAnimatable> implements CoreGeoModel<E> {
     private final ResourceLocation modelLocation;
     private final AnimationProcessor<E> animationProcessor;
-
+    private final BakedGeoModel bakedModel;
     /**
      * Creates a new ServerCoreGeoModel instance for the given model location.
      * @param modelLocation The resource location of the model
      */
-    public ServerCoreGeoModel(ResourceLocation modelLocation) {
+    public ServerCoreGeoModel(ResourceLocation modelLocation, BakedGeoModel bakedModel) {
         this.modelLocation = modelLocation;
+        this.bakedModel = bakedModel;
         this.animationProcessor = new AnimationProcessor<>(this);
 
-        // Initialize the animation processor with the baked model if available
-        ServerGeoModelManager.getInstance().getBakedModel(modelLocation).ifPresent(bakedModel -> {
+        // 直接使用传入的bakedModel，不依赖Manager
+        if (bakedModel != null) {
             animationProcessor.setActiveModel(bakedModel);
-        });
+        } else {
+            GeckoLib.LOGGER.warn("BakedModel is null for: {}", modelLocation);
+        }
     }
 
     /**
@@ -39,14 +42,14 @@ public class ServerCoreGeoModel<E extends GeoAnimatable> implements CoreGeoModel
      */
     @Override
     public CoreBakedGeoModel getBakedGeoModel(String location) {
-        // Convert the string location to a ResourceLocation
         ResourceLocation loc = ResourceLocation.tryParse(location);
         if (loc == null) {
-            loc = modelLocation; // Fallback to the default model location
+            loc = modelLocation;
         }
-
-        Optional<? extends CoreBakedGeoModel> bakedModel = ServerGeoModelManager.getInstance().getBakedModel(loc);
-        return bakedModel.orElse(null);
+        if (loc.equals(modelLocation) && bakedModel != null) {
+            return bakedModel;
+        }
+        return ServerGeoModelManager.getInstance().getBakedModel(loc);
     }
 
     /**

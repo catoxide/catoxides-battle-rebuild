@@ -255,21 +255,21 @@ public class ZombieAnimationController {
         this.currentAnimation = animation;
     }// 在 ZombieAnimationController 类中替换这两个方法：
 
-    public BoneTransform getBoneWorldTransform(String boneName) {
-        try {
-            // 确保这里调用了 ServerGeoModelLoader
-            if (zombie.getServerAnimationSystem() != null) {
-                return zombie.getServerAnimationSystem().calculateBoneTransform(boneName);
-            }
-            return new BoneTransform(zombie.position());
-        } catch (Exception e) {
-            System.err.println("获取骨骼变换失败: " + e.getMessage());
-            return new BoneTransform(zombie.position());
-        }
-    }
-
-    public Vec3 getBoneWorldPosition(String boneName) {
-        BoneTransform transform = getBoneWorldTransform(boneName);
-        return transform.position;
-    }
+//    public BoneTransform getBoneWorldTransform(String boneName) {
+//        try {
+//            // 确保这里调用了 ServerGeoModelLoader
+//            if (zombie.getServerAnimationSystem() != null) {
+//                return zombie.getServerAnimationSystem().calculateBoneTransform(boneName);
+//            }
+//            return new BoneTransform(zombie.position());
+//        } catch (Exception e) {
+//            System.err.println("获取骨骼变换失败: " + e.getMessage());
+//            return new BoneTransform(zombie.position());
+//        }
+//    }
+//
+//    public Vec3 getBoneWorldPosition(String boneName) {
+//        BoneTransform transform = getBoneWorldTransform(boneName);
+//        return transform.position;
+//    }
 }

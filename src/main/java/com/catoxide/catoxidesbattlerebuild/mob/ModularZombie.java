@@ -1,8 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.mob;
 
 import com.catoxide.catoxidesbattlerebuild.client.model.ModularZombieModel;
-import com.catoxide.catoxidesbattlerebuild.network.HitboxRemovePacket;
-import com.catoxide.catoxidesbattlerebuild.network.NetworkHandler;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -29,7 +27,7 @@ public class ModularZombie extends Zombie implements GeoEntity {
     private double lastDistanceToTarget = 0;
     private long lastStateChangeTime = 0;
     private final GeoModel<ModularZombie> model = new ModularZombieModel();
-    private final ServerAnimationSystem serverAnimationSystem;
+//    private final ServerAnimationSystem serverAnimationSystem;
 
     // 动画控制器
     private final ZombieAnimationController animationController;
@@ -49,16 +47,16 @@ public class ModularZombie extends Zombie implements GeoEntity {
     private AIManager aiManager;
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
     // 模块血量系统 - 新增精确碰撞系统
-    private final BodyPartManager bodyPartManager;
-    private final BodyPartHealthSystem healthSystem;
+//    private final BodyPartManager bodyPartManager;
+//    private final BodyPartHealthSystem healthSystem;
 
     public ModularZombie(EntityType<? extends Zombie> entityType, Level level) {
         super(entityType, level);
         this.aiManager = new AIManager(this);
         this.animationController = new ZombieAnimationController(this);
-        this.bodyPartManager = new BodyPartManager(this);
-        this.healthSystem = new BodyPartHealthSystem(this, bodyPartManager);
-        this.serverAnimationSystem = new ServerAnimationSystem(this);
+//        this.bodyPartManager = new BodyPartManager(this);
+//        this.healthSystem = new BodyPartHealthSystem(this, bodyPartManager);
+//        this.serverAnimationSystem = new ServerAnimationSystem(this);
     }
 
     public AIManager getAIManager() {
@@ -94,10 +92,10 @@ public class ModularZombie extends Zombie implements GeoEntity {
     @Override
     public void onAddedToWorld() {
         super.onAddedToWorld();
-        // 在实体添加到世界后生成碰撞箱
-        if (!this.level().isClientSide) {
-            this.bodyPartManager.spawnHitboxEntities();
-        }
+//        // 在实体添加到世界后生成碰撞箱
+//        if (!this.level().isClientSide) {
+//            this.bodyPartManager.spawnHitboxEntities();
+//        }
     }
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
@@ -275,10 +273,10 @@ public class ModularZombie extends Zombie implements GeoEntity {
 
         this.goalSelector.removeAllGoals(goal -> true);
         this.targetSelector.removeAllGoals(goal -> true);
-        bodyPartManager.discardAllHitboxes();
-        if (!this.level().isClientSide) {
-            NetworkHandler.sendToAllTracking(new HitboxRemovePacket(this.getId()), this);
-        }
+//        bodyPartManager.discardAllHitboxes();
+//        if (!this.level().isClientSide) {
+//            NetworkHandler.sendToAllTracking(new HitboxRemovePacket(this.getId()), this);
+//        }
 
         System.out.println("死亡状态重置完成");
     }
@@ -329,48 +327,48 @@ public class ModularZombie extends Zombie implements GeoEntity {
         if (!this.level().isClientSide) {
             aiManager.tick();
             // 新增：更新精确碰撞箱位置
-            bodyPartManager.updateHitboxPositions();
-            serverAnimationSystem.serverTick();
-            bodyPartManager.syncHitboxesToClient();
+//            bodyPartManager.updateHitboxPositions();
+//            serverAnimationSystem.serverTick();
+//            bodyPartManager.syncHitboxesToClient();
         }
 
         // 调试输出 - 每100tick输出一次
-        if (this.tickCount % 100 == 0) {
-            debugBehaviorState();
-        }
+//        if (this.tickCount % 100 == 0) {
+//            debugBehaviorState();
+//        }
     }
-    // 新增：获取模块血量系统
-    public BodyPartManager getBodyPartManager() {
-        return bodyPartManager;
-    }
-
-    public BodyPartHealthSystem getHealthSystem() {
-        return healthSystem;
-    }
-
-    // 新增：处理部位伤害
-    public void onPartHit(String partName, float damage) {
-        healthSystem.onPartHit(partName, damage);
-    }
-    // 调试方法
-    private void debugBehaviorState() {
-        if (this.level().isClientSide) {
-            return;
-        }
-
-        LivingEntity target = this.getTarget(); // 使用 getTarget() 方法
-
-        System.out.printf("行为状态调试 [Tick: %d] | 目标: %s | 目标实体: %s | 警戒中: %s | 警戒完成: %s | 受击中: %s | 移动: %s | AI状态: %s | 动画状态: %s%n",
-                this.tickCount,
-                hasTarget(),
-                target != null ? target.getName().getContents() : "null",
-                isAlerting(),
-                isAlertCompleted(),
-                isHit(),
-                this.getDeltaMovement().horizontalDistanceSqr() > 0.001,
-                aiManager != null ? "正常" : "null",
-                animationController.getAnimationStateInfo());
-    }
+//    // 新增：获取模块血量系统
+//    public BodyPartManager getBodyPartManager() {
+//        return bodyPartManager;
+//    }
+//
+//    public BodyPartHealthSystem getHealthSystem() {
+//        return healthSystem;
+//    }
+//
+//    // 新增：处理部位伤害
+//    public void onPartHit(String partName, float damage) {
+//        healthSystem.onPartHit(partName, damage);
+//    }
+//    // 调试方法
+//    private void debugBehaviorState() {
+//        if (this.level().isClientSide) {
+//            return;
+//        }
+//
+//        LivingEntity target = this.getTarget(); // 使用 getTarget() 方法
+//
+//        System.out.printf("行为状态调试 [Tick: %d] | 目标: %s | 目标实体: %s | 警戒中: %s | 警戒完成: %s | 受击中: %s | 移动: %s | AI状态: %s | 动画状态: %s%n",
+//                this.tickCount,
+//                hasTarget(),
+//                target != null ? target.getName().getContents() : "null",
+//                isAlerting(),
+//                isAlertCompleted(),
+//                isHit(),
+//                this.getDeltaMovement().horizontalDistanceSqr() > 0.001,
+//                aiManager != null ? "正常" : "null",
+//                animationController.getAnimationStateInfo());
+//    }
 
     // 获取当前状态信息
     public String getCurrentStateInfo() {
@@ -387,14 +385,6 @@ public class ModularZombie extends Zombie implements GeoEntity {
     // 修正 getModel() 方法 - 返回 BakedGeoModel
     public BakedGeoModel getModel(AnimationState<ModularZombie> state) {
         return this.model.getBakedModel(this.model.getModelResource(this));
-    }
-
-    // 获取 GeoModel
-    public GeoModel<ModularZombie> getModel() {
-        return model;
-    }
-    public ServerAnimationSystem getServerAnimationSystem() {
-        return serverAnimationSystem;
     }
 
 }
