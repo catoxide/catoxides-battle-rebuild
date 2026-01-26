@@ -2,12 +2,8 @@
 package com.catoxide.catoxidesbattlerebuild.server;
 
 import net.minecraft.world.entity.Entity;
-import software.bernie.geckolib.GeckoLib;
-import software.bernie.geckolib.cache.object.GeoBone;
-import software.bernie.geckolib.cache.object.GeoCube;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
-import org.joml.Vector4f;
 
 import java.util.*;
 
@@ -27,7 +23,7 @@ public class MatrixTransformer {
      * 获取实体的骨骼变换矩阵
      */
     public Map<String, Matrix4f> getEntityBoneMatrices(Entity entity) {
-        return AnimatableEntitiesTable.getInstance()
+        return ServerEntityManager.getInstance()
                 .getEntityBoneMatrices(entity.getUUID());
     }
 
@@ -35,7 +31,7 @@ public class MatrixTransformer {
      * 获取实体的所有cube顶点
      */
     public Map<String, List<Vector3f>> getEntityCubeVertices(Entity entity) {
-        return AnimatableEntitiesTable.getInstance()
+        return ServerEntityManager.getInstance()
                 .getEntityCubeVertices(entity.getUUID());
     }
 

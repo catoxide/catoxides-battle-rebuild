@@ -3,7 +3,6 @@ package com.catoxide.catoxidesbattlerebuild.server;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.common.Tags;
 import software.bernie.geckolib.GeckoLib;
@@ -11,6 +10,7 @@ import software.bernie.geckolib.core.animatable.GeoAnimatable;
 import software.bernie.geckolib.cache.object.BakedGeoModel;
 import software.bernie.geckolib.cache.object.GeoBone;
 import software.bernie.geckolib.cache.object.GeoCube;
+import software.bernie.geckolib.core.animatable.model.CoreGeoBone;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
@@ -22,18 +22,18 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 动画实体表格，用于批量更新实体动画并计算变换矩阵
  */
-public class AnimatableEntitiesTable {
-    private static final AnimatableEntitiesTable INSTANCE = new AnimatableEntitiesTable();
+public class ServerEntityManager {
+    private static final ServerEntityManager INSTANCE = new ServerEntityManager();
 
     // 实体映射表
-    private final Map<UUID, EnhancedEntityCollection> entityMap = new ConcurrentHashMap<>();
+    private final Map<UUID, EntityCollection> entityMap = new ConcurrentHashMap<>();
 
     // 按更新策略分组（可选，用于更复杂的更新策略）
-    private final Map<UpdateStrategy, List<EnhancedEntityCollection>> strategyGroups = new ConcurrentHashMap<>();
+    private final Map<UpdateStrategy, List<EntityCollection>> strategyGroups = new ConcurrentHashMap<>();
 
-    private AnimatableEntitiesTable() {}
+    private ServerEntityManager() {}
 
-    public static AnimatableEntitiesTable getInstance() {
+    public static ServerEntityManager getInstance() {
         return INSTANCE;
     }
 
@@ -58,8 +58,14 @@ public class AnimatableEntitiesTable {
     public void registerEntity(Entity entity, ResourceLocation modelLocation) {
         if (!(entity instanceof GeoAnimatable)) return;
 
-        // 创建增强版集合
-        EnhancedEntityCollection collection = EnhancedEntityCollection.create(entity, modelLocation);
+        // 使用EntityCollectionFactory创建EntityCollection
+        EntityCollection collection = EntityCollectionFactory.getInstance()
+                .createEntityCollection(entity, modelLocation);
+
+        if (collection == null) {
+            GeckoLib.LOGGER.error("Failed to create EntityCollection for entity {}", entity);
+            return;
+        }
 
         // 存储到实体映射表
         entityMap.put(entity.getUUID(), collection);
@@ -70,17 +76,20 @@ public class AnimatableEntitiesTable {
 
         GeckoLib.LOGGER.debug("Registered entity {} with strategy {}", entity, strategy);
     }
-
     /**
      * 从表格中移除实体
      */
     public void unregisterEntity(Entity entity) {
-        EnhancedEntityCollection collection = entityMap.remove(entity.getUUID());
+        UUID entityId = entity.getUUID();
+        EntityCollection collection = entityMap.remove(entityId);
+
         if (collection != null) {
             // 从策略组中移除（如果需要）
-            for (List<EnhancedEntityCollection> group : strategyGroups.values()) {
+            for (List<EntityCollection> group : strategyGroups.values()) {
                 group.remove(collection);
             }
+            // 从EntityCollectionFactory移除
+            EntityCollectionFactory.getInstance().removeEntityCollection(entityId);
             GeckoLib.LOGGER.debug("Unregistered entity {}", entity);
         }
     }
@@ -104,10 +113,10 @@ public class AnimatableEntitiesTable {
      * 按策略组更新实体（可选）
      */
     public void updateByStrategy(UpdateStrategy strategy, float partialTick) {
-        List<EnhancedEntityCollection> group = strategyGroups.get(strategy);
+        List<EntityCollection> group = strategyGroups.get(strategy);
         if (group != null) {
             group.parallelStream()
-                    .filter(EnhancedEntityCollection::isValid)
+                    .filter(EntityCollection::isValid)
                     .forEach(collection -> updateEntity(collection, partialTick));
         }
     }
@@ -115,33 +124,117 @@ public class AnimatableEntitiesTable {
     /**
      * 更新单个实体
      */
-    private void updateEntity(EnhancedEntityCollection collection, float partialTick) {
+    private void updateEntity(EntityCollection collection, float partialTick) {
         try {
-            // 1. 更新动画状态
-            Map<String, Matrix4f> boneMatrices = ServerGeoModelManager.getInstance()
-                    .updateAnimationAndGetMatrices(
-                            collection.modelLocation(),
-                            (GeoAnimatable) collection.entity(),
-                            partialTick
-                    );
+            // 1. 获取动画处理器
+            var animationProcessor = collection.animationProcessor();
+            if (animationProcessor == null) {
+                GeckoLib.LOGGER.warn("Animation processor not found for entity: {}", collection.entity());
+                return;
+            }
 
-            // 2. 计算cube顶点
+            // 2. 更新动画状态
+            Map<String, Matrix4f> boneMatrices = updateAnimationAndGetMatrices(
+                    animationProcessor,
+                    collection.modelLocation(),
+                    (GeoAnimatable) collection.entity(),
+                    partialTick
+            );
+
+            // 3. 计算cube顶点
             Map<String, List<Vector3f>> cubeVertices = null;
             if (boneMatrices != null && !boneMatrices.isEmpty()) {
                 cubeVertices = calculateCubeVertices(collection.modelLocation(), boneMatrices);
             }
 
-            // 3. 更新实体集合（创建新的record实例）
-            EnhancedEntityCollection updatedCollection = collection.withDynamicData(boneMatrices, cubeVertices);
+            // 4. 更新实体集合（创建新的record实例）
+            EntityCollection updatedCollection = collection.withDynamicData(boneMatrices, cubeVertices);
 
-            // 4. 替换旧的集合
+            // 5. 替换旧的集合
             entityMap.put(collection.entityId(), updatedCollection);
 
-            // 5. 更新策略组（如果需要）
+            // 6. 更新策略组（如果需要）
             updateStrategyGroup(collection, updatedCollection);
 
         } catch (Exception e) {
-            GeckoLib.LOGGER.error("Failed to update entity {}: {}", collection.entity(), e.getMessage());
+            GeckoLib.LOGGER.error("Failed to update entity {}: {}", collection.entity(), e.getMessage(), e);
+        }
+    }
+
+    private Map<String, Matrix4f> updateAnimationAndGetMatrices(
+            AnimationProcessor<GeoAnimatable> animationProcessor,
+            ResourceLocation modelLocation,
+            GeoAnimatable animatable,
+            float partialTick
+    ) {
+        try {
+            // 1. 确保管理器已初始化
+            ensureServerGeoModelManagerInitialized();
+
+            // 2. 更新动画
+            ServerGeoModelManager.getInstance().updateAnimation(
+                    modelLocation,
+                    animatable,
+                    partialTick
+            );
+
+            // 3. 获取骨骼矩阵（这里需要从动画处理器中提取）
+            return extractBoneMatrices(animationProcessor);
+
+        } catch (Exception e) {
+            GeckoLib.LOGGER.error("Failed to update animation for {}: {}", modelLocation, e.getMessage(), e);
+            return null;
+        }
+    }
+
+    private Map<String, Matrix4f> extractBoneMatrices(AnimationProcessor<GeoAnimatable> animationProcessor) {
+        Map<String, Matrix4f> boneMatrices = new HashMap<>();
+
+        try {
+            // 获取所有已注册的骨骼
+            Collection<CoreGeoBone> bones = animationProcessor.getRegisteredBones();
+
+            // 遍历所有骨骼并获取它们的矩阵
+            for (CoreGeoBone coreBone : bones) {
+                // 将 CoreGeoBone 转换为 GeoBone
+                if (coreBone instanceof GeoBone bone) {
+                    String boneName = bone.getName();
+
+                    // 获取世界空间矩阵
+                    Matrix4f matrix = bone.getWorldSpaceMatrix();
+
+                    if (matrix != null) {
+                        // 创建矩阵的副本
+                        boneMatrices.put(boneName, new Matrix4f(matrix));
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+            GeckoLib.LOGGER.error("Failed to extract bone matrices: {}", e.getMessage(), e);
+        }
+
+        return boneMatrices.isEmpty() ? null : boneMatrices;
+    }
+
+    private void ensureServerGeoModelManagerInitialized() {
+        // 这个方法确保管理器在使用前已经初始化
+        // 在实际项目中，可能需要在合适的时机调用initialize方法
+        if (!isServerGeoModelManagerInitialized()) {
+            GeckoLib.LOGGER.warn("ServerGeoModelManager not initialized, attempting to initialize...");
+            // 这里可能需要传递ResourceManager和Executor
+            // ServerGeoModelManager.getInstance().initialize(resourceManager, executor);
+        }
+    }
+    private boolean isServerGeoModelManagerInitialized() {
+        try {
+            // 尝试获取一个模型来检查是否初始化
+            ServerGeoModelManager.getInstance().getBakedModel(new ResourceLocation("test", "test"));
+            return true;
+        } catch (IllegalStateException e) {
+            return false;
+        } catch (Exception e) {
+            return true; // 其他异常说明已初始化但模型不存在
         }
     }
 
@@ -159,14 +252,13 @@ public class AnimatableEntitiesTable {
         Map<String, List<Vector3f>> cubeVertices = new HashMap<>();
 
         // 遍历所有骨骼
-        for (GeoBone bone : bakedModel.getBones()) {
+        for (GeoBone bone : bakedModel.topLevelBones()) {
             Matrix4f boneMatrix = boneMatrices.get(bone.getName());
             if (boneMatrix == null) continue;
 
-            // 遍历骨骼的所有cube
             for (GeoCube cube : bone.getCubes()) {
                 List<Vector3f> vertices = transformCubeVertices(cube, boneMatrix);
-                cubeVertices.put(EnhancedEntityCollection.getCubeKey(bone.getName(), cube), vertices);
+                cubeVertices.put(EntityCollection.getCubeKey(bone.getName(), cube), vertices);
             }
         }
 
@@ -257,10 +349,10 @@ public class AnimatableEntitiesTable {
     /**
      * 更新策略组中的实体引用
      */
-    private void updateStrategyGroup(EnhancedEntityCollection oldCollection,
-                                     EnhancedEntityCollection newCollection) {
-        for (Map.Entry<UpdateStrategy, List<EnhancedEntityCollection>> entry : strategyGroups.entrySet()) {
-            List<EnhancedEntityCollection> group = entry.getValue();
+    private void updateStrategyGroup(EntityCollection oldCollection,
+                                     EntityCollection newCollection) {
+        for (Map.Entry<UpdateStrategy, List<EntityCollection>> entry : strategyGroups.entrySet()) {
+            List<EntityCollection> group = entry.getValue();
             int index = group.indexOf(oldCollection);
             if (index != -1) {
                 group.set(index, newCollection);
@@ -273,13 +365,13 @@ public class AnimatableEntitiesTable {
      * 清理无效实体
      */
     void cleanupInvalidEntities() {
-        Iterator<Map.Entry<UUID, EnhancedEntityCollection>> iterator = entityMap.entrySet().iterator();
+        Iterator<Map.Entry<UUID, EntityCollection>> iterator = entityMap.entrySet().iterator();
         while (iterator.hasNext()) {
-            EnhancedEntityCollection collection = iterator.next().getValue();
+            EntityCollection collection = iterator.next().getValue();
             if (!collection.isValid()) {
                 iterator.remove();
                 // 同时从策略组中移除
-                for (List<EnhancedEntityCollection> group : strategyGroups.values()) {
+                for (List<EntityCollection> group : strategyGroups.values()) {
                     group.remove(collection);
                 }
             }
@@ -290,7 +382,7 @@ public class AnimatableEntitiesTable {
      * 获取实体的cube顶点数据
      */
     public Map<String, List<Vector3f>> getEntityCubeVertices(UUID entityId) {
-        EnhancedEntityCollection collection = entityMap.get(entityId);
+        EntityCollection collection = entityMap.get(entityId);
         return collection != null ? collection.cubeVertices() : null;
     }
 
@@ -298,7 +390,7 @@ public class AnimatableEntitiesTable {
      * 获取实体的骨骼矩阵
      */
     public Map<String, Matrix4f> getEntityBoneMatrices(UUID entityId) {
-        EnhancedEntityCollection collection = entityMap.get(entityId);
+        EntityCollection collection = entityMap.get(entityId);
         return collection != null ? collection.boneMatrices() : null;
     }
 
@@ -306,14 +398,14 @@ public class AnimatableEntitiesTable {
      * 获取实体的动画处理器
      */
     public AnimationProcessor<GeoAnimatable> getEntityAnimationProcessor(UUID entityId) {
-        EnhancedEntityCollection collection = entityMap.get(entityId);
+        EntityCollection collection = entityMap.get(entityId);
         return collection != null ? collection.animationProcessor() : null;
     }
 
     /**
      * 获取实体集合（用于外部访问）
      */
-    public EnhancedEntityCollection getEntityCollection(UUID entityId) {
+    public EntityCollection getEntityCollection(UUID entityId) {
         return entityMap.get(entityId);
     }
 
@@ -323,7 +415,7 @@ public class AnimatableEntitiesTable {
     public TableStats getStats() {
         int totalEntities = entityMap.size();
         int activeCount = (int) entityMap.values().stream()
-                .filter(EnhancedEntityCollection::isValid)
+                .filter(EntityCollection::isValid)
                 .count();
 
         return new TableStats(totalEntities, activeCount, strategyGroups.size());
@@ -343,4 +435,5 @@ public class AnimatableEntitiesTable {
             this.strategyGroups = strategyGroups;
         }
     }
+
 }

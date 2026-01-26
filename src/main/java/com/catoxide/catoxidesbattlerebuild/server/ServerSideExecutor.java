@@ -1,17 +1,17 @@
 package com.catoxide.catoxidesbattlerebuild.server;
 
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.level.LevelEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import software.bernie.geckolib.GeckoLib;
 import software.bernie.geckolib.core.animatable.GeoAnimatable;
-
-import java.util.ArrayList;
-import java.util.List;
 
 @Mod.EventBusSubscriber
 public class ServerSideExecutor {
@@ -58,28 +58,84 @@ public class ServerSideExecutor {
     }
 
     /**
+     * 事件订阅：实体加入世界时自动追踪（如果已注册模型）
+     */
+    @SubscribeEvent
+    public static void onEntityJoinWorld(EntityJoinLevelEvent event) {
+        if (!event.getLevel().isClientSide() && event.getEntity() instanceof GeoAnimatable) {
+            Entity entity = event.getEntity();
+
+            // 直接为所有GeckoAnimatable实体注册
+            // 模型位置可以从实体本身获取，或者使用一个默认策略
+
+            ResourceLocation modelLocation = determineModelForEntity(entity);
+            if (modelLocation != null) {
+                registerGeckoEntity(entity, modelLocation);
+                GeckoLib.LOGGER.debug("Auto-registered Gecko entity: {}", entity);
+            }
+        }
+    }
+    private static ResourceLocation determineModelForEntity(Entity entity) {
+        // 策略1：从实体的类名推断（最简单的方法）
+        String className = entity.getClass().getSimpleName().toLowerCase();
+        String modId = "yourmod"; // 你的Mod ID
+
+        // 假设模型文件按照约定命名：geo/<entity_class_name>.geo.json
+        return new ResourceLocation(modId, "geo/" + className + ".geo.json");
+
+        // 策略2：从实体的注册名推断
+        // ResourceLocation registryName = EntityType.getKey(entity.getType());
+        // return new ResourceLocation(registryName.getNamespace(),
+        //     "geo/" + registryName.getPath() + ".geo.json");
+
+        // 策略3：如果实体实现了特定接口，从接口获取
+        // if (entity instanceof IHasModelLocation modelEntity) {
+        //     return modelEntity.getModelLocation();
+        // }
+    }
+
+    /**
+     * 事件订阅：实体离开世界时自动移除
+     */
+    @SubscribeEvent
+    public static void onEntityLeaveWorld(net.minecraftforge.event.entity.EntityLeaveLevelEvent event) {
+        if (!event.getLevel().isClientSide()) {
+            unregisterGeckoEntity(event.getEntity());
+        }
+    }
+
+    /**
      * 关键：服务器每 tick 更新所有实体动画
      */
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
-            // 更新 AnimatableEntitiesTable 中的所有实体
-            AnimatableEntitiesTable.getInstance().updateAll(1.0f);
+            try {
+                // 更新所有实体动画
+                ServerEntityManager.getInstance().updateAll(1.0f);
 
-            // 更新 EntityAssociator 中的动画（如果需要）
-            EntityAssociator.getInstance().updateAllAnimations(1.0f);
+                // 清理无效实体集合
+                EntityCollectionFactory.getInstance().cleanupInvalidCollections();
+
+            } catch (Exception e) {
+                GeckoLib.LOGGER.error("Error during server tick update: {}", e.getMessage(), e);
+            }
         }
     }
 
     /**
-     * 事件订阅：世界 tick 时处理实体生命周期
+     * 事件订阅：世界 tick 时清理无效实体
      */
     @SubscribeEvent
     public static void onLevelTick(TickEvent.LevelTickEvent event) {
         if (isServerSide(event.level) && event.phase == TickEvent.Phase.END) {
-            // 清理无效的关联
-            AnimatableEntitiesTable.getInstance().cleanupInvalidEntities();
-            EntityAssociator.getInstance().cleanupInvalidAssociations();
+            try {
+                // 清理无效的实体
+                ServerEntityManager.getInstance().cleanupInvalidEntities();
+
+            } catch (Exception e) {
+                GeckoLib.LOGGER.error("Error during level tick cleanup: {}", e.getMessage(), e);
+            }
         }
     }
 
@@ -89,13 +145,20 @@ public class ServerSideExecutor {
     public static void registerGeckoEntity(Entity entity, net.minecraft.resources.ResourceLocation modelLocation) {
         if (entity instanceof GeoAnimatable) {
             try {
-                // 1. 注册到 AnimatableEntitiesTable（用于批量更新）
-                AnimatableEntitiesTable.getInstance().registerEntity(entity, modelLocation);
+                // 1. 创建EntityCollection（通过EntityCollectionFactory）
+                EntityCollection collection = EntityCollectionFactory.getInstance()
+                        .createEntityCollection(entity, modelLocation);
 
-                // 2. 注册到 EntityAssociator（用于简单关联）
-                EntityAssociator.getInstance().associate(entity, modelLocation);
+                if (collection == null) {
+                    GeckoLib.LOGGER.error("Failed to create EntityCollection for entity: {}", entity);
+                    return;
+                }
+
+                // 2. 注册到实体管理器
+                ServerEntityManager.getInstance().registerEntity(entity, modelLocation);
 
                 GeckoLib.LOGGER.debug("Registered Gecko entity: {} with model: {}", entity, modelLocation);
+
             } catch (Exception e) {
                 GeckoLib.LOGGER.error("Failed to register Gecko entity: {}", entity, e);
             }
@@ -106,13 +169,18 @@ public class ServerSideExecutor {
      * 从动画系统注销实体
      */
     public static void unregisterGeckoEntity(Entity entity) {
-        // 1. 从 AnimatableEntitiesTable 移除
-        AnimatableEntitiesTable.getInstance().unregisterEntity(entity);
+        try {
+            // 1. 从实体管理器移除
+            ServerEntityManager.getInstance().unregisterEntity(entity);
 
-        // 2. 从 EntityAssociator 移除
-        EntityAssociator.getInstance().disassociate(entity);
+            // 2. 从实体集合工厂移除
+            EntityCollectionFactory.getInstance().removeEntityCollection(entity);
 
-        GeckoLib.LOGGER.debug("Unregistered Gecko entity: {}", entity);
+            GeckoLib.LOGGER.debug("Unregistered Gecko entity: {}", entity);
+
+        } catch (Exception e) {
+            GeckoLib.LOGGER.error("Failed to unregister Gecko entity: {}", entity, e);
+        }
     }
 
     /**

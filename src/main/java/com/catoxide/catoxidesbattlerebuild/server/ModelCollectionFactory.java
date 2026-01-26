@@ -20,13 +20,13 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class ModelCollectionFactory {
 
-    private final Map<ResourceLocation, ServerGeoModelManager.ModelCollection> cache = new ConcurrentHashMap<>();
+    private final Map<ResourceLocation, ModelCollection> cache = new ConcurrentHashMap<>();
 
     /**
      * 创建完整的ModelCollection
      * 按照正确的依赖顺序创建所有组件
      */
-    public ServerGeoModelManager.ModelCollection createModelCollection(
+    public ModelCollection createModelCollection(
             ResourceLocation modelLocation,
             ResourceManager resourceManager
     ) {
@@ -40,8 +40,8 @@ public class ModelCollectionFactory {
             BakedGeoModel bakedModel = createBakedGeoModel(modelLocation, rawModel);
             ServerCoreGeoModel<GeoAnimatable> coreModel = new ServerCoreGeoModel<>(modelLocation,bakedModel);
             AnimationProcessor processorTemplate = createAnimationProcessor(coreModel, bakedModel);
-            ServerGeoModelManager.ModelCollection collection =
-                    new ServerGeoModelManager.ModelCollection(coreModel, bakedModel, processorTemplate);
+            ModelCollection collection =
+                    new ModelCollection(coreModel, bakedModel, processorTemplate);
 
             // 缓存结果
             cache.put(modelLocation, collection);
@@ -107,15 +107,15 @@ public class ModelCollectionFactory {
     /**
      * 批量创建模型集合
      */
-    public Map<ResourceLocation, ServerGeoModelManager.ModelCollection> createModelCollections(
+    public Map<ResourceLocation, ModelCollection> createModelCollections(
             Map<ResourceLocation, ResourceManager> resources,
             ResourceManager resourceManager
     ) {
-        Map<ResourceLocation, ServerGeoModelManager.ModelCollection> collections = new ConcurrentHashMap<>();
+        Map<ResourceLocation, ModelCollection> collections = new ConcurrentHashMap<>();
 
         for (ResourceLocation resource : resources.keySet()) {
             try {
-                ServerGeoModelManager.ModelCollection collection =
+                ModelCollection collection =
                         createModelCollection(resource, resourceManager);
                 collections.put(resource, collection);
             } catch (Exception e) {

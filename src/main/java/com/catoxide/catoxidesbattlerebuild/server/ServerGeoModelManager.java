@@ -10,7 +10,6 @@ import software.bernie.geckolib.core.animation.AnimatableManager;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
 import software.bernie.geckolib.core.animation.AnimationState;
 
-import javax.swing.text.html.parser.Entity;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,12 +17,6 @@ import java.util.concurrent.Executor;
 
 
 public class ServerGeoModelManager {
-
-    public record ModelCollection(
-            CoreGeoModel coreModel,
-            BakedGeoModel bakedModel,
-            AnimationProcessor animationProcessor
-    ) {}
 
     private static final ServerGeoModelManager INSTANCE = new ServerGeoModelManager();
     private Map<ResourceLocation,ModelCollection> modelShelf = new ConcurrentHashMap<>();
@@ -59,7 +52,7 @@ public class ServerGeoModelManager {
                 CompletableFuture<Void> loadFuture = CompletableFuture.runAsync(() -> {
                     try {
                         // 关键：使用工厂创建完整的ModelCollection
-                        ServerGeoModelManager.ModelCollection collection =
+                        ModelCollection collection =
                                 factory.createModelCollection(resource, resourceManager);
 
                         // 直接存储到modelShelf
@@ -162,7 +155,7 @@ public class ServerGeoModelManager {
                 new AnimationState<>(animatable, 0, 0, partialTick, isMoving);
         processor.tickAnimation(animatable, coreModel, animatableManager, animTime, animationState, false);
     }
-    public void updateAnimation(EnhancedEntityCollection collection, float partialTick) {
+    public void updateAnimation(EntityCollection collection, float partialTick) {
         if (!collection.isValid()) {
             GeckoLib.LOGGER.warn("Attempted to update animation for invalid entity: {}", collection.entityId());
             return;
