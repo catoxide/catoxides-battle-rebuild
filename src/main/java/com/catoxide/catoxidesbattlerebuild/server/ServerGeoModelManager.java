@@ -10,6 +10,7 @@ import software.bernie.geckolib.core.animation.AnimatableManager;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
 import software.bernie.geckolib.core.animation.AnimationState;
 
+import javax.swing.text.html.parser.Entity;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -94,7 +95,10 @@ public class ServerGeoModelManager {
         ModelCollection collection = modelShelf.get(modelLocation);
         return collection != null ? collection.coreModel() : null;
     }
-
+    public ModelCollection getModelCollection(ResourceLocation modelLocation) {
+        ensureInitialized();
+        return modelShelf.get(modelLocation);
+    }
     //获取或创建动画处理器
     public AnimationProcessor<GeoAnimatable> getOrCreateAnimationProcessor(ResourceLocation modelLocation) {
         ensureInitialized();
@@ -119,12 +123,24 @@ public class ServerGeoModelManager {
     }
 
     //更新动画
-    public void updateAnimation(ResourceLocation modelLocation, GeoAnimatable animatable, float partialTick) {
-        AnimationProcessor<GeoAnimatable> processor = getOrCreateAnimationProcessor(modelLocation);
+    private void updateAnimation(
+            AnimationProcessor<GeoAnimatable> processor,
+            ResourceLocation modelLocation,
+            GeoAnimatable animatable,
+            float partialTick) {
+        ensureInitialized();
+
         long uniqueId = getUniqueIdForAnimatable(animatable);
-        AnimatableManager<GeoAnimatable> animatableManager = animatable.getAnimatableInstanceCache().getManagerForId(uniqueId);
+        AnimatableManager<GeoAnimatable> animatableManager =
+                animatable.getAnimatableInstanceCache().getManagerForId(uniqueId);
         BakedGeoModel bakedModel = getBakedModel(modelLocation);
         CoreGeoModel coreModel = getCoreModel(modelLocation);
+
+        if (bakedModel == null || coreModel == null) {
+            GeckoLib.LOGGER.error("Model not found for location: {}", modelLocation);
+            return;
+        }
+
         double animTime = System.currentTimeMillis() / 50.0;
         float limbSwing = 0.0F;
         float limbSwingAmount = 0.0F;
@@ -132,8 +148,6 @@ public class ServerGeoModelManager {
 
         // 对于Entity类型，从Entity对象中获取这些值
         if (animatable instanceof net.minecraft.world.entity.Entity entity) {
-            // 注意：不同版本的Minecraft可能有不同的方法名
-            // 这里使用通用的方法名，实际使用时可能需要根据Minecraft版本调整
             if (entity instanceof net.minecraft.world.entity.LivingEntity livingEntity) {
                 limbSwing = livingEntity.walkAnimation.position();
                 limbSwingAmount = livingEntity.walkAnimation.speed();
@@ -144,9 +158,27 @@ public class ServerGeoModelManager {
             }
         }
 
-        AnimationState<GeoAnimatable> animationState = new AnimationState<>(animatable, 0, 0, partialTick, isMoving);
-            processor.tickAnimation(animatable,coreModel, animatableManager, animTime, animationState, false);
+        AnimationState<GeoAnimatable> animationState =
+                new AnimationState<>(animatable, 0, 0, partialTick, isMoving);
+        processor.tickAnimation(animatable, coreModel, animatableManager, animTime, animationState, false);
+    }
+    public void updateAnimation(EnhancedEntityCollection collection, float partialTick) {
+        if (!collection.isValid()) {
+            GeckoLib.LOGGER.warn("Attempted to update animation for invalid entity: {}", collection.entityId());
+            return;
+        }
 
+        // 直接从collection获取动画处理器
+        AnimationProcessor<GeoAnimatable> processor = collection.animationProcessor();
+        GeoAnimatable animatable = (GeoAnimatable) collection.entity(); // 已知entity是GeoAnimatable
+        ResourceLocation modelLocation = collection.modelLocation();
+
+        updateAnimation(processor, modelLocation, animatable, partialTick);
+    }
+    //更新动画 - 基于资源位置和实体
+    public void updateAnimation(ResourceLocation modelLocation, GeoAnimatable animatable, float partialTick) {
+        AnimationProcessor<GeoAnimatable> processor = getOrCreateAnimationProcessor(modelLocation);
+        updateAnimation(processor, modelLocation, animatable, partialTick);
     }
 
 private long getUniqueIdForAnimatable(GeoAnimatable animatable) {
