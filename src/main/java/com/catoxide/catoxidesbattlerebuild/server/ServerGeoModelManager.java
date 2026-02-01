@@ -9,7 +9,6 @@ import software.bernie.geckolib.core.animatable.model.CoreGeoModel;
 import software.bernie.geckolib.core.animation.AnimatableManager;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
 import software.bernie.geckolib.core.animation.AnimationState;
-
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,7 +19,7 @@ public class ServerGeoModelManager {
 
     private static final ServerGeoModelManager INSTANCE = new ServerGeoModelManager();
     private Map<ResourceLocation,ModelCollection> modelShelf = new ConcurrentHashMap<>();
-    private final Map<ResourceLocation, AnimationProcessor> animationProcessors = new HashMap<>();
+    private final Map<ResourceLocation, AnimationProcessor> animationProcessors = new ConcurrentHashMap<>();
     private boolean initialized = false;
     private final ModelCollectionFactory factory = new ModelCollectionFactory();
 
@@ -102,7 +101,7 @@ public class ServerGeoModelManager {
             }
 
             // 使用模板创建新的动画处理器
-            AnimationProcessor<GeoAnimatable> processor = new AnimationProcessor<>(collection.coreModel());
+            AnimationProcessor<GeoAnimatable> processor = collection.animationProcessor();
             processor.setActiveModel(collection.bakedModel());
             return processor;
         });
@@ -200,5 +199,12 @@ private long getUniqueIdForAnimatable(GeoAnimatable animatable) {
     // 默认情况下，使用对象的哈希码作为唯一ID
     return System.identityHashCode(animatable);
 }
+    public Collection<ResourceLocation> getAllLoadedModelLocations() {
+        ensureInitialized();
+        return modelShelf.keySet();
+    }
 
+    public boolean isInitialized() {
+        return initialized;
+    }
 }

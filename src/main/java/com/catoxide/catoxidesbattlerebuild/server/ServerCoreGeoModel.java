@@ -9,6 +9,10 @@ import software.bernie.geckolib.core.animatable.model.CoreBakedGeoModel;
 import software.bernie.geckolib.core.animation.Animation;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
 import software.bernie.geckolib.core.animation.AnimationState;
+import software.bernie.geckolib.loading.object.BakedAnimations;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Server-side implementation of CoreGeoModel that can work with any GeoAnimatable type.
@@ -18,14 +22,17 @@ public class ServerCoreGeoModel<E extends GeoAnimatable> implements CoreGeoModel
     private final ResourceLocation modelLocation;
     private final AnimationProcessor<E> animationProcessor;
     private final BakedGeoModel bakedModel;
+    private final BakedAnimations animations;
     /**
      * Creates a new ServerCoreGeoModel instance for the given model location.
      * @param modelLocation The resource location of the model
      */
-    public ServerCoreGeoModel(ResourceLocation modelLocation, BakedGeoModel bakedModel) {
+    public ServerCoreGeoModel(ResourceLocation modelLocation, BakedGeoModel bakedModel,BakedAnimations animations) {
         this.modelLocation = modelLocation;
         this.bakedModel = bakedModel;
+        this.animations = animations;
         this.animationProcessor = new AnimationProcessor<>(this);
+
 
         // 直接使用传入的bakedModel，不依赖Manager
         if (bakedModel != null) {
@@ -69,9 +76,8 @@ public class ServerCoreGeoModel<E extends GeoAnimatable> implements CoreGeoModel
      */
     @Override
     public Animation getAnimation(E animatable, String name) {
-        // In a real implementation, you would load animations from files
-        // For this simple implementation, we'll return null
-        return null;
+        Animation animation =animations.getAnimation(name);
+        return animation;
     }
 
     /**
@@ -94,4 +100,5 @@ public class ServerCoreGeoModel<E extends GeoAnimatable> implements CoreGeoModel
     public ResourceLocation getModelLocation() {
         return modelLocation;
     }
+
 }

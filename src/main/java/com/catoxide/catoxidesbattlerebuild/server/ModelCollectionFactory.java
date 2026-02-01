@@ -1,16 +1,25 @@
 package com.catoxide.catoxidesbattlerebuild.server;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import software.bernie.geckolib.GeckoLib;
 import software.bernie.geckolib.cache.object.BakedGeoModel;
 import software.bernie.geckolib.core.animatable.GeoAnimatable;
+import software.bernie.geckolib.core.animation.Animation;
+import software.bernie.geckolib.core.animation.RawAnimation;
 import software.bernie.geckolib.loading.FileLoader;
 import software.bernie.geckolib.loading.json.raw.Model;
+import software.bernie.geckolib.loading.object.BakedAnimations;
 import software.bernie.geckolib.loading.object.BakedModelFactory;
 import software.bernie.geckolib.loading.object.GeometryTree;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
 
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -38,11 +47,11 @@ public class ModelCollectionFactory {
         try {
             Model rawModel = loadRawModel(modelLocation, resourceManager);
             BakedGeoModel bakedModel = createBakedGeoModel(modelLocation, rawModel);
-            ServerCoreGeoModel<GeoAnimatable> coreModel = new ServerCoreGeoModel<>(modelLocation,bakedModel);
-            AnimationProcessor processorTemplate = createAnimationProcessor(coreModel, bakedModel);
+            BakedAnimations animations = loadBakedAnimation(modelLocation, resourceManager);
+            ServerCoreGeoModel<GeoAnimatable> coreModel = new ServerCoreGeoModel<>(modelLocation,bakedModel,animations);
+            AnimationProcessor animationProcessor = createAnimationProcessor(coreModel, bakedModel);
             ModelCollection collection =
-                    new ModelCollection(coreModel, bakedModel, processorTemplate);
-
+                    new ModelCollection(coreModel, bakedModel,animations,animationProcessor);
             // 缓存结果
             cache.put(modelLocation, collection);
 
@@ -87,6 +96,29 @@ public class ModelCollectionFactory {
             throw new RuntimeException("Error creating baked model: " + modelLocation, e);
         }
     }
+    private BakedAnimations loadBakedAnimation(ResourceLocation modelLocation, ResourceManager resourceManager) {
+        try {
+            String path = modelLocation.getPath();
+            // 移除 "geo/" 前缀和 ".json" 后缀
+            if (path.startsWith("geo/")) {
+                path = path.substring(4);
+            }
+            if (path.endsWith(".geo.json")) {
+                path = path.substring(0, path.length() - 9); // ".geo.json" 是9个字符
+            }
+            // 添加 "animations/" 前缀和 ".animation.json" 后缀
+            String animationPath = "animations/" + path + ".animation.json";
+            ResourceLocation animationLocation = new ResourceLocation(modelLocation.getNamespace(), animationPath);
+            BakedAnimations bakedanimation = FileLoader.loadAnimationsFile(animationLocation, resourceManager);
+            if (bakedanimation == null) {
+                throw new IllegalArgumentException("Failed to load animation: " + modelLocation);
+            }
+            return bakedanimation;
+        } catch (Exception e) {
+            throw new RuntimeException("Error loading raw model: " + modelLocation, e);
+        }
+    }
+
 
     /**
      * 步骤4：创建AnimationProcessor模板

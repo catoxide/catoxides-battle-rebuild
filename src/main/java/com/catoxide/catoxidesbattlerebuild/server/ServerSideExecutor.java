@@ -2,6 +2,8 @@ package com.catoxide.catoxidesbattlerebuild.server;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.packs.resources.Resource;
+import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
@@ -12,6 +14,15 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import software.bernie.geckolib.GeckoLib;
 import software.bernie.geckolib.core.animatable.GeoAnimatable;
+
+import java.util.Collection;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import static com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuild.MODID;
 
 @Mod.EventBusSubscriber
 public class ServerSideExecutor {
@@ -34,15 +45,22 @@ public class ServerSideExecutor {
     public void initializeServerComponents(ServerLevel level) {
         if (!initialized) {
             try {
-                // 初始化模型管理器
+                ResourceManager resourceManager = level.getServer().getResourceManager();
+                Executor executor = level.getServer();
+
+                GeckoLib.LOGGER.info("=== 初始化资源管理器 ===");
+                GeckoLib.LOGGER.info("Server: {}", level.getServer());
+                GeckoLib.LOGGER.info("资源管理器: {}", resourceManager);
+
+
                 ServerGeoModelManager.getInstance().initialize(
-                        level.getServer().getResourceManager(),
-                        level.getServer()
+                        resourceManager,
+                        MODEL_LOADING_EXECUTOR
                 );
                 initialized = true;
-                GeckoLib.LOGGER.info("ServerSideExecutor initialized for level: {}", level.dimension().location());
+                GeckoLib.LOGGER.info("✅ ServerSideExecutor 初始化完成");
             } catch (Exception e) {
-                GeckoLib.LOGGER.error("Failed to initialize server components", e);
+                GeckoLib.LOGGER.error("初始化服务端组件失败", e);
             }
         }
     }
@@ -60,7 +78,7 @@ public class ServerSideExecutor {
     /**
      * 事件订阅：实体加入世界时自动追踪（如果已注册模型）
      */
-    @SubscribeEvent
+    @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.HIGHEST)
     public static void onEntityJoinWorld(EntityJoinLevelEvent event) {
         if (!event.getLevel().isClientSide() && event.getEntity() instanceof GeoAnimatable) {
             Entity entity = event.getEntity();
@@ -75,23 +93,119 @@ public class ServerSideExecutor {
             }
         }
     }
-    private static ResourceLocation determineModelForEntity(Entity entity) {
-        // 策略1：从实体的类名推断（最简单的方法）
-        String className = entity.getClass().getSimpleName().toLowerCase();
-        String modId = "yourmod"; // 你的Mod ID
+    public static ResourceLocation determineModelForEntity(Entity entity) {
+        // 1. 获取实体的核心标识（去除符号）
+        String entityCore = getEntityCoreIdentifier(entity);
 
-        // 假设模型文件按照约定命名：geo/<entity_class_name>.geo.json
-        return new ResourceLocation(modId, "geo/" + className + ".geo.json");
+        if (entityCore.isEmpty()) {
+            return null;
+        }
 
-        // 策略2：从实体的注册名推断
-        // ResourceLocation registryName = EntityType.getKey(entity.getType());
-        // return new ResourceLocation(registryName.getNamespace(),
-        //     "geo/" + registryName.getPath() + ".geo.json");
+        // 2. 获取所有已加载的模型
+        Collection<ResourceLocation> loadedModels =
+                ServerGeoModelManager.getInstance().getAllLoadedModelLocations();
 
-        // 策略3：如果实体实现了特定接口，从接口获取
-        // if (entity instanceof IHasModelLocation modelEntity) {
-        //     return modelEntity.getModelLocation();
-        // }
+        if (loadedModels == null || loadedModels.isEmpty()) {
+            return null;
+        }
+
+        // 3. 遍历所有模型，查找完全匹配的
+        for (ResourceLocation modelLocation : loadedModels) {
+            String modelCore = getModelCoreIdentifier(modelLocation);
+
+            if (entityCore.equals(modelCore)) {
+                GeckoLib.LOGGER.debug("Exact match found: {} -> {}", entityCore, modelLocation);
+                return modelLocation;
+            }
+        }
+
+        // 4. 没有找到匹配的模型
+        GeckoLib.LOGGER.warn("No exact model match for entity: {} (core identifier: {})",
+                entity.getDisplayName().getString(), entityCore);
+        return null;
+    }
+
+    /**
+     * 获取实体的核心标识符（去除所有符号）
+     */
+    private static String getEntityCoreIdentifier(Entity entity) {
+        // 获取实体类名（去掉"Entity"后缀）
+        String className = entity.getClass().getSimpleName();
+        className = removeSuffix(className, "Entity");
+
+        // 获取实体类型注册名作为备选
+        EntityType<?> entityType = entity.getType();
+        String registryName = EntityType.getKey(entityType).getPath();
+
+        // 尝试两种可能的标识符
+        String[] possibleIdentifiers = {className, registryName};
+
+        for (String identifier : possibleIdentifiers) {
+            String core = normalizeIdentifier(identifier);
+            if (!core.isEmpty() && core.length() >= 3) { // 至少3个字母才认为是有效的
+                return core;
+            }
+        }
+
+        return "";
+    }
+
+    /**
+     * 获取模型的核心标识符（去除所有符号）
+     */
+    private static String getModelCoreIdentifier(ResourceLocation modelLocation) {
+        // 获取模型路径（如 "geo/elder_guardian.geo.json"）
+        String path = modelLocation.getPath();
+
+        // 移除 "geo/" 前缀
+        if (path.startsWith("geo/")) {
+            path = path.substring(4);
+        }
+
+        // 移除 ".geo.json" 后缀
+        if (path.endsWith(".geo.json")) {
+            path = path.substring(0, path.length() - 9);
+        }
+
+        // 移除子目录（如果有）
+        int lastSlash = path.lastIndexOf('/');
+        if (lastSlash != -1) {
+            path = path.substring(lastSlash + 1);
+        }
+
+        // 规范化标识符
+        return normalizeIdentifier(path);
+    }
+
+    /**
+     * 规范化标识符：全部小写，移除所有非字母字符
+     */
+    private static String normalizeIdentifier(String identifier) {
+        if (identifier == null || identifier.isEmpty()) {
+            return "";
+        }
+
+        // 1. 全部转换为小写
+        identifier = identifier.toLowerCase();
+
+        // 2. 移除所有非字母字符（只保留a-z）
+        identifier = identifier.replaceAll("[^a-z]", "");
+
+        // 3. 移除常见的无意义后缀（如复数形式）
+        identifier = removeSuffix(identifier, "s");
+        identifier = removeSuffix(identifier, "es");
+
+        return identifier;
+    }
+
+    /**
+     * 移除字符串的后缀（如果存在）
+     */
+    private static String removeSuffix(String str, String suffix) {
+        if (str.endsWith(suffix)) {
+            return str.substring(0, str.length() - suffix.length());
+        }
+        return str;
     }
 
     /**
@@ -142,26 +256,30 @@ public class ServerSideExecutor {
     /**
      * 注册实体到动画系统（供其他模块调用）
      */
-    public static void registerGeckoEntity(Entity entity, net.minecraft.resources.ResourceLocation modelLocation) {
-        if (entity instanceof GeoAnimatable) {
-            try {
-                // 1. 创建EntityCollection（通过EntityCollectionFactory）
-                EntityCollection collection = EntityCollectionFactory.getInstance()
-                        .createEntityCollection(entity, modelLocation);
+    public static void registerGeckoEntity(Entity entity, ResourceLocation modelLocation) {
+        // 1. 类型检查
+        if (!(entity instanceof GeoAnimatable)) {
+            return;
+        }
 
-                if (collection == null) {
-                    GeckoLib.LOGGER.error("Failed to create EntityCollection for entity: {}", entity);
-                    return;
-                }
+        try {
+            // 2. 先检查是否已存在（使用 get 模式）
+            EntityCollection existing = EntityCollectionFactory.getInstance()
+                    .getEntityCollection(entity.getUUID());
 
-                // 2. 注册到实体管理器
-                ServerEntityManager.getInstance().registerEntity(entity, modelLocation);
-
-                GeckoLib.LOGGER.debug("Registered Gecko entity: {} with model: {}", entity, modelLocation);
-
-            } catch (Exception e) {
-                GeckoLib.LOGGER.error("Failed to register Gecko entity: {}", entity, e);
+            if (existing != null) {
+                // 已存在，直接返回，避免重复注册
+                GeckoLib.LOGGER.debug("Entity {} already registered, skipping", entity);
+                return;
             }
+
+            // 3. 不存在，才进行注册
+            ServerEntityManager.getInstance().registerEntity(entity, modelLocation);
+
+            GeckoLib.LOGGER.debug("Registered Gecko entity: {} with model: {}", entity, modelLocation);
+
+        } catch (Exception e) {
+            GeckoLib.LOGGER.error("Failed to register Gecko entity: {}", entity, e);
         }
     }
 
@@ -206,4 +324,11 @@ public class ServerSideExecutor {
         }
         return defaultValue;
     }
+    private static final ExecutorService MODEL_LOADING_EXECUTOR =
+            Executors.newFixedThreadPool(2, r -> {
+                Thread thread = new Thread(r, "GeckoLib-Model-Loader");
+                thread.setDaemon(true);
+                thread.setPriority(Thread.MIN_PRIORITY + 1);
+                return thread;
+            });
 }
