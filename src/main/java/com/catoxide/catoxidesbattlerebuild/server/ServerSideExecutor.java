@@ -220,15 +220,14 @@ public class ServerSideExecutor {
 
     /**
      * 关键：服务器每 tick 更新所有实体动画
+     * 注意：这个方法已被HitboxSystemIntegration接管，以确保正确的更新顺序
      */
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
             try {
-                // 更新所有实体动画
-                ServerEntityManager.getInstance().updateAll(1.0f);
-
-                // 清理无效实体集合
+                // 注意：ServerEntityManager.updateAll() 现在由 HitboxSystemIntegration 调用
+                // 这里只负责清理无效实体集合
                 EntityCollectionFactory.getInstance().cleanupInvalidCollections();
 
             } catch (Exception e) {

@@ -126,12 +126,16 @@ public class ServerEntityManager {
      */
     private void updateEntity(EntityCollection collection, float partialTick) {
         try {
+            // Debug：输出更新开始信息
+            System.out.println("[ServerEntityManager] Updating entity: " + collection.entityId());
+            
             // 1. 获取动画处理器
             var animationProcessor = collection.animationProcessor();
             if (animationProcessor == null) {
-                GeckoLib.LOGGER.warn("Animation processor not found for entity: {}", collection.entity());
+                System.out.println("[ServerEntityManager] Warning: Animation processor is null for entity: " + collection.entity());
                 return;
             }
+            System.out.println("[ServerEntityManager] Animation processor found for entity: " + collection.entityId());
 
             // 2. 更新动画状态
             Map<String, Matrix4f> boneMatrices = updateAnimationAndGetMatrices(
@@ -141,10 +145,15 @@ public class ServerEntityManager {
                     partialTick
             );
 
+            System.out.println("[ServerEntityManager] Bone matrices after update: " + 
+                    (boneMatrices != null ? boneMatrices.size() + " bones" : "null"));
+
             // 3. 计算cube顶点
             Map<String, List<Vector3f>> cubeVertices = null;
             if (boneMatrices != null && !boneMatrices.isEmpty()) {
                 cubeVertices = calculateCubeVertices(collection.modelLocation(), boneMatrices);
+                System.out.println("[ServerEntityManager] Cube vertices calculated: " + 
+                        (cubeVertices != null ? cubeVertices.size() + " cubes" : "null"));
             }
 
             // 4. 更新实体集合（创建新的record实例）
@@ -152,12 +161,19 @@ public class ServerEntityManager {
 
             // 5. 替换旧的集合
             entityMap.put(collection.entityId(), updatedCollection);
+            
+            // 6. 更新EntityCollectionFactory缓存
+            EntityCollectionFactory.getInstance().updateEntityCollection(
+                collection, boneMatrices, cubeVertices
+            );
+            System.out.println("[ServerEntityManager] Entity collection updated successfully");
 
-            // 6. 更新策略组（如果需要）
+            // 7. 更新策略组（如果需要）
             updateStrategyGroup(collection, updatedCollection);
 
         } catch (Exception e) {
-            GeckoLib.LOGGER.error("Failed to update entity {}: {}", collection.entity(), e.getMessage(), e);
+            System.out.println("[ServerEntityManager] Error updating entity " + collection.entityId() + ": " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -193,6 +209,10 @@ public class ServerEntityManager {
         try {
             // 获取所有已注册的骨骼
             Collection<CoreGeoBone> bones = animationProcessor.getRegisteredBones();
+            
+            // Debug：输出骨骼数量
+            System.out.println("[ServerEntityManager] Extracting bone matrices. Registered bones count: " + 
+                    (bones != null ? bones.size() : "null"));
 
             // 遍历所有骨骼并获取它们的矩阵
             for (CoreGeoBone coreBone : bones) {
@@ -200,18 +220,29 @@ public class ServerEntityManager {
                 if (coreBone instanceof GeoBone bone) {
                     String boneName = bone.getName();
 
-                    // 获取世界空间矩阵
-                    Matrix4f matrix = bone.getWorldSpaceMatrix();
-
+                    // 使用getPositionMatrix()获取模型空间的变换矩阵
+                    // getWorldSpaceMatrix()在服务器端返回的是局部空间矩阵
+                    Matrix4f matrix = bone.getLocalSpaceMatrix();
                     if (matrix != null) {
                         // 创建矩阵的副本
                         boneMatrices.put(boneName, new Matrix4f(matrix));
+                        
+                        // Debug：输出矩阵的平移部分
+                        Vector3f translation = new Vector3f();
+                        matrix.getTranslation(translation);
+                        System.out.println("[ServerEntityManager] Extracted matrix for bone: " + boneName + 
+                                ", Translation: (" + translation.x + ", " + translation.y + ", " + translation.z + ")");
+                    } else {
+                        System.out.println("[ServerEntityManager] Warning: matrix is null for bone: " + boneName);
                     }
                 }
             }
 
+            System.out.println("[ServerEntityManager] Total matrices extracted: " + boneMatrices.size());
+
         } catch (Exception e) {
-            GeckoLib.LOGGER.error("Failed to extract bone matrices: {}", e.getMessage(), e);
+            System.out.println("[ServerEntityManager] Error extracting bone matrices: " + e.getMessage());
+            e.printStackTrace();
         }
 
         return boneMatrices.isEmpty() ? null : boneMatrices;

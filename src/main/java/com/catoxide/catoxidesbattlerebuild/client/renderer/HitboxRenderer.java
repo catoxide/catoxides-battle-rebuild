@@ -35,8 +35,12 @@ public class HitboxRenderer {
         // 从客户端系统获取受击盒数据
         Collection<BoneHitboxComponent> hitboxes =
                 HitboxSystemClient.getInstance().getEntityHitboxes(entity.getId());
-        System.out.print("渲染实体 {} (ID: {}) 的受击盒，数量: {}"+
-                entity.getName().getString()+entity.getId()+hitboxes.size());
+        
+        // 调试输出（只在有受击盒时输出）
+        if (!hitboxes.isEmpty()) {
+            System.out.println(String.format("渲染实体 %s (ID: %d) 的受击盒，数量: %d",
+                    entity.getName().getString(), entity.getId(), hitboxes.size()));
+        }
 
         if (hitboxes.isEmpty()) {
             return;
@@ -58,13 +62,13 @@ public class HitboxRenderer {
         Vector3f worldCenter = hitbox.getWorldCenter();
         Vector3f halfExtents = hitbox.getHalfExtents();
 
-        // 创建AABB
+        // 创建AABB（基于局部坐标，以原点为中心）
         net.minecraft.world.phys.AABB aabb = new net.minecraft.world.phys.AABB(
-                worldCenter.x - halfExtents.x, worldCenter.y - halfExtents.y, worldCenter.z - halfExtents.z,
-                worldCenter.x + halfExtents.x, worldCenter.y + halfExtents.y, worldCenter.z + halfExtents.z
+                -halfExtents.x, -halfExtents.y, -halfExtents.z,
+                halfExtents.x, halfExtents.y, halfExtents.z
         );
 
-        // 渲染OBB
+        // 渲染OBB（使用世界坐标作为枢轴点）
         OBBRenderer.renderOBB(
                 poseStack,
                 vertexConsumer,
@@ -72,7 +76,7 @@ public class HitboxRenderer {
                 hitbox.getWorldOrientation(),
                 getHitboxColor(hitbox),
                 0.8f,
-                new Vector3f(worldCenter.x, worldCenter.y, worldCenter.z)
+                worldCenter  // 直接使用世界坐标作为枢轴点
         );
     }
 

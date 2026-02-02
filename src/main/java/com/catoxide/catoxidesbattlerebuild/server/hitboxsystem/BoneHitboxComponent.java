@@ -79,14 +79,15 @@ public class BoneHitboxComponent {
             Vector3f vertex = new Vector3f(worldCenter);
 
             // 根据二进制位确定方向
-            if ((i & 1) != 0) vertex.add(axes[0].mul(halfExtents.x));
-            else vertex.sub(axes[0].mul(halfExtents.x));
+            // 注意：必须创建新的Vector3f，否则会修改axes数组
+            if ((i & 1) != 0) vertex.add(new Vector3f(axes[0]).mul(halfExtents.x));
+            else vertex.sub(new Vector3f(axes[0]).mul(halfExtents.x));
 
-            if ((i & 2) != 0) vertex.add(axes[1].mul(halfExtents.y));
-            else vertex.sub(axes[1].mul(halfExtents.y));
+            if ((i & 2) != 0) vertex.add(new Vector3f(axes[1]).mul(halfExtents.y));
+            else vertex.sub(new Vector3f(axes[1]).mul(halfExtents.y));
 
-            if ((i & 4) != 0) vertex.add(axes[2].mul(halfExtents.z));
-            else vertex.sub(axes[2].mul(halfExtents.z));
+            if ((i & 4) != 0) vertex.add(new Vector3f(axes[2]).mul(halfExtents.z));
+            else vertex.sub(new Vector3f(axes[2]).mul(halfExtents.z));
 
             vertices.add(vertex);
         }

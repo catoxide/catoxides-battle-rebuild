@@ -20,6 +20,13 @@ public class HitboxConfig {
     }
 
     /**
+     * 获取配置名称
+     */
+    public String getConfigName() {
+        return configName;
+    }
+
+    /**
      * 添加骨骼配置
      */
     public void addBoneConfig(BoneConfig config) {
@@ -206,3 +213,4 @@ public class HitboxConfig {
         }
     }
 }
+

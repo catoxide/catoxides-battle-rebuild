@@ -86,8 +86,15 @@ public class HitboxSystem {
         // 获取配置
         HitboxConfig config = configRegistry.getConfig(collection.modelLocation());
 
+        // Debug：输出配置信息
+        System.out.println("[HitboxSystem] Creating hitboxes for entity " + entityId);
+        System.out.println("[HitboxSystem] Model location: " + collection.modelLocation());
+        System.out.println("[HitboxSystem] Config: " + (config != null ? config.getConfigName() : "null, using default"));
+
         if (config == null) {
             config = configRegistry.getDefaultConfig();
+            System.out.println("[HitboxSystem] Using default config with " + 
+                    (config != null ? config.getAllBoneConfigs().size() : 0) + " bone configs");
         }
 
         // 从ModelCollection获取骨骼信息并创建受击盒
@@ -109,7 +116,7 @@ public class HitboxSystem {
     private void traverseBoneTree(UUID entityId,GeoBone bone, HitboxConfig config,
                                   Map<String, BoneHitboxComponent> hitboxes) {
         // 处理当前骨骼
-        createHitboxForBone(entityId,bone.getName(), config, hitboxes);
+        createHitboxForBone(entityId, bone, config, hitboxes);
 
         // 递归处理所有子骨骼
         for (GeoBone childBone : bone.getChildBones()) {
@@ -120,46 +127,66 @@ public class HitboxSystem {
     /**
      * 为单个骨骼创建受击盒
      */
-    private void createHitboxForBone(UUID entityId, String boneName,
-                                     HitboxConfig config,
-                                     Map<String, BoneHitboxComponent> hitboxes) {
+    private void createHitboxForBone(
+            UUID entityId,
+            GeoBone bone,
+            HitboxConfig config,
+            Map<String, BoneHitboxComponent> hitboxes) {
 
-        // 获取骨骼特定配置
+        String boneName = bone.getName();
+
+        // 获取该骨骼的配置
         HitboxConfig.BoneConfig boneConfig = config.getBoneConfig(boneName);
 
-        // 如果没有找到特定配置，使用默认配置
+        // Debug：输出骨骼配置信息
+        System.out.println("[HitboxSystem] Creating hitbox for bone: " + boneName);
+        System.out.println("[HitboxSystem]   BoneConfig: " + (boneConfig != null ? "found" : "not found, using default"));
+
+        Vector3f size;
+        Vector3f center;
+        Quaternionf rotation;
+        float damageMultiplier;
+        boolean isCritical;
+        boolean isArmored;
+
         if (boneConfig == null) {
-            // 尝试使用默认的default_bone配置
-            boneConfig = config.getBoneConfig("default_bone");
-
-            // 如果连默认配置都没有，创建一个基本的配置
-            if (boneConfig == null) {
-                boneConfig = new HitboxConfig.BoneConfig(
-                        boneName,
-                        new Vector3f(0, 0, 0),
-                        new Vector3f(0.2f, 0.2f, 0.2f),
-                        new Quaternionf(),
-                        true  // 默认启用
-                ).setDamageMultiplier(1.0f);
-            }
+            // 没有特定配置，使用默认值
+            // 注意：BoneHitboxComponent构造函数期望的是size（完整尺寸），不是halfExtents
+            size = new Vector3f(0.2f, 0.2f, 0.2f);  // 默认完整尺寸
+            center = new Vector3f(0.0f, 0.0f, 0.0f);
+            rotation = new Quaternionf(0.0f, 0.0f, 0.0f, 1.0f);
+            damageMultiplier = 1.0f;
+            isCritical = false;
+            isArmored = false;
+            System.out.println("[HitboxSystem]   Using default config - Size: " + size);
+        } else {
+            // 使用配置的值
+            // BoneConfig使用的是size（完整尺寸）
+            size = boneConfig.getSize();
+            center = boneConfig.getCenter();
+            rotation = boneConfig.getOrientation();
+            damageMultiplier = boneConfig.getDamageMultiplier();
+            isCritical = boneConfig.isCritical();
+            isArmored = boneConfig.isArmored();
+            System.out.println("[HitboxSystem]   Using configured BoneConfig - Size: " + size);
         }
 
-        // 默认总是创建hitbox（除非显式禁用）
-        if (boneConfig.isEnabled()) {
-            BoneHitboxComponent hitbox = new BoneHitboxComponent(
-                    entityId,
-                    boneName,
-                    boneConfig.getCenter(),
-                    boneConfig.getSize(),
-                    boneConfig.getOrientation()
-            );
+        // 创建受击盒组件
+        // 注意：BoneHitboxComponent构造函数期望的是size（完整尺寸），内部会乘以0.5得到halfExtents
+        BoneHitboxComponent hitbox = new BoneHitboxComponent(
+                entityId,
+                boneName,
+                center,
+                size,  // 传入完整尺寸，不是halfExtents
+                rotation
+        );
 
-            hitbox.setDamageMultiplier(boneConfig.getDamageMultiplier());
-            hitbox.setCritical(boneConfig.isCritical());
-            hitbox.setArmored(boneConfig.isArmored());
+        // 设置其他属性
+        hitbox.setDamageMultiplier(damageMultiplier);
+        hitbox.setCritical(isCritical);
+        hitbox.setArmored(isArmored);
 
-            hitboxes.put(boneName, hitbox);
-        }
+        hitboxes.put(boneName, hitbox);
     }
 
     /**
@@ -207,7 +234,15 @@ public class HitboxSystem {
 
         // 获取骨骼矩阵
         Map<String, Matrix4f> boneMatrices = collection.boneMatrices();
-        if (boneMatrices == null) return;
+        
+        // Debug：输出骨骼矩阵信息
+        System.out.println("[HitboxSystem] Updating hitboxes for entity " + entityId);
+        System.out.println("[HitboxSystem] BoneMatrices: " + (boneMatrices != null ? boneMatrices.size() + " bones" : "null"));
+        
+        if (boneMatrices == null) {
+            System.out.println("[HitboxSystem] Warning: boneMatrices is null!");
+            return;
+        }
 
         // 更新每个受击盒的变换
         for (Map.Entry<String, BoneHitboxComponent> entry : hitboxes.entrySet()) {
@@ -222,8 +257,27 @@ public class HitboxSystem {
                         .translate((float)entity.getX(), (float)entity.getY(), (float)entity.getZ())
                         .rotateY((float)Math.toRadians(-entity.getYRot()));
 
+                // Debug：输出实体矩阵和骨骼矩阵的平移部分
+                Vector3f entityTranslation = new Vector3f();
+                entityMatrix.getTranslation(entityTranslation);
+                Vector3f boneTranslation = new Vector3f();
+                boneMatrix.getTranslation(boneTranslation);
+                System.out.println("[HitboxSystem] Bone: " + boneName + 
+                        ", Entity Translation: (" + entityTranslation.x + ", " + entityTranslation.y + ", " + entityTranslation.z + ")" +
+                        ", Bone Translation: (" + boneTranslation.x + ", " + boneTranslation.y + ", " + boneTranslation.z + ")");
+
+                // 矩阵乘法顺序：先应用骨骼变换，再应用实体变换
+                // finalMatrix = entityMatrix * boneMatrix
                 Matrix4f finalMatrix = entityMatrix.mul(boneMatrix, new Matrix4f());
+                
                 hitbox.updateWorldTransform(finalMatrix);
+                
+                // Debug：输出更新后的世界坐标
+                System.out.println("[HitboxSystem] Updated hitbox " + boneName + 
+                        " - WorldCenter: (" + hitbox.getWorldCenter().x + ", " + 
+                        hitbox.getWorldCenter().y + ", " + hitbox.getWorldCenter().z + ")");
+            } else {
+                System.out.println("[HitboxSystem] Warning: bone matrix not found for " + boneName);
             }
         }
     }

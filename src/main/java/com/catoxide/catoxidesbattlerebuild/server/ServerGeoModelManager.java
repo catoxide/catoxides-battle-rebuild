@@ -150,9 +150,19 @@ public class ServerGeoModelManager {
             }
         }
 
+        // Debug：输出动画更新信息
+        System.out.println("[ServerGeoModelManager] Updating animation for entity: " + 
+                (animatable instanceof net.minecraft.world.entity.Entity ? 
+                        ((net.minecraft.world.entity.Entity)animatable).getUUID() : "unknown") +
+                ", animTime: " + animTime +
+                ", limbSwing: " + limbSwing +
+                ", isMoving: " + isMoving);
+
         AnimationState<GeoAnimatable> animationState =
                 new AnimationState<>(animatable, 0, 0, partialTick, isMoving);
         processor.tickAnimation(animatable, coreModel, animatableManager, animTime, animationState, false);
+        
+        System.out.println("[ServerGeoModelManager] Animation tick completed");
     }
     public void updateAnimation(EntityCollection collection, float partialTick) {
         if (!collection.isValid()) {
@@ -208,3 +218,4 @@ private long getUniqueIdForAnimatable(GeoAnimatable animatable) {
         return initialized;
     }
 }
+

@@ -9,10 +9,12 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import software.bernie.geckolib.GeckoLib;
 
+import static com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuild.MODID;
+
 /**
  * 受击系统集成器 - 将HitboxSystem集成到现有架构
  */
-@Mod.EventBusSubscriber
+@Mod.EventBusSubscriber(modid = MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class HitboxSystemIntegration {
 
     /**
@@ -22,13 +24,22 @@ public class HitboxSystemIntegration {
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
             try {
-                // 1. 更新所有实体的受击盒
-                HitboxSystem.getInstance().updateHitboxes(1.0f);
+                // 1. 先更新所有实体的动画（确保boneMatrices已更新）
+                System.out.println("[HitboxSystemIntegration] Starting server tick update...");
+                com.catoxide.catoxidesbattlerebuild.server.ServerEntityManager.getInstance().updateAll(1.0f);
+                System.out.println("[HitboxSystemIntegration] ServerEntityManager.updateAll() completed");
 
-                // 2. 同步到客户端
+                // 2. 更新所有实体的受击盒（现在boneMatrices应该已经可用）
+                HitboxSystem.getInstance().updateHitboxes(1.0f);
+                System.out.println("[HitboxSystemIntegration] HitboxSystem.updateHitboxes() completed");
+
+                // 3. 同步到客户端
                 HitboxSyncManager.getInstance().onServerTick(HitboxSystem.getInstance());
+                System.out.println("[HitboxSystemIntegration] HitboxSyncManager.onServerTick() completed");
 
             } catch (Exception e) {
+                System.out.println("[HitboxSystemIntegration] Error updating hitbox system: " + e.getMessage());
+                e.printStackTrace();
                 GeckoLib.LOGGER.error("Error updating hitbox system: {}", e.getMessage(), e);
             }
         }

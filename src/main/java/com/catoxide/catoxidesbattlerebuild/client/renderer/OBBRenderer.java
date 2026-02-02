@@ -21,9 +21,9 @@ public class OBBRenderer {
                                  AABB localAABB, Quaternionf rotation, Color color, float alpha, Vector3f pivot) {
         // 计算AABB的中心点（相对于枢轴点）
         Vec3 center = new Vec3(
-                (localAABB.minX + localAABB.maxX) / 2 - pivot.x,
-                (localAABB.minY + localAABB.maxY) / 2 - pivot.y,
-                (localAABB.minZ + localAABB.maxZ) / 2 - pivot.z
+                (localAABB.minX + localAABB.maxX) / 2,
+                (localAABB.minY + localAABB.maxY) / 2,
+                (localAABB.minZ + localAABB.maxZ) / 2
         );
 
         // 计算半尺寸
@@ -47,8 +47,8 @@ public class OBBRenderer {
         Vector3f[] rotatedVertices = new Vector3f[8];
         for (int i = 0; i < 8; i++) {
             rotatedVertices[i] = rotation.transform(localVertices[i]);
-            // 加回枢轴点偏移，得到最终世界位置
-            rotatedVertices[i].add(pivot.x + (float)center.x, pivot.y + (float)center.y, pivot.z + (float)center.z);
+            // 加上枢轴点偏移，得到最终世界位置
+            rotatedVertices[i].add(pivot);
         }
 
         // 定义立方体的12条边
@@ -86,3 +86,4 @@ public class OBBRenderer {
                 .endVertex();
     }
 }
+

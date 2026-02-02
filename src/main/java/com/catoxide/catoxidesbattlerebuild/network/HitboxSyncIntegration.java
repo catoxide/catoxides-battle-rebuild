@@ -16,19 +16,19 @@ public class HitboxSyncIntegration {
     /**
      * 服务器tick时同步受击盒
      */
-    @SubscribeEvent
-    public static void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase == TickEvent.Phase.END) {
-            try {
-                // 更新受击盒系统
-                HitboxSystem.getInstance().updateHitboxes(1.0f);
+    // @SubscribeEvent
+    // public static void onServerTick(TickEvent.ServerTickEvent event) {
+    //     if (event.phase == TickEvent.Phase.END) {
+    //         try {
+    //             // 更新受击盒系统
+    //             HitboxSystem.getInstance().updateHitboxes(1.0f);
 
-                // 同步到客户端
-                HitboxSyncManager.getInstance().onServerTick(HitboxSystem.getInstance());
+    //             // 同步到客户端
+    //             HitboxSyncManager.getInstance().onServerTick(HitboxSystem.getInstance());
 
-            } catch (Exception e) {
-                GeckoLib.LOGGER.error("Error in server tick sync: {}", e.getMessage(), e);
-            }
-        }
-    }
+    //         } catch (Exception e) {
+    //             GeckoLib.LOGGER.error("Error in server tick sync: {}", e.getMessage(), e);
+    //         }
+    //     }
+    // }
 }

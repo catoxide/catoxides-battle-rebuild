@@ -38,21 +38,20 @@ public class ClientHitboxHandler {
             List<BoneHitboxComponent> hitboxList = new ArrayList<>();
 
             for (HitboxSyncPacket.BoneHitboxData data : entry.getValue()) {
-                // 创建客户端的受击盒组件
+                // 创建客户端的受击盒组件 - 使用客户端专用构造器（8个参数）
                 BoneHitboxComponent hitbox = new BoneHitboxComponent(
                         entity.getUUID(),
                         data.boneName,
-                        data.worldCenter,  // 注意：服务器发来的已经是世界坐标
+                        data.worldCenter,  // 服务器发来的已经是世界坐标
                         data.halfExtents,  // 半边长
-                        data.worldOrientation
+                        data.worldOrientation,
+                        data.damageMultiplier,
+                        data.isCritical,
+                        data.isArmored,
+                        data.isActive
                 );
 
-                hitbox.setCritical(data.isCritical);
-                hitbox.setArmored(data.isArmored);
-                hitbox.setActive(data.isActive);
-
                 // 注意：客户端不需要updateWorldTransform，因为数据已经是世界坐标
-                // 但我们可以设置一个标记表明这是已经变换过的数据
                 hitboxList.add(hitbox);
             }
 
