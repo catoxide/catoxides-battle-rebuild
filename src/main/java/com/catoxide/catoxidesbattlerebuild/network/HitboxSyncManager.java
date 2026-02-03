@@ -10,6 +10,10 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.network.PacketDistributor;
 import software.bernie.geckolib.GeckoLib;
+import software.bernie.geckolib.core.animatable.GeoAnimatable;
+import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
+import software.bernie.geckolib.core.animation.AnimatableManager;
+import software.bernie.geckolib.core.animation.AnimationState;
 
 import java.util.*;
 
@@ -20,7 +24,7 @@ public class HitboxSyncManager {
     private static final HitboxSyncManager INSTANCE = new HitboxSyncManager();
 
     // 同步频率控制（每多少tick同步一次）
-    private static final int SYNC_INTERVAL = 5;
+    private static final int SYNC_INTERVAL = 1;
     private int tickCounter = 0;
 
     // 距离限制（只同步玩家32格内的实体）
@@ -93,19 +97,34 @@ public class HitboxSyncManager {
                 entity = serverLevel.getEntity(entityUUID);
             }
 
-
             if (entity == null) continue;
 
             // 距离检查
             double distanceSq = entity.distanceToSqr(playerX, playerY, playerZ);
             if (distanceSq > MAX_SYNC_DISTANCE_SQ) continue;
 
+            // 获取动画状态信息
+            AnimationStateInfo animState = getAnimationState(entity);
+
             // 转换为数据列表
             List<HitboxSyncPacket.BoneHitboxData> hitboxDataList = new ArrayList<>();
 
             for (BoneHitboxComponent hitbox : entry.getValue()) {
                 if (hitbox.isActive()) {
-                    hitboxDataList.add(new HitboxSyncPacket.BoneHitboxData(hitbox));
+                    hitboxDataList.add(new HitboxSyncPacket.BoneHitboxData(
+                            hitbox.getBoneName(),
+                            hitbox.getWorldCenter(),
+                            hitbox.getHalfExtents(),
+                            hitbox.getWorldOrientation(),
+                            hitbox.getDamageMultiplier(),
+                            hitbox.isCritical(),
+                            hitbox.isArmored(),
+                            hitbox.isActive(),
+                            animState.animationName,
+                            animState.animationTime,
+                            animState.animationSpeed,
+                            animState.looping
+                    ));
                 }
             }
 
@@ -135,6 +154,72 @@ public class HitboxSyncManager {
     }
 
     /**
+     * 从实体获取动画状态信息
+     */
+    private AnimationStateInfo getAnimationState(Entity entity) {
+        if (!(entity instanceof GeoAnimatable geoAnimatable)) {
+            return AnimationStateInfo.getDefault();
+        }
+
+        try {
+            // 获取动画实例缓存
+            AnimatableInstanceCache cache = geoAnimatable.getAnimatableInstanceCache();
+            if (cache == null) {
+                return AnimationStateInfo.getDefault();
+            }
+
+            // 获取动画管理器
+            AnimatableManager manager = cache.getManagerForId(geoAnimatable.hashCode());
+            if (manager == null) {
+                return AnimationStateInfo.getDefault();
+            }
+
+            // 获取当前动画状态
+            AnimationState<?> state = manager.getFirstActiveAnimationState();
+            if (state == null) {
+                return AnimationStateInfo.getDefault();
+            }
+
+            // 提取动画信息
+            String animationName = state.getCurrentAnimation() != null ? 
+                    state.getCurrentAnimation().name() : "";
+            double animationTime = state.getAnimationTimer();
+            double animationSpeed = state.getAnimationSpeed();
+            boolean looping = state.getCurrentAnimation() != null && 
+                    state.getCurrentAnimation().isLooping();
+
+            return new AnimationStateInfo(animationName, animationTime, animationSpeed, looping);
+
+        } catch (Exception e) {
+            GeckoLib.LOGGER.warn("Failed to get animation state for entity {}: {}", 
+                    entity.getId(), e.getMessage());
+            return AnimationStateInfo.getDefault();
+        }
+    }
+
+    /**
+     * 动画状态信息
+     */
+    private static class AnimationStateInfo {
+        final String animationName;
+        final double animationTime;
+        final double animationSpeed;
+        final boolean looping;
+
+        AnimationStateInfo(String animationName, double animationTime, 
+                          double animationSpeed, boolean looping) {
+            this.animationName = animationName;
+            this.animationTime = animationTime;
+            this.animationSpeed = animationSpeed;
+            this.looping = looping;
+        }
+
+        static AnimationStateInfo getDefault() {
+            return new AnimationStateInfo("", 0.0, 1.0, false);
+        }
+    }
+
+    /**
      * 立即同步单个实体的受击盒（用于调试等特殊需求）
      */
     public void syncEntityImmediately(Entity entity, HitboxSystem hitboxSystem) {
@@ -145,11 +230,28 @@ public class HitboxSyncManager {
 
         if (hitboxes != null && !hitboxes.isEmpty()) {
             Map<Integer, List<HitboxSyncPacket.BoneHitboxData>> dataMap = new HashMap<>();
+            
+            // 获取动画状态信息
+            AnimationStateInfo animState = getAnimationState(entity);
+            
             List<HitboxSyncPacket.BoneHitboxData> hitboxDataList = new ArrayList<>();
 
             for (BoneHitboxComponent hitbox : hitboxes) {
                 if (hitbox.isActive()) {
-                    hitboxDataList.add(new HitboxSyncPacket.BoneHitboxData(hitbox));
+                    hitboxDataList.add(new HitboxSyncPacket.BoneHitboxData(
+                            hitbox.getBoneName(),
+                            hitbox.getWorldCenter(),
+                            hitbox.getHalfExtents(),
+                            hitbox.getWorldOrientation(),
+                            hitbox.getDamageMultiplier(),
+                            hitbox.isCritical(),
+                            hitbox.isArmored(),
+                            hitbox.isActive(),
+                            animState.animationName,
+                            animState.animationTime,
+                            animState.animationSpeed,
+                            animState.looping
+                    ));
                 }
             }
 

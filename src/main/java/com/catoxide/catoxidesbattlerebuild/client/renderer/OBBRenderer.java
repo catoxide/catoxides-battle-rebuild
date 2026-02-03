@@ -19,35 +19,29 @@ public class OBBRenderer {
 
     public static void renderOBB(PoseStack poseStack, VertexConsumer vertexConsumer,
                                  AABB localAABB, Quaternionf rotation, Color color, float alpha, Vector3f pivot) {
-        // 计算AABB的中心点（相对于枢轴点）
-        Vec3 center = new Vec3(
-                (localAABB.minX + localAABB.maxX) / 2,
-                (localAABB.minY + localAABB.maxY) / 2,
-                (localAABB.minZ + localAABB.maxZ) / 2
-        );
-
         // 计算半尺寸
         double halfSizeX = (localAABB.maxX - localAABB.minX) / 2;
         double halfSizeY = (localAABB.maxY - localAABB.minY) / 2;
         double halfSizeZ = (localAABB.maxZ - localAABB.minZ) / 2;
 
-        // 定义立方体的8个顶点（相对于枢轴点的局部坐标）
+        // 定义立方体的8个顶点（相对于原点的局部坐标）
         Vector3f[] localVertices = {
-                new Vector3f((float)(-halfSizeX - center.x), (float)(-halfSizeY - center.y), (float)(-halfSizeZ - center.z)),
-                new Vector3f((float)( halfSizeX - center.x), (float)(-halfSizeY - center.y), (float)(-halfSizeZ - center.z)),
-                new Vector3f((float)( halfSizeX - center.x), (float)( halfSizeY - center.y), (float)(-halfSizeZ - center.z)),
-                new Vector3f((float)(-halfSizeX - center.x), (float)( halfSizeY - center.y), (float)(-halfSizeZ - center.z)),
-                new Vector3f((float)(-halfSizeX - center.x), (float)(-halfSizeY - center.y), (float)( halfSizeZ - center.z)),
-                new Vector3f((float)( halfSizeX - center.x), (float)(-halfSizeY - center.y), (float)( halfSizeZ - center.z)),
-                new Vector3f((float)( halfSizeX - center.x), (float)( halfSizeY - center.y), (float)( halfSizeZ - center.z)),
-                new Vector3f((float)(-halfSizeX - center.x), (float)( halfSizeY - center.y), (float)( halfSizeZ - center.z))
+                new Vector3f((float)(-halfSizeX), (float)(-halfSizeY), (float)(-halfSizeZ)),
+                new Vector3f((float)( halfSizeX), (float)(-halfSizeY), (float)(-halfSizeZ)),
+                new Vector3f((float)( halfSizeX), (float)( halfSizeY), (float)(-halfSizeZ)),
+                new Vector3f((float)(-halfSizeX), (float)( halfSizeY), (float)(-halfSizeZ)),
+                new Vector3f((float)(-halfSizeX), (float)(-halfSizeY), (float)( halfSizeZ)),
+                new Vector3f((float)( halfSizeX), (float)(-halfSizeY), (float)( halfSizeZ)),
+                new Vector3f((float)( halfSizeX), (float)( halfSizeY), (float)( halfSizeZ)),
+                new Vector3f((float)(-halfSizeX), (float)( halfSizeY), (float)( halfSizeZ))
         };
 
-        // 应用旋转变换（绕枢轴点）
+        // 应用旋转变换并加枢轴点偏移
         Vector3f[] rotatedVertices = new Vector3f[8];
         for (int i = 0; i < 8; i++) {
+            // 先旋转
             rotatedVertices[i] = rotation.transform(localVertices[i]);
-            // 加上枢轴点偏移，得到最终世界位置
+            // 再加枢轴点偏移，得到最终世界位置
             rotatedVertices[i].add(pivot);
         }
 
@@ -75,15 +69,35 @@ public class OBBRenderer {
                                    float r, float g, float b, float alpha) {
         PoseStack.Pose pose = poseStack.last();
 
-        vertexConsumer.vertex(pose.pose(), start.x(), start.y(), start.z())
+        // 获取相机位置
+        net.minecraft.world.phys.Vec3 camPos = net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
+
+        // 将世界坐标转换为相对于相机的坐标
+        float startX = start.x() - (float)camPos.x;
+        float startY = start.y() - (float)camPos.y;
+        float startZ = start.z() - (float)camPos.z;
+        
+        float endX = end.x() - (float)camPos.x;
+        float endY = end.y() - (float)camPos.y;
+        float endZ = end.z() - (float)camPos.z;
+
+        vertexConsumer.vertex(pose.pose(), startX, startY, startZ)
                 .color(r, g, b, alpha)
-                .normal(pose.normal(), 0, 1, 0)
+                .normal(pose.normal(), 0, 1, 0) // 对于线条，法线影响不大
                 .endVertex();
 
-        vertexConsumer.vertex(pose.pose(), end.x(), end.y(), end.z())
+        vertexConsumer.vertex(pose.pose(), endX, endY, endZ)
                 .color(r, g, b, alpha)
                 .normal(pose.normal(), 0, 1, 0)
                 .endVertex();
     }
 }
-
+
+
+
+
+
+
+
+
+

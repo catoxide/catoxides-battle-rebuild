@@ -19,46 +19,23 @@ import java.util.Collection;
 
 @Mod.EventBusSubscriber(modid = CatoxidesBattleRebuild.MODID, value = Dist.CLIENT)
 public class RenderEventHandler {
-    private static boolean isRendering = false;
-    private static long lastRenderTime = 0;
-    private static final long MIN_RENDER_INTERVAL_MS = 10; // 最小渲染间隔10毫秒
-
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent event) {
-        // 在渲染完透明块之后渲染，这样可以确保我们的渲染在大多数内容之后，避免被遮挡
-        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) {
+        // 在渲染实体之后渲染，这样可以确保我们的渲染在实体之上
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_ENTITIES) {
             net.minecraft.client.Minecraft minecraft = net.minecraft.client.Minecraft.getInstance();
             if (minecraft.level == null) {
                 return;
             }
             
-            long currentTime = System.currentTimeMillis();
-            
-            // 检查是否在短时间内已经渲染过（防止重复调用）
-            if (currentTime - lastRenderTime < MIN_RENDER_INTERVAL_MS) {
-                System.out.println("[RenderEventHandler] Warning: Rendered too recently, skipping duplicate call");
-                return;
-            }
-            
-            // 检查是否正在渲染（防止并发问题）
-            if (isRendering) {
-                System.out.println("[RenderEventHandler] Warning: Already rendering, skipping concurrent call");
-                return;
-            }
-            
-            lastRenderTime = currentTime;
-            isRendering = true;
-            
             // Debug日志：渲染事件被调用
-            System.out.println("[RenderEventHandler] RenderLevelStageEvent triggered at stage AFTER_TRANSLUCENT_BLOCKS");
+            System.out.println("[RenderEventHandler] RenderLevelStageEvent triggered at stage AFTER_ENTITIES");
             
             try {
                 renderAllHitboxes(event.getPoseStack(), event.getPartialTick());
             } catch (Exception e) {
                 System.err.println("[RenderEventHandler] Error rendering hitboxes: " + e.getMessage());
                 e.printStackTrace();
-            } finally {
-                isRendering = false;
             }
         }
     }
@@ -80,9 +57,16 @@ public class RenderEventHandler {
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder bufferBuilder = tesselator.getBuilder();
         
-        // 设置渲染状态
-        RenderSystem.enableDepthTest();
-        RenderSystem.disableCull();
+        // 设置渲染状态 - 使用更激进的设置确保线条可见
+        RenderSystem.disableDepthTest();  // 禁用深度测试，线条不会被遮挡
+        RenderSystem.depthMask(false);    // 禁用深度写入
+        RenderSystem.disableCull();       // 禁用背面剔除
+        RenderSystem.enableBlend();       // 启用混合
+        RenderSystem.defaultBlendFunc();  // 使用默认混合函数
+        RenderSystem.lineWidth(5.0f);     // 增加线宽到5.0，更容易看到
+        
+        // 设置正确的渲染批次 - 使用线条渲染类型
+        PoseStack.Pose pose = poseStack.last();
         
         bufferBuilder.begin(VertexFormat.Mode.LINES, DefaultVertexFormat.POSITION_COLOR_NORMAL);
 
@@ -126,7 +110,11 @@ public class RenderEventHandler {
         tesselator.end();
         
         // 恢复渲染状态
+        RenderSystem.enableDepthTest();
+        RenderSystem.depthMask(true);
         RenderSystem.enableCull();
+        RenderSystem.disableBlend();
+        RenderSystem.lineWidth(1.0f); // 恢复默认线宽
 
         // Debug日志：渲染完成
         System.out.println("[RenderEventHandler] Render complete. Entities: " + entityCount + 
@@ -137,8 +125,8 @@ public class RenderEventHandler {
      * 在(0,0,0)位置渲染一个debug立方体（使用OBBRenderer方法）
      */
     private static void renderDebugCube(BufferBuilder bufferBuilder, PoseStack poseStack, net.minecraft.world.phys.Vec3 camPos) {
-        float size = 1.0f; // 立方体大小
-        float red = 1.0f, green = 0.0f, blue = 0.0f; // 红色
+        float size = 5.0f; // 调整为5.0，更合理的大小
+        float red = 1.0f, green = 1.0f, blue = 0.0f; // 亮黄色
         float alpha = 1.0f;
 
         // 创建AABB（以(0,0,0)为中心）
@@ -153,28 +141,21 @@ public class RenderEventHandler {
         // 枢轴点为(0,0,0)
         Vector3f pivot = new Vector3f(0, 0, 0);
 
-        // 计算AABB的中心点（相对于枢轴点）
-        net.minecraft.world.phys.Vec3 center = new net.minecraft.world.phys.Vec3(
-                (aabb.minX + aabb.maxX) / 2 - pivot.x,
-                (aabb.minY + aabb.maxY) / 2 - pivot.y,
-                (aabb.minZ + aabb.maxZ) / 2 - pivot.z
-        );
-
         // 计算半尺寸
         double halfSizeX = (aabb.maxX - aabb.minX) / 2;
         double halfSizeY = (aabb.maxY - aabb.minY) / 2;
         double halfSizeZ = (aabb.maxZ - aabb.minZ) / 2;
 
-        // 定义立方体的8个顶点（相对于枢轴点的局部坐标）
+        // 定义立方体的8个顶点（相对于原点的局部坐标）
         Vector3f[] localVertices = {
-                new Vector3f((float)(-halfSizeX - center.x), (float)(-halfSizeY - center.y), (float)(-halfSizeZ - center.z)),
-                new Vector3f((float)( halfSizeX - center.x), (float)(-halfSizeY - center.y), (float)(-halfSizeZ - center.z)),
-                new Vector3f((float)( halfSizeX - center.x), (float)( halfSizeY - center.y), (float)(-halfSizeZ - center.z)),
-                new Vector3f((float)(-halfSizeX - center.x), (float)( halfSizeY - center.y), (float)(-halfSizeZ - center.z)),
-                new Vector3f((float)(-halfSizeX - center.x), (float)(-halfSizeY - center.y), (float)( halfSizeZ - center.z)),
-                new Vector3f((float)( halfSizeX - center.x), (float)(-halfSizeY - center.y), (float)( halfSizeZ - center.z)),
-                new Vector3f((float)( halfSizeX - center.x), (float)( halfSizeY - center.y), (float)( halfSizeZ - center.z)),
-                new Vector3f((float)(-halfSizeX - center.x), (float)( halfSizeY - center.y), (float)( halfSizeZ - center.z))
+                new Vector3f((float)(-halfSizeX), (float)(-halfSizeY), (float)(-halfSizeZ)),
+                new Vector3f((float)( halfSizeX), (float)(-halfSizeY), (float)(-halfSizeZ)),
+                new Vector3f((float)( halfSizeX), (float)( halfSizeY), (float)(-halfSizeZ)),
+                new Vector3f((float)(-halfSizeX), (float)( halfSizeY), (float)(-halfSizeZ)),
+                new Vector3f((float)(-halfSizeX), (float)(-halfSizeY), (float)( halfSizeZ)),
+                new Vector3f((float)( halfSizeX), (float)(-halfSizeY), (float)( halfSizeZ)),
+                new Vector3f((float)( halfSizeX), (float)( halfSizeY), (float)( halfSizeZ)),
+                new Vector3f((float)(-halfSizeX), (float)( halfSizeY), (float)( halfSizeZ))
         };
 
         // 应用旋转变换（绕枢轴点）
@@ -182,7 +163,7 @@ public class RenderEventHandler {
         for (int i = 0; i < 8; i++) {
             rotatedVertices[i] = rotation.transform(localVertices[i]);
             // 加回枢轴点偏移，得到最终世界位置
-            rotatedVertices[i].add(pivot.x + (float)center.x, pivot.y + (float)center.y, pivot.z + (float)center.z);
+            rotatedVertices[i].add(pivot);
         }
 
         // 定义立方体的12条边
@@ -199,19 +180,27 @@ public class RenderEventHandler {
             Vector3f start = rotatedVertices[edge[0]];
             Vector3f end = rotatedVertices[edge[1]];
 
-            // 直接使用世界坐标
-            bufferBuilder.vertex(pose.pose(), start.x(), start.y(), start.z())
+            // 将世界坐标转换为相对于相机的坐标
+            float startX = start.x() - (float)camPos.x;
+            float startY = start.y() - (float)camPos.y;
+            float startZ = start.z() - (float)camPos.z;
+            
+            float endX = end.x() - (float)camPos.x;
+            float endY = end.y() - (float)camPos.y;
+            float endZ = end.z() - (float)camPos.z;
+
+            bufferBuilder.vertex(pose.pose(), startX, startY, startZ)
                     .color(red, green, blue, alpha)
-                    .normal(pose.normal(), 0, 1, 0)
+                    .normal(pose.normal(), 0, 1, 0) // 对于线条，法线影响不大
                     .endVertex();
 
-            bufferBuilder.vertex(pose.pose(), end.x(), end.y(), end.z())
+            bufferBuilder.vertex(pose.pose(), endX, endY, endZ)
                     .color(red, green, blue, alpha)
                     .normal(pose.normal(), 0, 1, 0)
                     .endVertex();
         }
 
-        System.out.println("[RenderEventHandler] Debug cube rendered at (0,0,0) with size: " + size);
+        System.out.println("[RenderEventHandler] Debug cube rendered at (0,0,0) with size: " + size + " (YELLOW)");
     }
 
     private static void renderHitbox(BoneHitboxComponent hitbox, PoseStack poseStack, BufferBuilder bufferBuilder, net.minecraft.world.phys.Vec3 camPos) {
@@ -229,96 +218,64 @@ public class RenderEventHandler {
                 halfExtents.x, halfExtents.y, halfExtents.z
         );
 
-        // 渲染OBB（使用世界坐标作为枢轴点，并传入相机位置）
-        renderOBB(
+        // 渲染OBB（使用世界坐标作为枢轴点）
+        OBBRenderer.renderOBB(
                 poseStack,
                 bufferBuilder,
                 aabb,
                 hitbox.getWorldOrientation(),
                 getHitboxColor(hitbox),
                 0.8f,
-                worldCenter,
-                camPos
+                worldCenter
         );
     }
 
-    private static void renderOBB(PoseStack poseStack, BufferBuilder bufferBuilder,
-                                   net.minecraft.world.phys.AABB localAABB, org.joml.Quaternionf rotation,
-                                   Color color, float alpha, org.joml.Vector3f pivot, net.minecraft.world.phys.Vec3 camPos) {
-        // 计算AABB的中心点（相对于枢轴点）
-        net.minecraft.world.phys.Vec3 center = new net.minecraft.world.phys.Vec3(
-                (localAABB.minX + localAABB.maxX) / 2,
-                (localAABB.minY + localAABB.maxY) / 2,
-                (localAABB.minZ + localAABB.maxZ) / 2
-        );
-
-        // 计算半尺寸
-        double halfSizeX = (localAABB.maxX - localAABB.minX) / 2;
-        double halfSizeY = (localAABB.maxY - localAABB.minY) / 2;
-        double halfSizeZ = (localAABB.maxZ - localAABB.minZ) / 2;
-
-        // 定义立方体的8个顶点（相对于枢轴点的局部坐标）
-        org.joml.Vector3f[] localVertices = {
-                new org.joml.Vector3f((float)(-halfSizeX - center.x), (float)(-halfSizeY - center.y), (float)(-halfSizeZ - center.z)),
-                new org.joml.Vector3f((float)( halfSizeX - center.x), (float)(-halfSizeY - center.y), (float)(-halfSizeZ - center.z)),
-                new org.joml.Vector3f((float)( halfSizeX - center.x), (float)( halfSizeY - center.y), (float)(-halfSizeZ - center.z)),
-                new org.joml.Vector3f((float)(-halfSizeX - center.x), (float)( halfSizeY - center.y), (float)(-halfSizeZ - center.z)),
-                new org.joml.Vector3f((float)(-halfSizeX - center.x), (float)(-halfSizeY - center.y), (float)( halfSizeZ - center.z)),
-                new org.joml.Vector3f((float)( halfSizeX - center.x), (float)(-halfSizeY - center.y), (float)( halfSizeZ - center.z)),
-                new org.joml.Vector3f((float)( halfSizeX - center.x), (float)( halfSizeY - center.y), (float)( halfSizeZ - center.z)),
-                new org.joml.Vector3f((float)(-halfSizeX - center.x), (float)( halfSizeY - center.y), (float)( halfSizeZ - center.z))
-        };
-
-        // 应用旋转变换（绕枢轴点）
-        org.joml.Vector3f[] rotatedVertices = new org.joml.Vector3f[8];
-        for (int i = 0; i < 8; i++) {
-            rotatedVertices[i] = rotation.transform(localVertices[i]);
-            // 加上枢轴点偏移，得到最终世界位置
-            rotatedVertices[i].add(pivot);
-        }
-
-        // 定义立方体的12条边
-        int[][] edges = {
-                {0,1}, {1,2}, {2,3}, {3,0}, // 底面
-                {4,5}, {5,6}, {6,7}, {7,4}, // 顶面
-                {0,4}, {1,5}, {2,6}, {3,7}  // 侧面连接
-        };
-
-        // 渲染所有边
+    /**
+     * 在受击盒中心渲染一个十字标记点
+     */
+    private static void renderCenterPoint(BufferBuilder bufferBuilder, PoseStack poseStack, 
+                                           org.joml.Vector3f center, Color color, net.minecraft.world.phys.Vec3 camPos) {
+        float pointSize = 0.15f; // 十字标记的大小
         float r = color.getRed() / 255.0f;
         float g = color.getGreen() / 255.0f;
         float b = color.getBlue() / 255.0f;
-
+        
         PoseStack.Pose pose = poseStack.last();
-
-        for (int[] edge : edges) {
-            org.joml.Vector3f start = rotatedVertices[edge[0]];
-            org.joml.Vector3f end = rotatedVertices[edge[1]];
-            
-            // 直接使用世界坐标，不减去相机位置
-            float startX = start.x();
-            float startY = start.y();
-            float startZ = start.z();
-            float endX = end.x();
-            float endY = end.y();
-            float endZ = end.z();
-            
-            // Debug：输出第一条边的顶点位置
-            if (edge[0] == 0 && edge[1] == 1) {
-                System.out.println("[RenderEventHandler] Edge 0-1: Start(" + startX + ", " + startY + ", " + startZ + 
-                        ") -> End(" + endX + ", " + endY + ", " + endZ + ")");
-            }
-            
-            bufferBuilder.vertex(pose.pose(), startX, startY, startZ)
-                    .color(r, g, b, alpha)
-                    .normal(pose.normal(), 0, 1, 0)
-                    .endVertex();
-
-            bufferBuilder.vertex(pose.pose(), endX, endY, endZ)
-                    .color(r, g, b, alpha)
-                    .normal(pose.normal(), 0, 1, 0)
-                    .endVertex();
-        }
+        
+        // 直接使用世界坐标，PoseStack会自动处理相机变换
+        
+        // 渲染X轴方向的线
+        bufferBuilder.vertex(pose.pose(), center.x - pointSize, center.y, center.z)
+                .color(r, g, b, 1.0f)
+                .normal(pose.normal(), 0, 1, 0)
+                .endVertex();
+        
+        bufferBuilder.vertex(pose.pose(), center.x + pointSize, center.y, center.z)
+                .color(r, g, b, 1.0f)
+                .normal(pose.normal(), 0, 1, 0)
+                .endVertex();
+        
+        // 渲染Y轴方向的线
+        bufferBuilder.vertex(pose.pose(), center.x, center.y - pointSize, center.z)
+                .color(r, g, b, 1.0f)
+                .normal(pose.normal(), 0, 1, 0)
+                .endVertex();
+        
+        bufferBuilder.vertex(pose.pose(), center.x, center.y + pointSize, center.z)
+                .color(r, g, b, 1.0f)
+                .normal(pose.normal(), 0, 1, 0)
+                .endVertex();
+        
+        // 渲染Z轴方向的线
+        bufferBuilder.vertex(pose.pose(), center.x, center.y, center.z - pointSize)
+                .color(r, g, b, 1.0f)
+                .normal(pose.normal(), 0, 1, 0)
+                .endVertex();
+        
+        bufferBuilder.vertex(pose.pose(), center.x, center.y, center.z + pointSize)
+                .color(r, g, b, 1.0f)
+                .normal(pose.normal(), 0, 1, 0)
+                .endVertex();
     }
 
     private static Color getHitboxColor(BoneHitboxComponent hitbox) {

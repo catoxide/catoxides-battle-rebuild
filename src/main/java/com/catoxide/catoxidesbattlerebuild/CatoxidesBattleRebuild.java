@@ -1,5 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild;
 
+import com.catoxide.catoxidesbattlerebuild.client.renderer.RenderEventHandler;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.CreativeModeTab;
@@ -36,6 +37,9 @@ public class CatoxidesBattleRebuild {
 
         // 注册事件总线
         MinecraftForge.EVENT_BUS.register(this);
+        
+        // 手动注册RenderEventHandler到Forge事件总线
+        MinecraftForge.EVENT_BUS.register(RenderEventHandler.class);
 
         MixinBootstrap.init();
         Mixins.addConfiguration("catoxidesbattlerebuild.mixins.json");
