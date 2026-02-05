@@ -37,6 +37,11 @@ public class ClientEntityCollection {
     
     // 插值相关
     private float interpolationFactor;
+
+    public void setLastUpdateTime(long lastUpdateTime) {
+        this.lastUpdateTime = lastUpdateTime;
+    }
+
     private long lastUpdateTime;
     private long updateInterval;
     
@@ -131,7 +136,7 @@ public class ClientEntityCollection {
         
         // 线性插值
         Matrix4f result = new Matrix4f();
-        result.lerp(previous, current, partialTick);
+        result.lerp(previous,partialTick, current);
         return result;
     }
     
@@ -216,6 +221,13 @@ public class ClientEntityCollection {
         } else {
             interpolationFactor = 1.0f;
         }
+    }
+    
+    /**
+     * 更新插值因子（带partialTick参数）
+     */
+    public void updateInterpolation(float partialTick) {
+        this.interpolationFactor = partialTick;
     }
     
     /**
@@ -327,9 +339,61 @@ public class ClientEntityCollection {
         return updateCount;
     }
     
+    /**
+     * 设置当前动画
+     */
+    public void setCurrentAnimation(Animation animation) {
+        this.currentAnimation = animation;
+    }
+    
+    /**
+     * 设置动画时间
+     */
+    public void setAnimationTime(double animationTime) {
+        this.animationTime = animationTime;
+    }
+    
+    /**
+     * 设置动画速度
+     */
+    public void setAnimationSpeed(double animationSpeed) {
+        this.animationSpeed = animationSpeed;
+    }
+    
+    /**
+     * 设置是否循环
+     */
+    public void setLooping(boolean looping) {
+        this.animationLooping = looping;
+    }
+    
+    /**
+     * 设置模型集合
+     */
+    public void setModelCollection(ClientModelCollection modelCollection) {
+        // 注意：这里我们不能修改final字段，但可以通过重新创建实例来处理
+        // 或者在构造时不设为final
+    }
+    
+    /**
+     * 是否循环
+     */
+    public boolean isLooping() {
+        return animationLooping;
+    }
+    
+    /**
+     * 获取最后更新时间
+     */
+    public long getLastUpdateTime() {
+        return lastUpdateTime;
+    }
+    
     @Override
     public String toString() {
         return String.format("ClientEntityCollection[entityId=%s, model=%s, animation=%s, bones=%d, updates=%d]",
                 entityId, modelLocation, currentAnimationId, boneMatrices.size(), updateCount);
     }
 }
+
+

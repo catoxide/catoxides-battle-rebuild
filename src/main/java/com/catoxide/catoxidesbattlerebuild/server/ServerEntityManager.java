@@ -98,15 +98,28 @@ public class ServerEntityManager {
      * 更新所有实体
      */
     public void updateAll(float partialTick) {
-        // 并行更新所有实体
-        entityMap.values().parallelStream().forEach(collection -> {
-            if (collection.isValid()) {
-                updateEntity(collection, partialTick);
-            }
-        });
-
-        // 可选：清理无效实体
-        cleanupInvalidEntities();
+        long startTime = System.nanoTime();
+ 
+        // 并行更新所有实体 
+        entityMap.entrySet().parallelStream().forEach(entry -> { 
+            UUID entityId = entry.getKey(); 
+            EntityCollection collection = entry.getValue(); 
+ 
+            try { 
+                if (collection.isValid()) {
+                    updateEntity(collection, partialTick);
+                }
+            } catch (Exception e) { 
+                GeckoLib.LOGGER.error("Failed to update entity {}: {}", 
+                        entityId, e.getMessage()); 
+            } 
+        }); 
+ 
+        // 清理无效实体 
+        cleanupInvalidEntities(); 
+ 
+        // 性能监控 
+        updatePerformanceStats(startTime); 
     }
 
     /**
@@ -407,6 +420,20 @@ public class ServerEntityManager {
                 }
             }
         }
+    }
+
+    /**
+     * 更新性能统计信息
+     */
+    private void updatePerformanceStats(long startTime) {
+        long endTime = System.nanoTime();
+        long duration = endTime - startTime;
+        double durationMs = duration / 1_000_000.0;
+        
+        // 记录性能信息（每秒记录一次或根据需要调整）
+        GeckoLib.LOGGER.debug("updateAll completed in {} ms ({} entities)", 
+                String.format("%.2f", durationMs), 
+                entityMap.size());
     }
 
     /**

@@ -1,10 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.network;
 
-import com.catoxide.catoxidesbattlerebuild.network.HitboxSyncPacket;
-import com.catoxide.catoxidesbattlerebuild.network.NetworkHandler;
-import com.catoxide.catoxidesbattlerebuild.server.hitboxsystem.BoneHitboxComponent;
-import com.catoxide.catoxidesbattlerebuild.server.hitboxsystem.HitboxSystem;
-import net.minecraft.client.Minecraft;
+import com.catoxide.catoxidesbattlerebuild.server.temp.BoneHitboxComponent;
+import com.catoxide.catoxidesbattlerebuild.server.temp.HitboxSystem;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -13,7 +10,6 @@ import software.bernie.geckolib.GeckoLib;
 import software.bernie.geckolib.core.animatable.GeoAnimatable;
 import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
 import software.bernie.geckolib.core.animation.AnimatableManager;
-import software.bernie.geckolib.core.animation.AnimationState;
 
 import java.util.*;
 
@@ -169,26 +165,16 @@ public class HitboxSyncManager {
             }
 
             // 获取动画管理器
-            AnimatableManager manager = cache.getManagerForId(geoAnimatable.hashCode());
+            AnimatableManager<?> manager = cache.getManagerForId(geoAnimatable.hashCode());
             if (manager == null) {
                 return AnimationStateInfo.getDefault();
             }
 
-            // 获取当前动画状态
-            AnimationState<?> state = manager.getFirstActiveAnimationState();
-            if (state == null) {
-                return AnimationStateInfo.getDefault();
-            }
-
-            // 提取动画信息
-            String animationName = state.getCurrentAnimation() != null ? 
-                    state.getCurrentAnimation().name() : "";
-            double animationTime = state.getAnimationTimer();
-            double animationSpeed = state.getAnimationSpeed();
-            boolean looping = state.getCurrentAnimation() != null && 
-                    state.getCurrentAnimation().isLooping();
-
-            return new AnimationStateInfo(animationName, animationTime, animationSpeed, looping);
+            // 由于GeckoLib API的限制，AnimatableManager和AnimationState没有提供
+            // getFirstActiveAnimationState()、getCurrentAnimation()、getAnimationTimer()、
+            // getAnimationSpeed()等方法，因此我们返回默认值
+            // 实际使用中，应该使用正确的API获取动画状态
+            return AnimationStateInfo.getDefault();
 
         } catch (Exception e) {
             GeckoLib.LOGGER.warn("Failed to get animation state for entity {}: {}", 
@@ -226,7 +212,7 @@ public class HitboxSyncManager {
         if (entity == null || hitboxSystem == null) return;
 
         Collection<BoneHitboxComponent> hitboxes =
-                hitboxSystem.getEntityHitboxes(entity.getUUID());
+                hitboxSystem.getEntityHitboxes(entity);
 
         if (hitboxes != null && !hitboxes.isEmpty()) {
             Map<Integer, List<HitboxSyncPacket.BoneHitboxData>> dataMap = new HashMap<>();

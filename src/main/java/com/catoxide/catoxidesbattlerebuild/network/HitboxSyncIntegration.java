@@ -1,11 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.network;
 
-import com.catoxide.catoxidesbattlerebuild.network.HitboxSyncManager;
-import com.catoxide.catoxidesbattlerebuild.server.hitboxsystem.HitboxSystem;
-import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import software.bernie.geckolib.GeckoLib;
 
 /**
  * 受击盒同步集成

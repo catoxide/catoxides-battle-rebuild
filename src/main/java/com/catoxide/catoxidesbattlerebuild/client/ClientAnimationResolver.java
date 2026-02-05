@@ -3,12 +3,13 @@ package com.catoxide.catoxidesbattlerebuild.client;
 import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import software.bernie.geckolib.GeckoLib;
 import software.bernie.geckolib.cache.object.BakedGeoModel;
+import software.bernie.geckolib.cache.object.GeoBone;
 import software.bernie.geckolib.core.animation.Animation;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
+import software.bernie.geckolib.core.animatable.model.CoreGeoBone;
 import software.bernie.geckolib.core.animatable.model.CoreGeoModel;
-import software.bernie.geckolib.core.bone.CoreGeoBone;
-import software.bernie.geckolib.core.bone.GeoBone;
 import software.bernie.geckolib.model.data.EntityModelData;
 
 import java.util.Collection;
@@ -35,44 +36,68 @@ public class ClientAnimationResolver {
      * @return 骨骼名称到矩阵的映射
      */
     public Map<String, Matrix4f> resolveAnimation(ClientEntityCollection entityCollection, float partialTick) {
+        long startTime = System.currentTimeMillis();
+        GeckoLib.LOGGER.info("[AnimationResolver] Starting animation resolution");
+        GeckoLib.LOGGER.info("[AnimationResolver] Partial tick: {}", partialTick);
+        
         if (entityCollection == null || !entityCollection.isValid()) {
+            GeckoLib.LOGGER.warn("[AnimationResolver] Entity collection is null or invalid");
             return new ConcurrentHashMap<>();
         }
+        
+        GeckoLib.LOGGER.info("[AnimationResolver] Entity collection is valid");
         
         ClientModelCollection modelCollection = entityCollection.getModelCollection();
         if (modelCollection == null || !modelCollection.isValid()) {
+            GeckoLib.LOGGER.warn("[AnimationResolver] Model collection is null or invalid");
             return new ConcurrentHashMap<>();
         }
         
+        GeckoLib.LOGGER.info("[AnimationResolver] Model collection is valid: {}", modelCollection);
+        
         AnimationProcessor<?> processor = modelCollection.getAnimationProcessor();
         if (processor == null) {
+            GeckoLib.LOGGER.warn("[AnimationResolver] Animation processor is null");
             return new ConcurrentHashMap<>();
         }
+        
+        GeckoLib.LOGGER.info("[AnimationResolver] Animation processor obtained");
         
         // 获取当前动画
         Animation animation = entityCollection.getCurrentAnimation();
         if (animation == null) {
+            GeckoLib.LOGGER.warn("[AnimationResolver] Current animation is null");
             return new ConcurrentHashMap<>();
         }
         
+        GeckoLib.LOGGER.info("[AnimationResolver] Current animation: {}", animation.name());
+        
         // 计算动画时间（考虑插值）
         double animationTime = calculateAnimationTime(entityCollection, partialTick);
+        GeckoLib.LOGGER.info("[AnimationResolver] Calculated animation time: {}", animationTime);
         
         // 创建实体模型数据
         EntityModelData entityModelData = createEntityModelData(entityCollection);
+        GeckoLib.LOGGER.info("[AnimationResolver] Entity model data created");
         
         // 更新动画处理器
         updateAnimationProcessor(processor, animation, animationTime, entityModelData);
+        GeckoLib.LOGGER.info("[AnimationResolver] Animation processor updated");
         
         // 提取骨骼矩阵
         Map<String, Matrix4f> boneMatrices = extractBoneMatrices(processor);
+        GeckoLib.LOGGER.info("[AnimationResolver] Extracted {} bone matrices", boneMatrices.size());
         
         // 应用实体变换
         Matrix4f entityTransform = entityCollection.getEntityTransform();
         boneMatrices = applyEntityTransform(boneMatrices, entityTransform);
+        GeckoLib.LOGGER.info("[AnimationResolver] Applied entity transform to {} matrices", boneMatrices.size());
         
         // 更新实体集合的骨骼矩阵
         entityCollection.setAllBoneMatrices(boneMatrices);
+        
+        long endTime = System.currentTimeMillis();
+        GeckoLib.LOGGER.info("[AnimationResolver] Animation resolution completed in {} ms", endTime - startTime);
         
         return boneMatrices;
     }
@@ -199,18 +224,12 @@ public class ClientAnimationResolver {
      */
     private EntityModelData createEntityModelData(ClientEntityCollection entityCollection) {
         if (entityCollection.getEntity() == null) {
-            return new EntityModelData();
+            // EntityModelData是记录类型，需要4个参数：limbSwing, limbSwingAmount, ageInTicks, netHeadYaw
+            return new EntityModelData(false, false, 0.0f, 0.0f);
         }
         
-        EntityModelData data = new EntityModelData();
-        
-        // 设置实体运动参数
-        // 注意：这些值可能需要根据实际需求调整
-        data.limbSwing = 0.0f;
-        data.limbSwingAmount = 0.0f;
-        data.ageInTicks = 0.0f;
-        data.netHeadYaw = 0.0f;
-        data.headPitch = 0.0f;
+        // EntityModelData是记录类型，需要4个参数：limbSwing, limbSwingAmount, ageInTicks, netHeadYaw
+        EntityModelData data = new EntityModelData(false, false, 0.0f, 0.0f);
         
         return data;
     }
@@ -250,4 +269,7 @@ public class ClientAnimationResolver {
         // 清理缓存和资源
     }
 }
+
+
+
 

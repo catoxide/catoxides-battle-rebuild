@@ -1,4 +1,4 @@
-package com.catoxide.catoxidesbattlerebuild.server.hitboxsystem;
+package com.catoxide.catoxidesbattlerebuild.server.temp;
 
 import org.joml.Vector3f;
 

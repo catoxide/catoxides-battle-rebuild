@@ -1,9 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.network;
 
-import com.catoxide.catoxidesbattlerebuild.server.hitboxsystem.BoneHitboxComponent;
+import com.catoxide.catoxidesbattlerebuild.server.temp.BoneHitboxComponent;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.level.Level;
 import net.minecraftforge.network.NetworkEvent;
 import org.joml.Vector3f;
 import org.joml.Quaternionf;

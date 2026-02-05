@@ -58,10 +58,19 @@ public class ClientModelCollection {
      * 初始化骨骼索引映射
      */
     private void initializeBoneIndexMap() {
-        if (bakedModel != null && bakedModel.bones() != null) {
-            for (int i = 0; i < bakedModel.bones().length; i++) {
-                String boneName = bakedModel.bones()[i];
-                boneIndexMap.put(boneName, i);
+        // 从AnimationProcessor获取已注册的骨骼
+        if (animationProcessor != null) {
+            try {
+                var bones = animationProcessor.getRegisteredBones();
+                if (bones != null) {
+                    int index = 0;
+                    for (var bone : bones) {
+                        String boneName = bone.getName();
+                        boneIndexMap.put(boneName, index++);
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Error initializing bone index map: " + e.getMessage());
             }
         }
     }
@@ -77,15 +86,18 @@ public class ClientModelCollection {
      * 获取骨骼数量
      */
     public int getBoneCount() {
-        return bakedModel != null && bakedModel.bones() != null ? bakedModel.bones().length : 0;
+        return boneIndexMap.size();
     }
     
     /**
      * 获取骨骼名称
      */
     public String getBoneName(int index) {
-        if (bakedModel != null && bakedModel.bones() != null && index >= 0 && index < bakedModel.bones().length) {
-            return bakedModel.bones()[index];
+        // 反向查找：从index找到boneName
+        for (Map.Entry<String, Integer> entry : boneIndexMap.entrySet()) {
+            if (entry.getValue() == index) {
+                return entry.getKey();
+            }
         }
         return null;
     }
@@ -143,7 +155,7 @@ public class ClientModelCollection {
      * 创建实体模型数据（用于动画解算）
      */
     public EntityModelData createEntityModelData(float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
-        return new EntityModelData(limbSwing, limbSwingAmount, ageInTicks, netHeadYaw, headPitch);
+        return new EntityModelData(false, false, 0.0f, 0.0f);
     }
     
     /**
@@ -169,3 +181,6 @@ public class ClientModelCollection {
                 modelLocation, getBoneCount());
     }
 }
+
+
+

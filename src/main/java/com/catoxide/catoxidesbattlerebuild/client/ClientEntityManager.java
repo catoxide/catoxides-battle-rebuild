@@ -4,11 +4,11 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import org.joml.Matrix4f;
-import software.bernie.geckolib.animatable.GeoAnimatable;
 import software.bernie.geckolib.cache.object.BakedGeoModel;
 import software.bernie.geckolib.core.animation.Animation;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
 import software.bernie.geckolib.core.animatable.model.CoreGeoModel;
+import software.bernie.geckolib.loading.object.BakedAnimations;
 import software.bernie.geckolib.renderer.GeoEntityRenderer;
 
 import java.util.*;
@@ -88,6 +88,7 @@ public class ClientEntityManager {
             ResourceLocation modelLocation,
             CoreGeoModel<?> coreModel,
             BakedGeoModel bakedModel,
+            BakedAnimations bakedAnimations,
             AnimationProcessor<?> animationProcessor
     ) {
         return modelCollections.computeIfAbsent(modelLocation, location -> {
@@ -95,9 +96,17 @@ public class ClientEntityManager {
                     location,
                     coreModel,
                     bakedModel,
+                    bakedAnimations,
                     animationProcessor
             );
         });
+    }
+    
+    /**
+     * 获取所有已加载的模型位置
+     */
+    public Collection<ResourceLocation> getAllModelLocations() {
+        return modelCollections.keySet();
     }
     
     /**
@@ -147,17 +156,15 @@ public class ClientEntityManager {
         ClientEntityCollection collection = getOrCreateEntityCollection(entityUUID);
         
         // 创建动画对象
-        Animation animation = new Animation(
-                new ResourceLocation(animationName),
-                animationTime,
-                looping
-        );
+        ResourceLocation animationId = new ResourceLocation(animationName);
         
         // 更新动画状态
-        collection.setCurrentAnimation(animation);
-        collection.setAnimationTime(animationTime);
-        collection.setAnimationSpeed(animationSpeed);
-        collection.setLooping(looping);
+        collection.updateAnimation(
+                animationId,
+                animationTime,
+                animationSpeed,
+                looping
+        );
         collection.setLastUpdateTime(System.currentTimeMillis());
     }
     
@@ -168,7 +175,7 @@ public class ClientEntityManager {
      * @param partialTick 部分tick
      * @return 骨骼矩阵映射
      */
-    public Map<String, Matrix4f resolveAnimation(UUID entityUUID, float partialTick) {
+    public Map<String, Matrix4f> resolveAnimation(UUID entityUUID, float partialTick) {
         ClientEntityCollection collection = entityCollections.get(entityUUID);
         if (collection == null) {
             return new ConcurrentHashMap<>();
@@ -284,7 +291,12 @@ public class ClientEntityManager {
         try {
             Minecraft minecraft = Minecraft.getInstance();
             if (minecraft.level != null) {
-                return minecraft.level.getEntity(uuid);
+                // 遍历所有实体查找匹配的UUID
+                for (Entity entity : minecraft.level.entitiesForRendering()) {
+                    if (entity.getUUID().equals(uuid)) {
+                        return entity;
+                    }
+                }
             }
         } catch (Exception e) {
             System.err.println("Error getting entity by UUID: " + e.getMessage());

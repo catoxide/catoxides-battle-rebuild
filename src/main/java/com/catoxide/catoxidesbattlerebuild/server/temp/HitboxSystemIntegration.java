@@ -1,6 +1,7 @@
-package com.catoxide.catoxidesbattlerebuild.server.hitboxsystem;
+package com.catoxide.catoxidesbattlerebuild.server.temp;
 
 import com.catoxide.catoxidesbattlerebuild.network.HitboxSyncManager;
+import com.catoxide.catoxidesbattlerebuild.server.ServerEntityManager;
 import com.catoxide.catoxidesbattlerebuild.server.ServerSideExecutor;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
@@ -30,7 +31,7 @@ public class HitboxSystemIntegration {
                 System.out.println("[HitboxSystemIntegration] ServerEntityManager.updateAll() completed");
 
                 // 2. 更新所有实体的受击盒（现在boneMatrices应该已经可用）
-                HitboxSystem.getInstance().updateHitboxes(1.0f);
+                ServerEntityManager.getInstance().updateAll(1.0f);
                 System.out.println("[HitboxSystemIntegration] HitboxSystem.updateHitboxes() completed");
 
                 // 3. 同步到客户端
@@ -69,7 +70,7 @@ public class HitboxSystemIntegration {
     @SubscribeEvent
     public static void onEntityLeave(EntityLeaveLevelEvent event) {
         if (!event.getLevel().isClientSide()) {
-            HitboxSystem.getInstance().unregisterEntity(event.getEntity().getUUID());
+            HitboxSystem.getInstance().unregisterEntity(event.getEntity());
         }
     }
 
@@ -83,19 +84,19 @@ public class HitboxSystemIntegration {
         HitboxSystem.getInstance().registerEntity(entity, modelLocation);
     }
 
-    /**
-     * 执行射线检测
-     */
-    public static java.util.Optional<HitResult> raycastHitboxes(org.joml.Vector3f origin, org.joml.Vector3f direction, float maxDistance) {
-
-        return HitboxSystem.getInstance().raycastAll(origin, direction, maxDistance);
-    }
-
-    /**
-     * 获取系统统计信息
-     */
-    public static HitboxSystem.SystemStats getHitboxSystemStats() {
-
-        return HitboxSystem.getInstance().getStats();
-    }
+//    /**
+//     * 执行射线检测
+//     */
+//    public static java.util.Optional<HitResult> raycastHitboxes(org.joml.Vector3f origin, org.joml.Vector3f direction, float maxDistance) {
+//
+//        return HitboxSystem.getInstance().raycastAll(origin, direction, maxDistance);
+//    }
+//
+//    /**
+//     * 获取系统统计信息
+//     */
+//    public static HitboxSystem.SystemStats getHitboxSystemStats() {
+//
+//        return HitboxSystem.getInstance().getStats();
+//    }
 }

@@ -2,10 +2,9 @@ package com.catoxide.catoxidesbattlerebuild.client.renderer;
 
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuild;
 import com.catoxide.catoxidesbattlerebuild.client.HitboxSystemClient;
-import com.catoxide.catoxidesbattlerebuild.server.hitboxsystem.BoneHitboxComponent;
+import com.catoxide.catoxidesbattlerebuild.server.temp.BoneHitboxComponent;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
-import net.minecraft.client.renderer.RenderType;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
@@ -13,6 +12,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
+import software.bernie.geckolib.GeckoLib;
 
 import java.awt.*;
 import java.util.Collection;
@@ -28,14 +28,10 @@ public class RenderEventHandler {
                 return;
             }
             
-            // Debug日志：渲染事件被调用
-            System.out.println("[RenderEventHandler] RenderLevelStageEvent triggered at stage AFTER_ENTITIES");
-            
             try {
                 renderAllHitboxes(event.getPoseStack(), event.getPartialTick());
             } catch (Exception e) {
-                System.err.println("[RenderEventHandler] Error rendering hitboxes: " + e.getMessage());
-                e.printStackTrace();
+                GeckoLib.LOGGER.error("[RenderEventHandler] Error rendering hitboxes: {}", e.getMessage(), e);
             }
         }
     }
@@ -46,12 +42,8 @@ public class RenderEventHandler {
             return;
         }
 
-        // Debug日志：开始渲染
-        System.out.println("[RenderEventHandler] Starting to render all hitboxes...");
-
         // 获取相机位置
         net.minecraft.world.phys.Vec3 camPos = minecraft.gameRenderer.getMainCamera().getPosition();
-        System.out.println("[RenderEventHandler] Camera position: (" + camPos.x + ", " + camPos.y + ", " + camPos.z + ")");
 
         // 创建BufferBuilder并开始绘制
         Tesselator tesselator = Tesselator.getInstance();
@@ -87,20 +79,11 @@ public class RenderEventHandler {
                 continue;
             }
 
-            // Debug日志：找到有受击盒的实体
-            System.out.println("[RenderEventHandler] Found entity with hitboxes: " + entity.getName().getString() + 
-                    " (ID: " + entity.getId() + ", Hitboxes: " + hitboxes.size() + ")");
-            
             hitboxCount += hitboxes.size();
 
             for (BoneHitboxComponent hitbox : hitboxes) {
                 if (hitbox.isActive()) {
                     renderedHitboxCount++;
-                    // Debug日志：渲染单个受击盒
-                    System.out.println("[RenderEventHandler] Rendering hitbox: " + hitbox.getBoneName() + 
-                            " (Active: " + hitbox.isActive() + ", Critical: " + hitbox.isCritical() + 
-                            ", Armored: " + hitbox.isArmored() + ")");
-                    
                     renderHitbox(hitbox, poseStack, bufferBuilder, camPos);
                 }
             }
@@ -116,9 +99,11 @@ public class RenderEventHandler {
         RenderSystem.disableBlend();
         RenderSystem.lineWidth(1.0f); // 恢复默认线宽
 
-        // Debug日志：渲染完成
-        System.out.println("[RenderEventHandler] Render complete. Entities: " + entityCount + 
-                ", Hitboxes found: " + hitboxCount + ", Hitboxes rendered: " + renderedHitboxCount);
+        // 只在debug模式下输出渲染统计
+        if (GeckoLib.LOGGER.isDebugEnabled()) {
+            GeckoLib.LOGGER.debug("[RenderEventHandler] Rendered {} entities, {} hitboxes ({} active)",
+                    entityCount, hitboxCount, renderedHitboxCount);
+        }
     }
 
     /**

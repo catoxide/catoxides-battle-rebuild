@@ -1,8 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.client;
 
-import com.catoxide.catoxidesbattlerebuild.server.hitboxsystem.BoneHitboxComponent;
+import com.catoxide.catoxidesbattlerebuild.server.temp.BoneHitboxComponent;
 import net.minecraft.client.Minecraft;
-import net.minecraft.world.entity.Entity;
 import software.bernie.geckolib.GeckoLib;
 
 import java.util.*;
