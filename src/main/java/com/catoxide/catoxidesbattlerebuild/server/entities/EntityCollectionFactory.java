@@ -1,4 +1,4 @@
-package com.catoxide.catoxidesbattlerebuild.server;
+package com.catoxide.catoxidesbattlerebuild.server.entities;
 
 import com.catoxide.catoxidesbattlerebuild.server.models.ModelCollection;
 import com.catoxide.catoxidesbattlerebuild.server.models.ServerGeoModelManager;

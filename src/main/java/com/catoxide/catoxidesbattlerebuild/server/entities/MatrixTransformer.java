@@ -1,7 +1,8 @@
 // [file name]: MatrixTransformer.java
-package com.catoxide.catoxidesbattlerebuild.server;
+package com.catoxide.catoxidesbattlerebuild.server.entities;
 
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
@@ -30,7 +31,7 @@ public class MatrixTransformer {
     /**
      * 获取实体的所有cube顶点
      */
-    public Map<String, List<Vector3f>> getEntityCubeVertices(Entity entity) {
+    public Map<String, List<Vec3>> getEntityCubeVertices(Entity entity) {
         return ServerEntityManager.getInstance()
                 .getEntityCubeVertices(entity.getUUID());
     }
@@ -38,12 +39,12 @@ public class MatrixTransformer {
     /**
      * 获取特定骨骼的cube顶点
      */
-    public List<Vector3f> getBoneCubeVertices(Entity entity, String boneName) {
-        Map<String, List<Vector3f>> allVertices = getEntityCubeVertices(entity);
+    public List<Vec3> getBoneCubeVertices(Entity entity, String boneName) {
+        Map<String, List<Vec3>> allVertices = getEntityCubeVertices(entity);
         if (allVertices == null) return null;
 
-        List<Vector3f> result = new ArrayList<>();
-        for (Map.Entry<String, List<Vector3f>> entry : allVertices.entrySet()) {
+        List<Vec3> result = new ArrayList<>();
+        for (Map.Entry<String, List<Vec3>> entry : allVertices.entrySet()) {
             if (entry.getKey().startsWith(boneName + ":")) {
                 result.addAll(entry.getValue());
             }
@@ -55,32 +56,32 @@ public class MatrixTransformer {
      * 计算实体的包围盒（基于所有cube顶点）
      */
     public BoundingBox calculateEntityBoundingBox(Entity entity) {
-        Map<String, List<Vector3f>> allVertices = getEntityCubeVertices(entity);
+        Map<String, List<Vec3>> allVertices = getEntityCubeVertices(entity);
         if (allVertices == null || allVertices.isEmpty()) {
             return null;
         }
 
-        float minX = Float.MAX_VALUE;
-        float minY = Float.MAX_VALUE;
-        float minZ = Float.MAX_VALUE;
-        float maxX = Float.MIN_VALUE;
-        float maxY = Float.MIN_VALUE;
-        float maxZ = Float.MIN_VALUE;
+        double minX = Double.MAX_VALUE;
+        double minY = Double.MAX_VALUE;
+        double minZ = Double.MAX_VALUE;
+        double maxX = Double.MIN_VALUE;
+        double maxY = Double.MIN_VALUE;
+        double maxZ = Double.MIN_VALUE;
 
-        for (List<Vector3f> vertices : allVertices.values()) {
-            for (Vector3f vertex : vertices) {
-                minX = Math.min(minX, vertex.x());
-                minY = Math.min(minY, vertex.y());
-                minZ = Math.min(minZ, vertex.z());
-                maxX = Math.max(maxX, vertex.x());
-                maxY = Math.max(maxY, vertex.y());
-                maxZ = Math.max(maxZ, vertex.z());
+        for (List<Vec3> vertices : allVertices.values()) {
+            for (Vec3 vertex : vertices) {
+                minX = Math.min(minX, vertex.x);
+                minY = Math.min(minY, vertex.y);
+                minZ = Math.min(minZ, vertex.z);
+                maxX = Math.max(maxX, vertex.x);
+                maxY = Math.max(maxY, vertex.y);
+                maxZ = Math.max(maxZ, vertex.z);
             }
         }
 
         return new BoundingBox(
-                new Vector3f(minX, minY, minZ),
-                new Vector3f(maxX, maxY, maxZ)
+                new Vec3(minX, minY, minZ),
+                new Vec3(maxX, maxY, maxZ)
         );
     }
 
@@ -103,43 +104,39 @@ public class MatrixTransformer {
     /**
      * 检测射线与实体的碰撞
      */
-    public RayHitResult raycast(Entity entity, Vector3f rayOrigin, Vector3f rayDirection) {
-        Map<String, List<Vector3f>> cubeVertices = getEntityCubeVertices(entity);
+    public RayHitResult raycast(Entity entity, Vec3 rayOrigin, Vec3 rayDirection) {
+        Map<String, List<Vec3>> cubeVertices = getEntityCubeVertices(entity);
         if (cubeVertices == null) return null;
 
         RayHitResult closestHit = null;
-        float closestDistance = Float.MAX_VALUE;
+        double closestDistance = Double.MAX_VALUE;
 
         // 对每个cube进行检测（简化为AABB检测）
-        for (Map.Entry<String, List<Vector3f>> entry : cubeVertices.entrySet()) {
-            List<Vector3f> vertices = entry.getValue();
+        for (Map.Entry<String, List<Vec3>> entry : cubeVertices.entrySet()) {
+            List<Vec3> vertices = entry.getValue();
             if (vertices.size() < 8) continue;
 
             // 计算cube的AABB
-            Vector3f min = new Vector3f(Float.MAX_VALUE);
-            Vector3f max = new Vector3f(Float.MIN_VALUE);
+            Vec3 min = new Vec3(Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE);
+            Vec3 max = new Vec3(Double.MIN_VALUE, Double.MIN_VALUE, Double.MIN_VALUE);
 
-            for (Vector3f vertex : vertices) {
-                min.x = Math.min(min.x, vertex.x);
-                min.y = Math.min(min.y, vertex.y);
-                min.z = Math.min(min.z, vertex.z);
-                max.x = Math.max(max.x, vertex.x);
-                max.y = Math.max(max.y, vertex.y);
-                max.z = Math.max(max.z, vertex.z);
+            for (Vec3 vertex : vertices) {
+                min = new Vec3(Math.min(min.x, vertex.x), Math.min(min.y, vertex.y), Math.min(min.z, vertex.z));
+                max = new Vec3(Math.max(max.x, vertex.x), Math.max(max.y, vertex.y), Math.max(max.z, vertex.z));
             }
 
             // 应用实体位置
-            min.add((float)entity.getX(), (float)entity.getY(), (float)entity.getZ());
-            max.add((float)entity.getX(), (float)entity.getY(), (float)entity.getZ());
+            min = new Vec3(min.x + entity.getX(), min.y + entity.getY(), min.z + entity.getZ());
+            max = new Vec3(max.x + entity.getX(), max.y + entity.getY(), max.z + entity.getZ());
 
             // 射线与AABB相交检测
-            Float distance = rayIntersectsAABB(rayOrigin, rayDirection, min, max);
+            Double distance = rayIntersectsAABB(rayOrigin, rayDirection, min, max);
             if (distance != null && distance < closestDistance) {
                 closestDistance = distance;
                 closestHit = new RayHitResult(
                         entity,
                         entry.getKey(),
-                        rayOrigin.add(rayDirection.mul(distance, new Vector3f())),
+                        rayOrigin.add(rayDirection.multiply(distance)),
                         distance
                 );
             }
@@ -148,24 +145,29 @@ public class MatrixTransformer {
         return closestHit;
     }
 
-    private Float rayIntersectsAABB(Vector3f origin, Vector3f dir,
-                                    Vector3f min, Vector3f max) {
-        float tmin = 0.0f;
-        float tmax = Float.MAX_VALUE;
+    private Double rayIntersectsAABB(Vec3 origin, Vec3 dir,
+                                    Vec3 min, Vec3 max) {
+        double tmin = 0.0;
+        double tmax = Double.MAX_VALUE;
 
         for (int i = 0; i < 3; i++) {
-            if (Math.abs(dir.get(i)) < 1E-6) {
+            double dirComponent = i == 0 ? dir.x : (i == 1 ? dir.y : dir.z);
+            double originComponent = i == 0 ? origin.x : (i == 1 ? origin.y : origin.z);
+            double minComponent = i == 0 ? min.x : (i == 1 ? min.y : min.z);
+            double maxComponent = i == 0 ? max.x : (i == 1 ? max.y : max.z);
+
+            if (Math.abs(dirComponent) < 1E-6) {
                 // 射线平行于轴对齐平面
-                if (origin.get(i) < min.get(i) || origin.get(i) > max.get(i)) {
+                if (originComponent < minComponent || originComponent > maxComponent) {
                     return null;
                 }
             } else {
-                float ood = 1.0f / dir.get(i);
-                float t1 = (min.get(i) - origin.get(i)) * ood;
-                float t2 = (max.get(i) - origin.get(i)) * ood;
+                double ood = 1.0 / dirComponent;
+                double t1 = (minComponent - originComponent) * ood;
+                double t2 = (maxComponent - originComponent) * ood;
 
                 if (t1 > t2) {
-                    float temp = t1;
+                    double temp = t1;
                     t1 = t2;
                     t2 = temp;
                 }
@@ -185,11 +187,11 @@ public class MatrixTransformer {
     /**
      * 计算顶点的世界坐标
      */
-    public Vector3f toWorldCoordinates(Entity entity, Vector3f localVertex) {
-        return new Vector3f(
-                (float)(entity.getX() + localVertex.x),
-                (float)(entity.getY() + localVertex.y),
-                (float)(entity.getZ() + localVertex.z)
+    public Vec3 toWorldCoordinates(Entity entity, Vec3 localVertex) {
+        return new Vec3(
+                entity.getX() + localVertex.x,
+                entity.getY() + localVertex.y,
+                entity.getZ() + localVertex.z
         );
     }
 
@@ -215,10 +217,10 @@ public class MatrixTransformer {
      * 包围盒类
      */
     public static class BoundingBox {
-        public final Vector3f min;
-        public final Vector3f max;
+        public final Vec3 min;
+        public final Vec3 max;
 
-        public BoundingBox(Vector3f min, Vector3f max) {
+        public BoundingBox(Vec3 min, Vec3 max) {
             this.min = min;
             this.max = max;
         }
@@ -231,43 +233,28 @@ public class MatrixTransformer {
 
         public BoundingBox offset(double x, double y, double z) {
             return new BoundingBox(
-                    new Vector3f(min).add((float)x, (float)y, (float)z),
-                    new Vector3f(max).add((float)x, (float)y, (float)z)
-            );
-        }
-
-        public Vector3f getCenter() {
-            return new Vector3f(
-                    (min.x + max.x) * 0.5f,
-                    (min.y + max.y) * 0.5f,
-                    (min.z + max.z) * 0.5f
-            );
-        }
-
-        public Vector3f getSize() {
-            return new Vector3f(
-                    max.x - min.x,
-                    max.y - min.y,
-                    max.z - min.z
+                    new Vec3(min.x + x, min.y + y, min.z + z),
+                    new Vec3(max.x + x, max.y + y, max.z + z)
             );
         }
     }
 
     /**
-     * 射线命中结果
+     * 射线命中结果类
      */
     public static class RayHitResult {
         public final Entity entity;
         public final String cubeKey;
-        public final Vector3f hitPoint;
-        public final float distance;
+        public final Vec3 hitPoint;
+        public final double distance;
 
-        public RayHitResult(Entity entity, String cubeKey, Vector3f hitPoint, float distance) {
+        public RayHitResult(Entity entity, String cubeKey, Vec3 hitPoint, double distance) {
             this.entity = entity;
             this.cubeKey = cubeKey;
             this.hitPoint = hitPoint;
             this.distance = distance;
         }
+    }
 
         public String getBoneName() {
             return cubeKey.split(":")[0];

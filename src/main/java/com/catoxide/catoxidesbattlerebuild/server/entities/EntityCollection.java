@@ -1,10 +1,10 @@
-package com.catoxide.catoxidesbattlerebuild.server;
+package com.catoxide.catoxidesbattlerebuild.server.entities;
 
 import com.catoxide.catoxidesbattlerebuild.server.models.ModelCollection;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
-import org.joml.Vector3f;
 import software.bernie.geckolib.cache.object.GeoCube;
 import software.bernie.geckolib.core.animatable.GeoAnimatable;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
@@ -21,7 +21,7 @@ public record EntityCollection(
 
         // 动态数据字段
         Map<String, Matrix4f> boneMatrices,       // 骨骼变换矩阵
-        Map<String, List<Vector3f>> cubeVertices, // cube顶点数据
+        Map<String, List<Vec3>> cubeVertices, // cube顶点数据
         long lastUpdateTime,               // 最后更新时间
         int updateCount                    // 更新次数
 ) {
@@ -52,7 +52,7 @@ public record EntityCollection(
      */
     public EntityCollection withDynamicData(
             Map<String, Matrix4f> boneMatrices,
-            Map<String, List<Vector3f>> cubeVertices
+            Map<String, List<Vec3>> cubeVertices
     ) {
         return new EntityCollection(
                 this.entityId,

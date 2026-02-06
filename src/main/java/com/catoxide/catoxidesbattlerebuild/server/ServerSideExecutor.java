@@ -1,5 +1,8 @@
 package com.catoxide.catoxidesbattlerebuild.server;
 
+import com.catoxide.catoxidesbattlerebuild.server.entities.EntityCollection;
+import com.catoxide.catoxidesbattlerebuild.server.entities.EntityCollectionFactory;
+import com.catoxide.catoxidesbattlerebuild.server.entities.ServerEntityManager;
 import com.catoxide.catoxidesbattlerebuild.server.models.ServerGeoModelManager;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
