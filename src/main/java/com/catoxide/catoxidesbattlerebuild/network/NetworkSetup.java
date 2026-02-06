@@ -14,7 +14,6 @@ public static void onCommonSetup(FMLCommonSetupEvent event) {
     event.enqueueWork(() -> {
         // 注册网络包
         NetworkHandler.register();
-        GeckoLib.LOGGER.info("Network system registered");
     });
 }
 }

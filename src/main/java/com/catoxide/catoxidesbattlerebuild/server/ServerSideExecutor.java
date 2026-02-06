@@ -1,8 +1,8 @@
 package com.catoxide.catoxidesbattlerebuild.server;
 
+import com.catoxide.catoxidesbattlerebuild.server.models.ServerGeoModelManager;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -16,13 +16,9 @@ import software.bernie.geckolib.GeckoLib;
 import software.bernie.geckolib.core.animatable.GeoAnimatable;
 
 import java.util.Collection;
-import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
-import static com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuild.MODID;
 
 @Mod.EventBusSubscriber
 public class ServerSideExecutor {

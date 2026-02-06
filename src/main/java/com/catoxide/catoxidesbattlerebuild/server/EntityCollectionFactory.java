@@ -1,5 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.server;
 
+import com.catoxide.catoxidesbattlerebuild.server.models.ModelCollection;
+import com.catoxide.catoxidesbattlerebuild.server.models.ServerGeoModelManager;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import software.bernie.geckolib.GeckoLib;

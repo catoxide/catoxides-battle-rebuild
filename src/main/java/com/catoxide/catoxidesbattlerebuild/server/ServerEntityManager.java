@@ -1,6 +1,6 @@
-// [file name]: AnimatableEntitiesTable.java
 package com.catoxide.catoxidesbattlerebuild.server;
 
+import com.catoxide.catoxidesbattlerebuild.server.models.ServerGeoModelManager;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -273,7 +273,7 @@ public class ServerEntityManager {
     private boolean isServerGeoModelManagerInitialized() {
         try {
             // 尝试获取一个模型来检查是否初始化
-            ServerGeoModelManager.getInstance().getBakedModel(new ResourceLocation("test", "test"));
+            ServerGeoModelManager.getInstance().getBakedModel(ResourceLocation.fromNamespaceAndPath("test", "test"));
             return true;
         } catch (IllegalStateException e) {
             return false;

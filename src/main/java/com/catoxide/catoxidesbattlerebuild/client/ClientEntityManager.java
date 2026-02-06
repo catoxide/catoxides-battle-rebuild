@@ -156,7 +156,7 @@ public class ClientEntityManager {
         ClientEntityCollection collection = getOrCreateEntityCollection(entityUUID);
         
         // 创建动画对象
-        ResourceLocation animationId = new ResourceLocation(animationName);
+        ResourceLocation animationId = ResourceLocation.parse(animationName);
         
         // 更新动画状态
         collection.updateAnimation(

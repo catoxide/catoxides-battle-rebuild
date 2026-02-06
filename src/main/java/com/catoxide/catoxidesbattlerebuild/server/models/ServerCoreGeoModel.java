@@ -1,4 +1,4 @@
-package com.catoxide.catoxidesbattlerebuild.server;
+package com.catoxide.catoxidesbattlerebuild.server.models;
 
 import net.minecraft.resources.ResourceLocation;
 import software.bernie.geckolib.GeckoLib;
@@ -10,9 +10,6 @@ import software.bernie.geckolib.core.animation.Animation;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
 import software.bernie.geckolib.core.animation.AnimationState;
 import software.bernie.geckolib.loading.object.BakedAnimations;
-
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Server-side implementation of CoreGeoModel that can work with any GeoAnimatable type.

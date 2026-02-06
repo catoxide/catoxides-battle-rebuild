@@ -9,16 +9,16 @@ public class ModularZombieModel extends GeoModel<ModularZombie> {
 
     @Override
     public ResourceLocation getModelResource(ModularZombie animatable) {
-        return new ResourceLocation(CatoxidesBattleRebuild.MODID, "geo/modular_zombie.geo.json");
+        return ResourceLocation.fromNamespaceAndPath(CatoxidesBattleRebuild.MODID, "geo/modular_zombie.geo.json");
     }
 
     @Override
     public ResourceLocation getTextureResource(ModularZombie animatable) {
-        return new ResourceLocation(CatoxidesBattleRebuild.MODID, "textures/entity/modular_zombie.png");
+        return ResourceLocation.fromNamespaceAndPath(CatoxidesBattleRebuild.MODID, "textures/entity/modular_zombie.png");
     }
 
     @Override
     public ResourceLocation getAnimationResource(ModularZombie animatable) {
-        return new ResourceLocation(CatoxidesBattleRebuild.MODID, "animations/modular_zombie.animation.json");
+        return ResourceLocation.fromNamespaceAndPath(CatoxidesBattleRebuild.MODID, "animations/modular_zombie.animation.json");
     }
 }

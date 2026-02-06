@@ -13,7 +13,7 @@ import static com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuild.MODID;
 public class NetworkHandler {
     private static final String PROTOCOL_VERSION = "1.0.0";
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
-            new ResourceLocation(MODID, "hitbox_sync"),
+            ResourceLocation.fromNamespaceAndPath(MODID, "hitbox_sync"),
             () -> PROTOCOL_VERSION,
             PROTOCOL_VERSION::equals,
             PROTOCOL_VERSION::equals

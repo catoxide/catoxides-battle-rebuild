@@ -1,5 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.server;
 
+import com.catoxide.catoxidesbattlerebuild.server.models.ModelCollectionFactory;
+import com.catoxide.catoxidesbattlerebuild.server.models.ServerGeoModelManager;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;

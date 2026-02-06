@@ -1,15 +1,10 @@
-package com.catoxide.catoxidesbattlerebuild.server;
+package com.catoxide.catoxidesbattlerebuild.server.models;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import software.bernie.geckolib.GeckoLib;
 import software.bernie.geckolib.cache.object.BakedGeoModel;
 import software.bernie.geckolib.core.animatable.GeoAnimatable;
-import software.bernie.geckolib.core.animation.Animation;
-import software.bernie.geckolib.core.animation.RawAnimation;
 import software.bernie.geckolib.loading.FileLoader;
 import software.bernie.geckolib.loading.json.raw.Model;
 import software.bernie.geckolib.loading.object.BakedAnimations;
@@ -17,9 +12,6 @@ import software.bernie.geckolib.loading.object.BakedModelFactory;
 import software.bernie.geckolib.loading.object.GeometryTree;
 import software.bernie.geckolib.core.animation.AnimationProcessor;
 
-import java.io.InputStreamReader;
-import java.io.Reader;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
