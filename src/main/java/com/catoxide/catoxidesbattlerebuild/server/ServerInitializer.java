@@ -1,8 +1,8 @@
 package com.catoxide.catoxidesbattlerebuild.server;
 
-import com.catoxide.catoxidesbattlerebuild.server.entities.EntityCollectionFactory;
-import com.catoxide.catoxidesbattlerebuild.server.entities.MatrixTransformer;
-import com.catoxide.catoxidesbattlerebuild.server.entities.ServerEntityManager;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.EntityCollectionFactory;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.MatrixTransformer;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.ServerEntityManager;
 import com.catoxide.catoxidesbattlerebuild.server.models.ModelCollectionFactory;
 import com.catoxide.catoxidesbattlerebuild.server.models.ServerGeoModelManager;
 import net.minecraftforge.eventbus.api.SubscribeEvent;

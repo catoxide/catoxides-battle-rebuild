@@ -1,4 +1,4 @@
-package com.catoxide.catoxidesbattlerebuild.server.entities;
+package com.catoxide.catoxidesbattlerebuild.server.geometry;
 
 import com.catoxide.catoxidesbattlerebuild.server.models.BoneModelData;
 import net.minecraft.world.phys.Vec3;

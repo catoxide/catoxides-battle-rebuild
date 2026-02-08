@@ -1,8 +1,8 @@
 package com.catoxide.catoxidesbattlerebuild.server;
 
-import com.catoxide.catoxidesbattlerebuild.server.entities.EntityCollection;
-import com.catoxide.catoxidesbattlerebuild.server.entities.EntityCollectionFactory;
-import com.catoxide.catoxidesbattlerebuild.server.entities.ServerEntityManager;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.EntityCollection;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.EntityCollectionFactory;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.ServerEntityManager;
 import com.catoxide.catoxidesbattlerebuild.server.models.ServerGeoModelManager;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -27,6 +27,13 @@ import java.util.concurrent.Executors;
 public class ServerSideExecutor {
     private static final ServerSideExecutor INSTANCE = new ServerSideExecutor();
     private boolean initialized = false;
+    
+    private static final ExecutorService MODEL_LOADING_EXECUTOR = Executors.newFixedThreadPool(2, r -> {
+        Thread thread = new Thread(r, "GeckoLib-Model-Loader");
+        thread.setDaemon(true);
+        thread.setPriority(Thread.MIN_PRIORITY + 1);
+        return thread;
+    });
 
     private ServerSideExecutor() {}
 
@@ -322,11 +329,4 @@ public class ServerSideExecutor {
         }
         return defaultValue;
     }
-    private static final ExecutorService MODEL_LOADING_EXECUTOR =
-            Executors.newFixedThreadPool(2, r -> {
-                Thread thread = new Thread(r, "GeckoLib-Model-Loader");
-                thread.setDaemon(true);
-                thread.setPriority(Thread.MIN_PRIORITY + 1);
-                return thread;
-            });
 }

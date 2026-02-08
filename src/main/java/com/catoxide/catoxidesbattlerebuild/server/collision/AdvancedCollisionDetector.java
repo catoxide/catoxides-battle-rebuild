@@ -1,7 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.server.collision;
 
-import com.catoxide.catoxidesbattlerebuild.server.entities.BoneCollection;
-import com.catoxide.catoxidesbattlerebuild.server.entities.CubeCollection;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.BoneCollection;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.CubeCollection;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3f;
 import org.joml.Matrix4f;

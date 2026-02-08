@@ -1,4 +1,4 @@
-package com.catoxide.catoxidesbattlerebuild.server.entities;
+package com.catoxide.catoxidesbattlerebuild.server.geometry;
 
 import com.catoxide.catoxidesbattlerebuild.server.models.BoneModelData;
 import net.minecraft.world.phys.Vec3;
@@ -12,6 +12,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * 负责管理所有实体的骨骼动画、碰撞检测和网络同步
  */
 public class ServerEntityManager {
+    // 单例实例
+    private static final ServerEntityManager INSTANCE = new ServerEntityManager();
+    
     // 实体映射：UUID -> EntityCollection
     private final Map<UUID, EntityCollection> entityMap = new ConcurrentHashMap<>();
     
@@ -20,6 +23,12 @@ public class ServerEntityManager {
     
     // 实体骨骼数据缓存
     private final Map<String, List<BoneModelData.BoneStaticData>> modelBoneCache = new ConcurrentHashMap<>();
+    
+    private ServerEntityManager() {}
+    
+    public static ServerEntityManager getInstance() {
+        return INSTANCE;
+    }
     
     /**
      * 注册新实体
@@ -144,17 +153,28 @@ public class ServerEntityManager {
     }
     
     /**
+     * 获取实体的骨骼变换矩阵
+     */
+    public Map<String, org.joml.Matrix4f> getEntityBoneMatrices(java.util.UUID uuid) {
+        EntityCollection entity = entityMap.get(uuid);
+        return entity != null ? entity.getBoneMatrices() : java.util.Collections.emptyMap();
+    }
+    
+    /**
      * 移除实体
      */
-    public void removeEntity(UUID uuid) {
-        entityMap.remove(uuid);
-        idMap.remove(entityMap.get(uuid).getEntityId());
+    public void removeEntity(java.util.UUID uuid) {
+        EntityCollection entity = entityMap.get(uuid);
+        if (entity != null) {
+            idMap.remove(entity.getEntityId());
+            entityMap.remove(uuid);
+        }
     }
     
     /**
      * 获取实体
      */
-    public EntityCollection getEntity(UUID uuid) {
+    public EntityCollection getEntity(java.util.UUID uuid) {
         return entityMap.get(uuid);
     }
     
@@ -162,14 +182,14 @@ public class ServerEntityManager {
      * 获取实体通过ID
      */
     public EntityCollection getEntityById(long entityId) {
-        UUID uuid = idMap.get(entityId);
+        java.util.UUID uuid = idMap.get(entityId);
         return uuid != null ? entityMap.get(uuid) : null;
     }
     
     /**
      * 获取所有实体UUID
      */
-    public Collection<UUID> getAllEntityUuids() {
+    public java.util.Collection<java.util.UUID> getAllEntityUuids() {
         return entityMap.keySet();
     }
     
@@ -179,5 +199,27 @@ public class ServerEntityManager {
     public void clearAllEntities() {
         entityMap.clear();
         idMap.clear();
+    }
+    
+    /**
+     * 清理无效实体
+     */
+    public void cleanupInvalidEntities() {
+        // 这里可以添加清理逻辑，比如移除不存在的实体
+        // 暂时留空
+    }
+    
+    /**
+     * 注册实体（重载方法，接受Entity参数）
+     */
+    public void registerEntity(net.minecraft.world.entity.Entity entity, net.minecraft.resources.ResourceLocation modelLocation) {
+        registerEntity(entity.getUUID(), entity.getId(), modelLocation.toString());
+    }
+    
+    /**
+     * 注销实体（接受Entity参数）
+     */
+    public void unregisterEntity(net.minecraft.world.entity.Entity entity) {
+        removeEntity(entity.getUUID());
     }
 }

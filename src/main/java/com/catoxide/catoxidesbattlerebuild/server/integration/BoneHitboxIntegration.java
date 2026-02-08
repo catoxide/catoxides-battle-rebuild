@@ -1,8 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.server.integration;
 
-import com.catoxide.catoxidesbattlerebuild.server.entities.*;
-import com.catoxide.catoxidesbattlerebuild.server.models.BoneModelData;
-import com.catoxide.catoxidesbattlerebuild.server.models.BoneModelDataExtractor;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.*;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;

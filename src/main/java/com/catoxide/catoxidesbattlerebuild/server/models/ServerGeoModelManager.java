@@ -1,6 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.server.models;
 
-import com.catoxide.catoxidesbattlerebuild.server.entities.EntityCollection;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.EntityCollection;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import software.bernie.geckolib.GeckoLib;

@@ -1,7 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.server.models;
 
-import com.catoxide.catoxidesbattlerebuild.server.entities.BoneCollection;
-import com.catoxide.catoxidesbattlerebuild.server.entities.BoneCollectionFactory;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.BoneCollection;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.BoneCollectionFactory;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 

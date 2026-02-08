@@ -1,8 +1,8 @@
 package com.catoxide.catoxidesbattlerebuild.server.models;
 
-import com.catoxide.catoxidesbattlerebuild.server.entities.CubeCollection;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.CubeCollection;
 import net.minecraft.resources.ResourceLocation;
-import org.joml.Vector3f;
+import net.minecraft.world.phys.Vec3;
 import software.bernie.geckolib.loading.json.raw.Model;
 import software.bernie.geckolib.loading.json.raw.Bone;
 import software.bernie.geckolib.loading.json.raw.Cube;
@@ -77,14 +77,14 @@ public class BoneModelDataExtractor {
                 double[] rotation = cube.rotation() != null ? cube.rotation() : new double[]{0, 0, 0};
                 double[] pivot = cube.pivot() != null ? cube.pivot() : new double[]{0, 0, 0};
 
-                // 将double数组转换为Vector3f
-                Vector3f originVec = new Vector3f((float) origin[0], (float) origin[1], (float) origin[2]);
-                Vector3f sizeVec = new Vector3f((float) size[0], (float) size[1], (float) size[2]);
-                Vector3f rotationVec = new Vector3f((float) rotation[0], (float) rotation[1], (float) rotation[2]);
-                Vector3f pivotVec = new Vector3f((float) pivot[0], (float) pivot[1], (float) pivot[2]);
+                // 将double数组转换为Vec3
+                Vec3 originVec = new Vec3(origin[0], origin[1], origin[2]);
+                Vec3 sizeVec = new Vec3(size[0], size[1], size[2]);
+                Vec3 rotationVec = new Vec3(rotation[0], rotation[1], rotation[2]);
+                Vec3 pivotVec = new Vec3(pivot[0], pivot[1], pivot[2]);
 
                 // 计算originOffset：origin相对于pivot的偏移
-                Vector3f originOffsetVec = new Vector3f(originVec).sub(pivotVec);
+                Vec3 originOffsetVec = originVec.subtract(pivotVec);
 
                 // 创建CubeStaticData
                 BoneModelData.CubeStaticData cubeStaticData = new BoneModelData.CubeStaticData(
@@ -107,9 +107,9 @@ public class BoneModelDataExtractor {
                 bone.name(),
                 parentBoneName,
                 cubeStaticDataList,
-                new Vector3f((float) pivot[0], (float) pivot[1], (float) pivot[2]), // 骨骼的局部pivot
-                new Vector3f(0, 0, 0), // 默认旋转
-                new Vector3f(1, 1, 1)  // 默认缩放
+                new Vec3(pivot[0], pivot[1], pivot[2]), // 骨骼的局部pivot
+                new Vec3(0, 0, 0), // 默认旋转
+                new Vec3(1, 1, 1)  // 默认缩放
         );
 
         boneStaticDataMap.put(bone.name(), boneStaticData);

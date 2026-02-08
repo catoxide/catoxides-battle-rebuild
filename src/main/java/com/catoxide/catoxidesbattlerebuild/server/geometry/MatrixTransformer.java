@@ -1,10 +1,9 @@
 // [file name]: MatrixTransformer.java
-package com.catoxide.catoxidesbattlerebuild.server.entities;
+package com.catoxide.catoxidesbattlerebuild.server.geometry;
 
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
-import org.joml.Vector3f;
 
 import java.util.*;
 
@@ -253,11 +252,6 @@ public class MatrixTransformer {
             this.cubeKey = cubeKey;
             this.hitPoint = hitPoint;
             this.distance = distance;
-        }
-    }
-
-        public String getBoneName() {
-            return cubeKey.split(":")[0];
         }
     }
 }

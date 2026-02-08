@@ -1,6 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.server.models;
 
-import com.catoxide.catoxidesbattlerebuild.server.entities.CubeCollection;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.CubeCollection;
 import net.minecraft.resources.ResourceLocation;
 import software.bernie.geckolib.GeckoLib;
 import software.bernie.geckolib.loading.object.GeometryTree;

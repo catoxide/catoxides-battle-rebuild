@@ -1,4 +1,4 @@
-package com.catoxide.catoxidesbattlerebuild.server.entities;
+package com.catoxide.catoxidesbattlerebuild.server.geometry;
 
 import org.joml.Vector3f;
 import org.joml.Quaternionf;
