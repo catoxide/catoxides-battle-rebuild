@@ -1,6 +1,5 @@
 package com.catoxide.catoxidesbattlerebuild;
 
-import com.catoxide.catoxidesbattlerebuild.client.renderer.RenderEventHandler;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.CreativeModeTab;

@@ -120,10 +120,24 @@ public class BodyPart implements IBodyPart {
             return 0.0f;
         }
         
-        // 将伤害传导到对应的BodyUnit（新架构：BodyUnit与Bone是1对1关系，无需传入boneName）
-        return unit.receiveDamage(rawDamage, damageType);
+        // 将伤害传导到对应的BodyUnit，传入boneName参数
+        return unit.receiveDamage(boneName, rawDamage, damageType);
     }
-    
+
+    @Override
+    public float receiveDamageByBone(String boneName, float damage, DamageSource source) {
+        BodyUnit unit = getUnitByBoneName(boneName);
+        if (unit == null) {
+            // 没有对应的BodyUnit，不处理伤害
+            return 0.0f;
+        }
+        
+        // 将伤害传导到对应的BodyUnit
+        // 将DamageSource转换为String类型的damageType
+        String damageType = source != null ? source.getMsgId() : "generic";
+        return unit.receiveDamage(boneName, damage, damageType);
+    }
+
     @Override
     public void transmitToEntity(float damage) {
         // TODO: 实现伤害传导到实体血量的逻辑
@@ -149,7 +163,7 @@ public class BodyPart implements IBodyPart {
     
     @Override
     public boolean isAlive() {
-        // 检查是否所有BodyUnit都已死亡
+        // 检查是否至少有一个BodyUnit存活
         return bodyUnits.stream().anyMatch(BodyUnit::isAlive);
     }
     
@@ -165,23 +179,29 @@ public class BodyPart implements IBodyPart {
     
     // ==================== 骨骼管理（兼容旧接口） ====================
     
-    @Override
+    /**
+     * 添加骨骼（兼容旧接口）
+     * 新架构中，骨骼通过BodyUnit添加
+     * 这个方法可能不再需要，或者需要创建新的BodyUnit
+     */
     public void addBone(String boneName, float transmissionCoefficient) {
-        // 新架构中，骨骼通过BodyUnit添加
-        // 这个方法可能不再需要，或者需要创建新的BodyUnit
         // TODO: 根据实际需求实现
     }
     
-    @Override
+    /**
+     * 移除骨骼（兼容旧接口）
+     * 新架构中，骨骼通过BodyUnit移除
+     * 这个方法可能不再需要
+     */
     public void removeBone(String boneName) {
-        // 新架构中，骨骼通过BodyUnit移除
-        // 这个方法可能不再需要
         // TODO: 根据实际需求实现
     }
     
-    @Override
+    /**
+     * 获取骨骼传导系数（兼容旧接口）
+     * 返回所有BodyUnit的骨骼传导系数
+     */
     public Map<String, Float> getBoneTransmissionCoefficients() {
-        // 返回所有BodyUnit的骨骼传导系数
         Map<String, Float> result = new HashMap<>();
         for (BodyUnit unit : bodyUnits) {
             result.put(unit.getBoneName(), unit.getTransmissionCoefficient());

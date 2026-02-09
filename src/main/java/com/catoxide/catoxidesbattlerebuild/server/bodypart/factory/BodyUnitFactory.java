@@ -61,7 +61,7 @@ public class BodyUnitFactory {
             .armorValue(armorValue)
             .critical(critical)
             .collisionTag(collisionTag)
-            .defaultTransmissionCoefficient(defaultTransmissionCoefficient)
+            .transmissionCoefficient(defaultTransmissionCoefficient)
             .entityTransmissionCoefficient(entityTransmissionCoefficient);
         
         registerConfigTemplate(builder.build());
@@ -171,7 +171,7 @@ public class BodyUnitFactory {
             .armorValue(0.2f)
             .critical(true)
             .collisionTag("head")
-            .defaultTransmissionCoefficient(1.0f)
+            .transmissionCoefficient(1.0f)
             .entityTransmissionCoefficient(1.0f)
             .fatal(true)
             .fatalThreshold(0.0f)
@@ -187,7 +187,7 @@ public class BodyUnitFactory {
             .armorValue(0.3f)
             .critical(false)
             .collisionTag("torso")
-            .defaultTransmissionCoefficient(1.0f)
+            .transmissionCoefficient(1.0f)
             .entityTransmissionCoefficient(0.8f)
             .fatal(true)
             .fatalThreshold(0.0f)
@@ -203,7 +203,7 @@ public class BodyUnitFactory {
             .armorValue(0.1f)
             .critical(false)
             .collisionTag("limb")
-            .defaultTransmissionCoefficient(0.8f)
+            .transmissionCoefficient(0.8f)
             .entityTransmissionCoefficient(0.3f)
             .fatal(false)
             .build();

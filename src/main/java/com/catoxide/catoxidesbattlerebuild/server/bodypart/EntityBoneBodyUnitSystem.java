@@ -60,7 +60,7 @@ public class EntityBoneBodyUnitSystem {
         // 构建部位名称映射
         Map<String, IBodyPart> partMap = new HashMap<>();
         for (IBodyPart part : partsList) {
-            partMap.put(part.getName(), part);
+            partMap.put(part.getPartName(), part);
         }
         entityPartMap.put(entityId, partMap);
         

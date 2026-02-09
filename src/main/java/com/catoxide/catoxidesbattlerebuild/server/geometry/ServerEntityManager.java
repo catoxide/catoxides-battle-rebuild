@@ -46,7 +46,7 @@ public class ServerEntityManager {
         // 创建实体集合 - 使用新架构的构造函数
         EntityCollection entityCollection = EntityCollection.create(
             uuid,
-            new ResourceLocation(modelName),
+            ResourceLocation.parse(modelName),
             null, // modelCollection - 暂时为null，需要从BoneModelData创建
             null  // entity - 暂时为null
         );
@@ -140,7 +140,7 @@ public class ServerEntityManager {
      */
     public Map<String, org.joml.Matrix4f> getEntityBoneMatrices(java.util.UUID uuid) {
         EntityCollection entity = entityMap.get(uuid);
-        return entity != null ? entity.getBoneMatrices() : java.util.Collections.emptyMap();
+        return entity != null ? entity.boneMatrices() : java.util.Collections.emptyMap();
     }
     
     /**
@@ -149,7 +149,7 @@ public class ServerEntityManager {
     public void removeEntity(java.util.UUID uuid) {
         EntityCollection entity = entityMap.get(uuid);
         if (entity != null) {
-            idMap.remove(entity.getEntityId());
+            idMap.remove(entity.entityId());
             entityMap.remove(uuid);
         }
     }

@@ -100,7 +100,7 @@ public class ModelCollectionFactory {
             }
             // 添加 "animations/" 前缀和 ".animation.json" 后缀
             String animationPath = "animations/" + path + ".animation.json";
-            ResourceLocation animationLocation = new ResourceLocation(modelLocation.getNamespace(), animationPath);
+            ResourceLocation animationLocation = ResourceLocation.fromNamespaceAndPath(modelLocation.getNamespace(), animationPath);
             BakedAnimations bakedanimation = FileLoader.loadAnimationsFile(animationLocation, resourceManager);
             if (bakedanimation == null) {
                 throw new IllegalArgumentException("Failed to load animation: " + modelLocation);

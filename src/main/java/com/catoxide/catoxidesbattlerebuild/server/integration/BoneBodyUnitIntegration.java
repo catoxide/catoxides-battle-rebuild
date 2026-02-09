@@ -4,6 +4,7 @@ import com.catoxide.catoxidesbattlerebuild.server.bodypart.*;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.config.*;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.factory.*;
 import com.catoxide.catoxidesbattlerebuild.server.geometry.*;
+import com.catoxide.catoxidesbattlerebuild.server.models.BoneModelData;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -88,7 +89,8 @@ public class BoneBodyUnitIntegration {
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
             // 在服务器Tick结束时更新所有实体的骨骼变换
-            bodyUnitSystem.updateAllEntityTransforms(1.0f); // 使用固定的partialTicks，实际应根据游戏时间计算
+            // 注意：骨骼变换更新由EntityCollectionFactory和ServerGeoModelManager处理
+            // 这里不需要额外调用，因为GeckoLib会自动处理动画更新
         }
     }
     
@@ -261,14 +263,16 @@ public class BoneBodyUnitIntegration {
     private static ResourceLocation getModelLocationForEntity(Entity entity) {
         // 根据实体类型确定其模型位置
         // 这需要与你的实体模型系统集成
-        String entityType = entity.getType().getRegistryName().getPath();
+        // 注意：使用EntityType.getKey()获取实体类型的ResourceLocation
+        ResourceLocation entityType = net.minecraft.world.entity.EntityType.getKey(entity.getType());
+        String entityPath = entityType != null ? entityType.getPath() : "generic";
         
         // 示例：为不同类型的实体分配不同的模型
-        if (entityType.contains("zombie")) {
+        if (entityPath.contains("zombie")) {
             return ResourceLocation.fromNamespaceAndPath("catoxide", "zombie_model");
-        } else if (entityType.contains("skeleton")) {
+        } else if (entityPath.contains("skeleton")) {
             return ResourceLocation.fromNamespaceAndPath("catoxide", "skeleton_model");
-        } else if (entityType.contains("player")) {
+        } else if (entityPath.contains("player")) {
             return ResourceLocation.fromNamespaceAndPath("catoxide", "player_model");
         } else {
             // 默认模型
@@ -284,18 +288,30 @@ public class BoneBodyUnitIntegration {
     }
     
     /**
-     * 检测射线与实体的碰撞
+     * 处理实体击中
+     * @param entityId 实体ID
+     * @param hitPoint 击中点
+     * @param incomingDamage 传入伤害
+     * @param damageType 伤害类型
+     * @return 击中结果
      */
-    public static java.util.Optional<EntityBoneBodyUnitSystem.EntityHitResult> raycastEntity(
-            long entityId, Vec3 start, Vec3 direction, double maxDistance) {
-        return bodyUnitSystem.raycastEntity(entityId, start, direction, maxDistance);
+    public static EntityBoneBodyUnitSystem.EntityHitResult processEntityHit(
+            long entityId, Vec3 hitPoint, float incomingDamage, String damageType) {
+        // 注意：这里需要根据击中点确定击中的骨骼
+        // 暂时使用默认骨骼名称，实际应该通过碰撞检测确定
+        String boneName = "default_bone";
+        return bodyUnitSystem.processEntityHit(entityId, boneName, incomingDamage, damageType);
     }
     
     /**
-     * 处理实体击中
+     * 处理实体击中（使用默认伤害类型）
+     * @param entityId 实体ID
+     * @param hitPoint 击中点
+     * @param incomingDamage 传入伤害
+     * @return 击中结果
      */
     public static EntityBoneBodyUnitSystem.EntityHitResult processEntityHit(
             long entityId, Vec3 hitPoint, float incomingDamage) {
-        return bodyUnitSystem.processEntityHit(entityId, hitPoint, incomingDamage);
+        return processEntityHit(entityId, hitPoint, incomingDamage, "generic");
     }
 }

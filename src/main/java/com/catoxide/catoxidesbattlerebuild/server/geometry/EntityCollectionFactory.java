@@ -112,7 +112,24 @@ public class EntityCollectionFactory {
             Map<String, org.joml.Matrix4f> boneMatrices,
             Map<String, java.util.List<org.joml.Vector3f>> cubeVertices
     ) {
-        EntityCollection updated = collection.withDynamicData(boneMatrices, cubeVertices);
+        // 将Vector3f转换为Vec3以保证精度
+        Map<String, java.util.List<net.minecraft.world.phys.Vec3>> convertedVertices = null;
+        if (cubeVertices != null) {
+            convertedVertices = new java.util.concurrent.ConcurrentHashMap<>();
+            for (Map.Entry<String, java.util.List<org.joml.Vector3f>> entry : cubeVertices.entrySet()) {
+                java.util.List<net.minecraft.world.phys.Vec3> vec3List = new java.util.ArrayList<>();
+                for (org.joml.Vector3f vector3f : entry.getValue()) {
+                    vec3List.add(new net.minecraft.world.phys.Vec3(
+                        vector3f.x(),
+                        vector3f.y(),
+                        vector3f.z()
+                    ));
+                }
+                convertedVertices.put(entry.getKey(), vec3List);
+            }
+        }
+        
+        EntityCollection updated = collection.withDynamicData(boneMatrices, convertedVertices);
         entityCollectionCache.put(collection.entityId(), updated);
         return updated;
     }

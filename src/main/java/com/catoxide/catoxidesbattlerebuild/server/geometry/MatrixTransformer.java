@@ -135,7 +135,11 @@ public class MatrixTransformer {
                 closestHit = new RayHitResult(
                         entity,
                         entry.getKey(),
-                        rayOrigin.add(rayDirection.multiply(distance)),
+                        new Vec3(
+                            rayOrigin.x + rayDirection.x * distance,
+                            rayOrigin.y + rayDirection.y * distance,
+                            rayOrigin.z + rayDirection.z * distance
+                        ),
                         distance
                 );
             }

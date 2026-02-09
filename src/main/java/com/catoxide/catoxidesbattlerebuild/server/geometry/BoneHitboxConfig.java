@@ -57,8 +57,8 @@ public record BoneHitboxConfig(
         }
 
         public Builder fromCube(CubeCollection cube) {
-            this.center = cube.pivot();
-            this.size = cube.size();
+            this.center = new Vector3f((float)cube.getPivot().x, (float)cube.getPivot().y, (float)cube.getPivot().z);
+            this.size = new Vector3f((float)cube.getSize().x, (float)cube.getSize().y, (float)cube.getSize().z);
             return this;
         }
 

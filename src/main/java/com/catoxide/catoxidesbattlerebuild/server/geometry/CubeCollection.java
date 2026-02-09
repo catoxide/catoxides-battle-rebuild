@@ -45,7 +45,7 @@ public class CubeCollection {
     
     // OBB（定向包围盒）参数
     private Matrix4f obbOrientation = new Matrix4f().identity();
-    private Vec3 obbHalfSize = new Vec3();
+    private Vec3 obbHalfSize = new Vec3(0, 0, 0);
     
     // 本地顶点（未变换的立方体顶点）
     private List<Vec3> localVertices = new ArrayList<>();
@@ -198,4 +198,5 @@ public class CubeCollection {
     public Vec3 getObbHalfSize() { return obbHalfSize; }
     public List<Vec3> getLocalVertices() { return new ArrayList<>(localVertices); }
     public List<Vec3> getWorldVertices() { return new ArrayList<>(worldVertices); }
+    public String getId() { return id; }
 }

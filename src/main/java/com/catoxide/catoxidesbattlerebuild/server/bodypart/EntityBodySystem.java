@@ -49,8 +49,9 @@ public class EntityBodySystem {
             IBodyPart part = entry.getValue();
             
             // 将该部位的所有骨骼映射到该部位
-            Map<String, Float> boneMap = part.getBoneTransmissionCoefficients();
-            for (String boneName : boneMap.keySet()) {
+            // 使用getBodyUnits()和getUnitByBoneName()来获取骨骼信息
+            for (BodyUnit unit : part.getBodyUnits()) {
+                String boneName = unit.getBoneName();
                 // 验证：检查骨骼是否已被分配
                 if (boneToPartMap.containsKey(boneName)) {
                     String existingPart = boneToPartMap.get(boneName);
@@ -136,11 +137,11 @@ public class EntityBodySystem {
         }
         
         // 2. 获取传导系数
-        Map<String, Float> boneCoefficients = targetPart.getBoneTransmissionCoefficients();
-        Float transmissionCoefficient = boneCoefficients.get(boneName);
-        if (transmissionCoefficient == null) {
+        BodyUnit unit = targetPart.getUnitByBoneName(boneName);
+        if (unit == null) {
             return 0f;
         }
+        Float transmissionCoefficient = unit.getTransmissionCoefficient();
         
         // 3. 传导伤害到部位
         float transmittedDamage = incomingDamage * transmissionCoefficient;
@@ -200,6 +201,9 @@ public class EntityBodySystem {
         return activeEntities.contains(entityId);
     }
 }
+
+
+
 
 
 

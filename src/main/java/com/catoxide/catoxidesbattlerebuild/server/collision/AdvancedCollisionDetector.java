@@ -276,7 +276,11 @@ public class AdvancedCollisionDetector {
         inverseTransform.transformPosition(localSphereCenter);
         
         // 获取OBB的半尺寸（在局部空间）
-        Vector3f halfSize = new Vector3f(obb.getSize().x() / 2.0f, obb.getSize().y() / 2.0f, obb.getSize().z() / 2.0f);
+        Vector3f halfSize = new Vector3f(
+            (float)(obb.getSize().x / 2.0), 
+            (float)(obb.getSize().y / 2.0), 
+            (float)(obb.getSize().z / 2.0)
+        );
         
         // 将局部球心约束到OBB内部
         Vector3f clampedCenter = new Vector3f(

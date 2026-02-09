@@ -2,6 +2,7 @@ package com.catoxide.catoxidesbattlerebuild.server.models;
 
 import com.catoxide.catoxidesbattlerebuild.server.geometry.CubeCollection;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.phys.Vec3;
 import software.bernie.geckolib.GeckoLib;
 import software.bernie.geckolib.loading.object.GeometryTree;
 
@@ -46,12 +47,17 @@ public class CubesFactory {
                 // 将静态数据转换为CubeCollection
                 List<CubeCollection> cubeCollections = new ArrayList<>();
                 for (StaticModelDataManager.CubeStaticData cubeStaticData : boneStaticData.getCubeStaticDataList()) {
-                    CubeCollection cubeCollection = CubeCollection.fromJsonData(
+                    // 使用构造函数创建CubeCollection
+                    // 注意：这里需要entityId，但由于这是静态数据，暂时使用0作为占位符
+                    // 实际使用时会在EntityCollection中设置正确的entityId
+                    CubeCollection cubeCollection = new CubeCollection(
+                            0L,  // entityId占位符，实际使用时会更新
+                            boneName,
                             cubeStaticData.getId(),
-                            cubeStaticData.getPivot(),
-                            cubeStaticData.getSize(),
-                            cubeStaticData.getRotation(),
-                            cubeStaticData.getOriginOffset()
+                            new Vec3(cubeStaticData.getPivot().x, cubeStaticData.getPivot().y, cubeStaticData.getPivot().z),
+                            new Vec3(cubeStaticData.getSize().x, cubeStaticData.getSize().y, cubeStaticData.getSize().z),
+                            new Vec3(cubeStaticData.getRotation().x, cubeStaticData.getRotation().y, cubeStaticData.getRotation().z),
+                            new Vec3(cubeStaticData.getOriginOffset().x, cubeStaticData.getOriginOffset().y, cubeStaticData.getOriginOffset().z)
                     );
                     cubeCollections.add(cubeCollection);
                 }
@@ -96,12 +102,17 @@ public class CubesFactory {
             // 将静态数据转换为CubeCollection
             List<CubeCollection> cubeCollections = new ArrayList<>();
             for (StaticModelDataManager.CubeStaticData cubeStaticData : boneStaticData.getCubeStaticDataList()) {
-                CubeCollection cubeCollection = CubeCollection.fromJsonData(
+                // 使用构造函数创建CubeCollection
+                // 注意：这里需要entityId，但由于这是静态数据，暂时使用0作为占位符
+                // 实际使用时会在EntityCollection中设置正确的entityId
+                CubeCollection cubeCollection = new CubeCollection(
+                        0L,  // entityId占位符，实际使用时会更新
+                        boneName,
                         cubeStaticData.getId(),
-                        cubeStaticData.getPivot(),
-                        cubeStaticData.getSize(),
-                        cubeStaticData.getRotation(),
-                        cubeStaticData.getOriginOffset()
+                        new Vec3(cubeStaticData.getPivot().x, cubeStaticData.getPivot().y, cubeStaticData.getPivot().z),
+                        new Vec3(cubeStaticData.getSize().x, cubeStaticData.getSize().y, cubeStaticData.getSize().z),
+                        new Vec3(cubeStaticData.getRotation().x, cubeStaticData.getRotation().y, cubeStaticData.getRotation().z),
+                        new Vec3(cubeStaticData.getOriginOffset().x, cubeStaticData.getOriginOffset().y, cubeStaticData.getOriginOffset().z)
                 );
                 cubeCollections.add(cubeCollection);
             }

@@ -106,7 +106,7 @@ public class BodyUnit implements IBodyUnit {
     public BodyUnit(long entityId, String boneName, IBodyUnitConfig config) {
         this(entityId, config.getBodyUnitName(), boneName);
         this.config = config;
-        this.transmissionCoefficient = config.getDefaultTransmissionCoefficient();
+        this.transmissionCoefficient = config.getTransmissionCoefficient();
         this.maxHealth = config.getMaxHealth();
         this.currentHealth = this.maxHealth;
         this.armorValue = config.getArmorValue();
@@ -167,7 +167,12 @@ public class BodyUnit implements IBodyUnit {
     public float getTransmissionCoefficient() {
         return transmissionCoefficient;
     }
-    
+
+    @Override
+    public boolean matchesBone(String boneName) {
+        return this.boneName.equals(boneName);
+    }
+
     /**
      * 接收伤害（从关联的骨骼）
      * @param rawDamage 原始伤害
@@ -431,5 +436,35 @@ public class BodyUnit implements IBodyUnit {
                 ability.onTick(deltaTick);
             }
         }
+    }
+    
+    // ==================== 血量管理 ====================
+    
+    @Override
+    public float getCurrentHealth() {
+        return currentHealth;
+    }
+    
+    @Override
+    public float getMaxHealth() {
+        return maxHealth;
+    }
+    
+    @Override
+    public void setHealth(float health) {
+        this.currentHealth = Math.max(0, Math.min(health, maxHealth));
+    }
+    
+    @Override
+    public void setMaxHealth(float maxHealth) {
+        this.maxHealth = Math.max(0, maxHealth);
+        if (currentHealth > this.maxHealth) {
+            currentHealth = this.maxHealth;
+        }
+    }
+    
+    @Override
+    public boolean isAlive() {
+        return currentHealth > 0;
     }
 }

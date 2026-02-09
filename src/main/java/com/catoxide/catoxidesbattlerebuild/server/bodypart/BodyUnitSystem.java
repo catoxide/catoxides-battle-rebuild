@@ -222,8 +222,8 @@ public class BodyUnitSystem {
             return rawDamage;
         }
         
-        // BodyUnit接收伤害（新架构：BodyUnit与Bone是1对1关系，无需传入boneName）
-        float bodyUnitDamage = bodyUnit.receiveDamage(rawDamage, damageType);
+        // BodyUnit接收伤害（传入boneName参数以匹配接口定义）
+        float bodyUnitDamage = bodyUnit.receiveDamage(boneName, rawDamage, damageType);
         
         // 计算传导到实体的伤害
         float entityDamage = bodyUnit.calculateEntityTransmission(bodyUnitDamage);
@@ -244,8 +244,9 @@ public class BodyUnitSystem {
             return 0.0f;
         }
         
-        // BodyUnit接收伤害（新架构：BodyUnit与Bone是1对1关系，无需传入boneName）
-        float bodyUnitDamage = bodyUnit.receiveDamage(rawDamage, damageType);
+        // BodyUnit接收伤害（传入boneName参数以匹配接口定义）
+        String boneName = bodyUnit.getBoneName();
+        float bodyUnitDamage = bodyUnit.receiveDamage(boneName, rawDamage, damageType);
         float entityDamage = bodyUnit.calculateEntityTransmission(bodyUnitDamage);
         
         return entityDamage;

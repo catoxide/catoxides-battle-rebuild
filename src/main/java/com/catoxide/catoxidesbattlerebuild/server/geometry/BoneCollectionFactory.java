@@ -106,13 +106,13 @@ public class BoneCollectionFactory {
     private BoneModelData loadBoneModelData(ResourceLocation modelLocation, ResourceManager resourceManager) {
         try {
             // 构建资源路径
-            ResourceLocation resourcePath =ResourceLocation.fromNamespaceAndPath(
+            ResourceLocation resourcePath = ResourceLocation.fromNamespaceAndPath(
                     modelLocation.getNamespace(),
                     "geckolib/" + modelLocation.getPath() + ".json"
             );
 
             // 从资源管理器获取输入流并提取BoneModelData
-            try (java.io.InputStream inputStream = resourceManager.getResource(resourcePath).getInputStream()) {
+            try (java.io.InputStream inputStream = resourceManager.getResource(resourcePath).orElseThrow().open()) {
                 return BoneModelDataExtractor.extractFromModelFile(modelLocation, inputStream);
             }
         } catch (Exception e) {
