@@ -1,26 +1,27 @@
 package com.catoxide.catoxidesbattlerebuild.server.bodypart.config;
 
-import java.util.Map;
-import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Collections;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * 标准Hitbox配置实现
- * 提供基本的Hitbox配置参数
+ * 标准BodyUnit配置实现
+ * 提供基本的BodyUnit配置参数
+ * 
+ * 新架构：BodyUnit与Bone是1对1关系
+ * 每个BodyUnit关联一个特定的骨骼
  */
-public class StandardHitboxConfig implements IHitboxConfig {
+public class StandardBodyUnitConfig implements IBodyUnitConfig {
     
     private final String configName;
-    private final String hitboxName;
+    private final String bodyUnitName;
+    private final String boneName;
     private final float maxHealth;
     private final float armorValue;
     private final boolean critical;
     private final String collisionTag;
-    private final Map<String, Float> defaultBoneTransmissions;
-    private final float defaultTransmissionCoefficient;
+    private final float transmissionCoefficient;
     private final List<String> specialEffects;
     private final ResourceLocation hitSound;
     private final List<String> abilityClassNames;
@@ -28,15 +29,15 @@ public class StandardHitboxConfig implements IHitboxConfig {
     private final boolean fatal;
     private final float fatalThreshold;
     
-    private StandardHitboxConfig(Builder builder) {
+    private StandardBodyUnitConfig(Builder builder) {
         this.configName = builder.configName;
-        this.hitboxName = builder.hitboxName;
+        this.bodyUnitName = builder.bodyUnitName;
+        this.boneName = builder.boneName;
         this.maxHealth = builder.maxHealth;
         this.armorValue = builder.armorValue;
         this.critical = builder.critical;
         this.collisionTag = builder.collisionTag;
-        this.defaultBoneTransmissions = Collections.unmodifiableMap(new HashMap<>(builder.defaultBoneTransmissions));
-        this.defaultTransmissionCoefficient = builder.defaultTransmissionCoefficient;
+        this.transmissionCoefficient = builder.transmissionCoefficient;
         this.specialEffects = Collections.unmodifiableList(new ArrayList<>(builder.specialEffects));
         this.hitSound = builder.hitSound;
         this.abilityClassNames = Collections.unmodifiableList(new ArrayList<>(builder.abilityClassNames));
@@ -51,8 +52,13 @@ public class StandardHitboxConfig implements IHitboxConfig {
     }
     
     @Override
-    public String getHitboxName() {
-        return hitboxName;
+    public String getBodyUnitName() {
+        return bodyUnitName;
+    }
+    
+    @Override
+    public String getBoneName() {
+        return boneName;
     }
     
     @Override
@@ -76,13 +82,8 @@ public class StandardHitboxConfig implements IHitboxConfig {
     }
     
     @Override
-    public Map<String, Float> getDefaultBoneTransmissions() {
-        return defaultBoneTransmissions;
-    }
-    
-    @Override
-    public float getDefaultTransmissionCoefficient() {
-        return defaultTransmissionCoefficient;
+    public float getTransmissionCoefficient() {
+        return transmissionCoefficient;
     }
     
     @Override
@@ -120,13 +121,13 @@ public class StandardHitboxConfig implements IHitboxConfig {
      */
     public static class Builder {
         private String configName;
-        private String hitboxName;
+        private String bodyUnitName;
+        private String boneName;
         private float maxHealth = 100.0f;
         private float armorValue = 0.0f;
         private boolean critical = false;
         private String collisionTag = "default";
-        private Map<String, Float> defaultBoneTransmissions = new HashMap<>();
-        private float defaultTransmissionCoefficient = 1.0f;
+        private float transmissionCoefficient = 1.0f;
         private List<String> specialEffects = new ArrayList<>();
         private ResourceLocation hitSound = null;
         private List<String> abilityClassNames = new ArrayList<>();
@@ -134,9 +135,10 @@ public class StandardHitboxConfig implements IHitboxConfig {
         private boolean fatal = false;
         private float fatalThreshold = 0.0f;
         
-        public Builder(String configName, String hitboxName) {
+        public Builder(String configName, String bodyUnitName, String boneName) {
             this.configName = configName;
-            this.hitboxName = hitboxName;
+            this.bodyUnitName = bodyUnitName;
+            this.boneName = boneName;
         }
         
         public Builder maxHealth(float maxHealth) {
@@ -159,18 +161,8 @@ public class StandardHitboxConfig implements IHitboxConfig {
             return this;
         }
         
-        public Builder addBoneTransmission(String boneName, float coefficient) {
-            this.defaultBoneTransmissions.put(boneName, coefficient);
-            return this;
-        }
-        
-        public Builder defaultBoneTransmissions(Map<String, Float> transmissions) {
-            this.defaultBoneTransmissions = new HashMap<>(transmissions);
-            return this;
-        }
-        
-        public Builder defaultTransmissionCoefficient(float coefficient) {
-            this.defaultTransmissionCoefficient = coefficient;
+        public Builder transmissionCoefficient(float coefficient) {
+            this.transmissionCoefficient = coefficient;
             return this;
         }
         
@@ -214,8 +206,8 @@ public class StandardHitboxConfig implements IHitboxConfig {
             return this;
         }
         
-        public StandardHitboxConfig build() {
-            return new StandardHitboxConfig(this);
+        public StandardBodyUnitConfig build() {
+            return new StandardBodyUnitConfig(this);
         }
     }
 }

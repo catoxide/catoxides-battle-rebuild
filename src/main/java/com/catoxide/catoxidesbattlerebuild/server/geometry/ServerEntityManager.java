@@ -1,8 +1,11 @@
 package com.catoxide.catoxidesbattlerebuild.server.geometry;
 
 import com.catoxide.catoxidesbattlerebuild.server.models.BoneModelData;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.joml.*;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
+import org.joml.Matrix4f;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -22,7 +25,7 @@ public class ServerEntityManager {
     private final Map<Long, UUID> idMap = new ConcurrentHashMap<>();
     
     // 实体骨骼数据缓存
-    private final Map<String, List<BoneModelData.BoneStaticData>> modelBoneCache = new ConcurrentHashMap<>();
+    private final Map<String, BoneModelData> modelBoneCache = new ConcurrentHashMap<>();
     
     private ServerEntityManager() {}
     
@@ -35,11 +38,19 @@ public class ServerEntityManager {
      */
     public void registerEntity(UUID uuid, long entityId, String modelName) {
         // 从缓存获取骨骼数据
-        List<BoneModelData.BoneStaticData> boneData = modelBoneCache.computeIfAbsent(modelName, 
-            k -> BoneModelData.loadModel(k).orElse(Collections.emptyList()));
+        BoneModelData boneData = modelBoneCache.get(modelName);
+        if (boneData == null) {
+            throw new IllegalArgumentException("Model data not found for model: " + modelName);
+        }
         
-        // 创建实体集合
-        EntityCollection entityCollection = new EntityCollection(uuid, entityId, modelName, boneData);
+        // 创建实体集合 - 使用新架构的构造函数
+        EntityCollection entityCollection = EntityCollection.create(
+            uuid,
+            new ResourceLocation(modelName),
+            null, // modelCollection - 暂时为null，需要从BoneModelData创建
+            null  // entity - 暂时为null
+        );
+        
         entityMap.put(uuid, entityCollection);
         idMap.put(entityId, uuid);
     }
@@ -50,7 +61,9 @@ public class ServerEntityManager {
     public void updateEntitySkeleton(UUID uuid, Map<String, Matrix4f> boneTransforms) {
         EntityCollection entity = entityMap.get(uuid);
         if (entity != null) {
-            entity.updateSkeleton(boneTransforms);
+            // EntityCollection是record，不可变，需要重新创建
+            EntityCollection updated = entity.withDynamicData(boneTransforms, null);
+            entityMap.put(uuid, updated);
         }
     }
     
@@ -59,7 +72,13 @@ public class ServerEntityManager {
      */
     public List<BoneCollection> getEntityBones(UUID uuid) {
         EntityCollection entity = entityMap.get(uuid);
-        return entity != null ? entity.getBones() : Collections.emptyList();
+        if (entity == null) {
+            return Collections.emptyList();
+        }
+        
+        // 从ModelCollection中获取骨骼数据
+        // 暂时返回空列表，需要实现从ModelCollection提取骨骼的逻辑
+        return Collections.emptyList();
     }
     
     /**
@@ -67,7 +86,13 @@ public class ServerEntityManager {
      */
     public List<CubeCollection> getEntityCubes(UUID uuid) {
         EntityCollection entity = entityMap.get(uuid);
-        return entity != null ? entity.getCubes() : Collections.emptyList();
+        if (entity == null) {
+            return Collections.emptyList();
+        }
+        
+        // 从ModelCollection中获取立方体数据
+        // 暂时返回空列表，需要实现从ModelCollection提取立方体的逻辑
+        return Collections.emptyList();
     }
     
     /**
@@ -80,23 +105,8 @@ public class ServerEntityManager {
             return Collections.emptyMap();
         }
         
-        Map<String, List<Vec3>> cubeVertices = null;
-        
-        // 遍历所有骨骼
-        for (BoneCollection bone : entity.getBones()) {
-            // 遍历骨骼上的所有立方体
-            for (CubeCollection cube : bone.getCubes()) {
-                if (cubeVertices == null) {
-                    cubeVertices = new HashMap<>();
-                }
-                
-                // 获取立方体的世界顶点
-                List<Vec3> vertices = cube.getWorldVertices();
-                cubeVertices.put(bone.getBoneName() + "_" + cube.getId(), vertices);
-            }
-        }
-        
-        return cubeVertices != null ? cubeVertices : Collections.emptyMap();
+        // 暂时返回空映射，需要实现从ModelCollection和骨骼变换计算顶点的逻辑
+        return Collections.emptyMap();
     }
     
     /**
@@ -108,35 +118,8 @@ public class ServerEntityManager {
             return Optional.empty();
         }
         
-        List<CubeCollection> allCubes = entity.getCubes();
-        if (allCubes.isEmpty()) {
-            return Optional.empty();
-        }
-        
-        // 计算所有立方体的包围盒
-        double minX = Double.POSITIVE_INFINITY;
-        double minY = Double.POSITIVE_INFINITY;
-        double minZ = Double.POSITIVE_INFINITY;
-        double maxX = Double.NEGATIVE_INFINITY;
-        double maxY = Double.NEGATIVE_INFINITY;
-        double maxZ = Double.NEGATIVE_INFINITY;
-        
-        for (CubeCollection cube : allCubes) {
-            for (Vec3 vertex : cube.getWorldVertices()) {
-                minX = Math.min(minX, vertex.x);
-                minY = Math.min(minY, vertex.y);
-                minZ = Math.min(minZ, vertex.z);
-                maxX = Math.max(maxX, vertex.x);
-                maxY = Math.max(maxY, vertex.y);
-                maxZ = Math.max(maxZ, vertex.z);
-            }
-        }
-        
-        if (Double.isInfinite(minX)) {
-            return Optional.empty();
-        }
-        
-        return Optional.of(new AABB(minX, minY, minZ, maxX, maxY, maxZ));
+        // 暂时返回空，需要实现从ModelCollection计算边界框的逻辑
+        return Optional.empty();
     }
     
     /**

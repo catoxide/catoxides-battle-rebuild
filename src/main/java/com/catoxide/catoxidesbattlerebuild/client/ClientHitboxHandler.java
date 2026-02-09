@@ -2,7 +2,6 @@
 package com.catoxide.catoxidesbattlerebuild.client;
 
 import com.catoxide.catoxidesbattlerebuild.network.HitboxSyncPacket;
-import com.catoxide.catoxidesbattlerebuild.server.temp.BoneHitboxComponent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.resources.ResourceLocation;

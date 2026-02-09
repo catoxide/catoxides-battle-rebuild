@@ -1,23 +1,24 @@
 package com.catoxide.catoxidesbattlerebuild.server.bodypart;
 
-import java.util.Map;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Hitbox接口
- * Hitbox作为血量单元，负责结算伤害比例和部位致命效果
- * Hitbox包含多个Bones，每个Bone有伤害传导系数
+ * BodyUnit接口
+ * BodyUnit作为血量单元，负责结算伤害比例和部位致命效果
+ * 
+ * 新架构：BodyUnit与Bone是1对1关系
+ * 每个BodyUnit关联一个特定的骨骼
  */
-public interface IHitbox {
+public interface IBodyUnit {
     
     /**
-     * 获取Hitbox的唯一标识符
+     * 获取BodyUnit的唯一标识符
      */
     UUID getId();
     
     /**
-     * 获取Hitbox的名称
+     * 获取BodyUnit的名称
      */
     String getName();
     
@@ -56,36 +57,30 @@ public interface IHitbox {
     // ==================== 骨骼管理 ====================
     
     /**
-     * 添加骨骼到Hitbox
-     * @param boneName 骨骼名称
-     * @param transmissionCoefficient 伤害传导系数（0.0-1.0）
+     * 获取关联的骨骼名称
+     * BodyUnit与Bone是1对1关系
+     * @return 骨骼名称
      */
-    void addBone(String boneName, float transmissionCoefficient);
+    String getBoneName();
     
     /**
-     * 移除骨骼
+     * 获取伤害传导系数（传导到BodyPart的比例）
+     * @return 传导系数（0.0-1.0）
      */
-    void removeBone(String boneName);
+    float getTransmissionCoefficient();
     
     /**
-     * 获取所有骨骼及其传导系数
+     * 检查骨骼名称是否匹配
+     * @param boneName 要检查的骨骼名称
+     * @return 是否匹配
      */
-    Map<String, Float> getBones();
-    
-    /**
-     * 获取指定骨骼的传导系数
-     */
-    float getTransmissionCoefficient(String boneName);
-    
-    /**
-     * 检查是否包含指定骨骼
-     */
-    boolean hasBone(String boneName);
+    boolean matchesBone(String boneName);
     
     // ==================== 伤害处理 ====================
     
     /**
      * 接收伤害（从骨骼传导）
+     * 会验证骨骼名称是否匹配，只有匹配的骨骼才能传导伤害
      * @param boneName 来源骨骼
      * @param rawDamage 原始伤害值
      * @param damageType 伤害类型
@@ -95,7 +90,7 @@ public interface IHitbox {
     
     /**
      * 计算传导到实体血量的伤害
-     * @param damage Hitbox受到的伤害
+     * @param damage BodyUnit受到的伤害
      * @return 传导到实体的伤害
      */
     float calculateEntityTransmission(float damage);
@@ -205,15 +200,15 @@ public interface IHitbox {
     /**
      * 获取能力列表
      */
-    List<IHitboxAbility> getAbilities();
+    List<IBodyUnitAbility> getAbilities();
     
     /**
      * 添加能力
      */
-    void addAbility(IHitboxAbility ability);
+    void addAbility(IBodyUnitAbility ability);
     
     /**
      * 移除能力
      */
-    void removeAbility(IHitboxAbility ability);
+    void removeAbility(IBodyUnitAbility ability);
 }

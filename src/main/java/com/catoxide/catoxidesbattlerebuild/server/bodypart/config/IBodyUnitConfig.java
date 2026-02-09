@@ -1,14 +1,16 @@
 package com.catoxide.catoxidesbattlerebuild.server.bodypart.config;
 
-import java.util.Map;
 import java.util.List;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * Hitbox配置接口
- * 定义Hitbox的配置参数
+ * BodyUnit配置接口
+ * 定义BodyUnit的配置参数
+ * 
+ * 新架构：BodyUnit与Bone是1对1关系
+ * 每个BodyUnit关联一个特定的骨骼
  */
-public interface IHitboxConfig {
+public interface IBodyUnitConfig {
     
     /**
      * 获取配置名称
@@ -16,9 +18,16 @@ public interface IHitboxConfig {
     String getConfigName();
     
     /**
-     * 获取Hitbox名称
+     * 获取BodyUnit名称
      */
-    String getHitboxName();
+    String getBodyUnitName();
+    
+    /**
+     * 获取关联的骨骼名称
+     * BodyUnit与Bone是1对1关系
+     * @return 骨骼名称
+     */
+    String getBoneName();
     
     /**
      * 获取最大血量
@@ -41,15 +50,11 @@ public interface IHitboxConfig {
     String getCollisionTag();
     
     /**
-     * 获取默认骨骼传导系数映射
-     * @return 骨骼名称 -> 传导系数（0.0-1.0）
+     * 获取伤害传导系数（传导到BodyPart的比例）
+     * @return 传导系数（0.0-1.0）
+     * todo:1以上的传导系数
      */
-    Map<String, Float> getDefaultBoneTransmissions();
-    
-    /**
-     * 获取默认传导系数（用于未配置的骨骼）
-     */
-    float getDefaultTransmissionCoefficient();
+    float getTransmissionCoefficient();
     
     /**
      * 获取特殊效果列表

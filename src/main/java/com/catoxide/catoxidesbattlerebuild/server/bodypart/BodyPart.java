@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 身体部位实现
  * 负责管理血量、伤害处理和骨骼关联
+ * 包含多个BodyUnit，每个BodyUnit关联一个Bone
  */
 public class BodyPart implements IBodyPart {
     
@@ -17,12 +18,11 @@ public class BodyPart implements IBodyPart {
     private final String partName;
     private final IBodyPartConfig config;
     
-    // 血量管理
-    private float currentHealth;
-    private final float maxHealth;
+    // BodyUnit列表（final，在构造时创建）
+    private final List<BodyUnit> bodyUnits;
     
-    // 骨骼管理
-    private final Map<String, Float> boneTransmissionCoefficients;
+    // 骨骼到BodyUnit的映射（快速查找）
+    private final Map<String, BodyUnit> boneToUnitMap;
     
     // 能力系统
     private final List<IBodyPartAbility> abilities;
@@ -31,14 +31,18 @@ public class BodyPart implements IBodyPart {
     private boolean isAlive;
     
     // 构造函数
-    public BodyPart(String partName, IBodyPartConfig config) {
+    public BodyPart(String partName, IBodyPartConfig config, List<BodyUnit> bodyUnits) {
         this.partName = partName;
         this.config = config;
-        this.maxHealth = config.getBaseHealth();
-        this.currentHealth = this.maxHealth;
-        this.boneTransmissionCoefficients = new ConcurrentHashMap<>();
+        this.bodyUnits = new ArrayList<>(bodyUnits);
+        this.boneToUnitMap = new ConcurrentHashMap<>();
         this.abilities = new ArrayList<>();
         this.isAlive = true;
+        
+        // 构建骨骼到BodyUnit的映射
+        for (BodyUnit unit : this.bodyUnits) {
+            this.boneToUnitMap.put(unit.getBoneName(), unit);
+        }
         
         // TODO: 初始化能力系统
     }
@@ -48,15 +52,48 @@ public class BodyPart implements IBodyPart {
         return partName;
     }
     
+    // ==================== BodyUnit管理 ====================
+    
+    /**
+     * 获取所有BodyUnit
+     */
+    public List<BodyUnit> getBodyUnits() {
+        return Collections.unmodifiableList(bodyUnits);
+    }
+    
+    /**
+     * 根据骨骼名称获取对应的BodyUnit
+     */
+    public BodyUnit getUnitByBoneName(String boneName) {
+        return boneToUnitMap.get(boneName);
+    }
+    
+    /**
+     * 检查是否包含指定骨骼的BodyUnit
+     */
+    public boolean hasBone(String boneName) {
+        return boneToUnitMap.containsKey(boneName);
+    }
+    
+    // ==================== 血量管理 ====================
+    
     @Override
     public float getCurrentHealth() {
-        return currentHealth;
+        // 返回所有BodyUnit的总血量
+        return bodyUnits.stream()
+            .map(BodyUnit::getCurrentHealth)
+            .reduce(0.0f, Float::sum);
     }
     
     @Override
     public float getMaxHealth() {
-        return maxHealth;
+        // 返回所有BodyUnit的最大总血量
+        return bodyUnits.stream()
+            .map(BodyUnit::getMaxHealth)
+            .reduce(0.0f, Float::sum);
     }
+    
+    // ==================== 伤害处理 ====================
     
     @Override
     public float receiveDamage(float damage, DamageSource source) {
@@ -69,10 +106,35 @@ public class BodyPart implements IBodyPart {
         return 0f;
     }
     
+    /**
+     * 接收伤害（从指定骨骼）
+     * @param boneName 骨骼名称
+     * @param rawDamage 原始伤害
+     * @param damageType 伤害类型
+     * @return 实际受到的伤害
+     */
+    public float receiveDamage(String boneName, float rawDamage, String damageType) {
+        BodyUnit unit = getUnitByBoneName(boneName);
+        if (unit == null) {
+            // 没有对应的BodyUnit，不处理伤害
+            return 0.0f;
+        }
+        
+        // 将伤害传导到对应的BodyUnit（新架构：BodyUnit与Bone是1对1关系，无需传入boneName）
+        return unit.receiveDamage(rawDamage, damageType);
+    }
+    
     @Override
     public void transmitToEntity(float damage) {
         // TODO: 实现伤害传导到实体血量的逻辑
+        // 将所有BodyUnit的伤害传导到实体
+        for (BodyUnit unit : bodyUnits) {
+            float transmittedDamage = unit.calculateEntityTransmission(damage);
+            // TODO: 将transmittedDamage传导到实体血量
+        }
     }
+    
+    // ==================== 状态判断 ====================
     
     @Override
     public boolean isCritical() {
@@ -81,47 +143,76 @@ public class BodyPart implements IBodyPart {
     
     @Override
     public boolean isFatal() {
-        // TODO: 实现致命条件检查
-        return false;
-    }
-    
-    @Override
-    public void addBone(String boneName, float transmissionCoefficient) {
-        boneTransmissionCoefficients.put(boneName, transmissionCoefficient);
-    }
-    
-    @Override
-    public Map<String, Float> getBoneTransmissionCoefficients() {
-        return new HashMap<>(boneTransmissionCoefficients);
+        // 检查是否有任何BodyUnit致命
+        return bodyUnits.stream().anyMatch(BodyUnit::isFatal);
     }
     
     @Override
     public boolean isAlive() {
-        return isAlive;
+        // 检查是否所有BodyUnit都已死亡
+        return bodyUnits.stream().anyMatch(BodyUnit::isAlive);
     }
     
     @Override
     public void reset() {
-        this.currentHealth = this.maxHealth;
+        // 重置所有BodyUnit
+        for (BodyUnit unit : bodyUnits) {
+            unit.reset();
+        }
         this.isAlive = true;
         // TODO: 重置能力系统状态
     }
     
-    // 内部辅助方法（框架）
-    private void applyDamage(float damage) {
-        this.currentHealth -= damage;
-        if (this.currentHealth <= 0) {
-            this.currentHealth = 0;
-            this.isAlive = false;
+    // ==================== 骨骼管理（兼容旧接口） ====================
+    
+    @Override
+    public void addBone(String boneName, float transmissionCoefficient) {
+        // 新架构中，骨骼通过BodyUnit添加
+        // 这个方法可能不再需要，或者需要创建新的BodyUnit
+        // TODO: 根据实际需求实现
+    }
+    
+    @Override
+    public void removeBone(String boneName) {
+        // 新架构中，骨骼通过BodyUnit移除
+        // 这个方法可能不再需要
+        // TODO: 根据实际需求实现
+    }
+    
+    @Override
+    public Map<String, Float> getBoneTransmissionCoefficients() {
+        // 返回所有BodyUnit的骨骼传导系数
+        Map<String, Float> result = new HashMap<>();
+        for (BodyUnit unit : bodyUnits) {
+            result.put(unit.getBoneName(), unit.getTransmissionCoefficient());
         }
+        return result;
+    }
+    
+    // ==================== 内部辅助方法 ====================
+    
+    private void applyDamage(float damage) {
+        // 新架构中，伤害通过BodyUnit处理
+        // 这个方法可能不再需要
     }
     
     private float calculateArmorReduction(float damage) {
-        // TODO: 实现护甲减免计算
+        // 新架构中，护甲通过BodyUnit计算
+        // 这个方法可能不再需要
         return 0f;
     }
     
     private void triggerAbilities(float damage, DamageSource source) {
         // TODO: 触发能力系统
+    }
+    
+    /**
+     * Tick更新
+     */
+    public void tick(int deltaTick) {
+        // 更新所有BodyUnit
+        for (BodyUnit unit : bodyUnits) {
+            unit.tick(deltaTick);
+        }
     }
 }

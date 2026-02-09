@@ -1,10 +1,10 @@
 package com.catoxide.catoxidesbattlerebuild.server.bodypart;
 
 /**
- * Hitbox能力接口
- * 定义Hitbox的特殊能力，如燃烧、冰冻、中毒等
+ * BodyUnit能力接口
+ * 定义BodyUnit的特殊能力，如燃烧、冰冻、中毒等
  */
-public interface IHitboxAbility {
+public interface IBodyUnitAbility {
     
     /**
      * 获取能力名称
@@ -18,9 +18,9 @@ public interface IHitboxAbility {
     
     /**
      * 初始化能力
-     * @param hitbox 关联的Hitbox
+     * @param bodyUnit 关联的BodyUnit
      */
-    void initialize(IHitbox hitbox);
+    void initialize(IBodyUnit bodyUnit);
     
     /**
      * 重置能力状态
@@ -46,7 +46,7 @@ public interface IHitboxAbility {
     void onDamagePost(String boneName, float rawDamage, float actualDamage, String damageType);
     
     /**
-     * Hitbox被击中时触发
+     * BodyUnit被击中时触发
      * @param damage 伤害值
      */
     void onHit(float damage);

@@ -5,10 +5,10 @@ import org.joml.Vector3f;
 import org.joml.Quaternionf;
 
 /**
- * 骨骼受击盒组件
- * 用于网络同步和客户端渲染的受击盒数据结构
+ * 骨骼BodyUnit组件
+ * 用于网络同步和客户端渲染的BodyUnit数据结构
  */
-public class BoneHitboxComponent {
+public class BoneBodyUnitComponent {
     
     private final UUID entityUUID;
     private final String boneName;
@@ -23,7 +23,7 @@ public class BoneHitboxComponent {
     /**
      * 构造函数
      */
-    public BoneHitboxComponent(UUID entityUUID, String boneName, Vector3f worldCenter, Vector3f halfExtents,
+    public BoneBodyUnitComponent(UUID entityUUID, String boneName, Vector3f worldCenter, Vector3f halfExtents,
                               Quaternionf worldOrientation, float damageMultiplier, boolean isCritical,
                               boolean isArmored, boolean isActive) {
         this.entityUUID = entityUUID;

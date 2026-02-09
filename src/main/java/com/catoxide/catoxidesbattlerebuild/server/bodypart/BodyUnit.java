@@ -1,28 +1,34 @@
 package com.catoxide.catoxidesbattlerebuild.server.bodypart;
 
-import java.util.Map;
-import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.UUID;
 import java.util.Collections;
 import net.minecraft.resources.ResourceLocation;
-import com.catoxide.catoxidesbattlerebuild.server.bodypart.config.IHitboxConfig;
+import com.catoxide.catoxidesbattlerebuild.server.bodypart.config.IBodyUnitConfig;
+import com.catoxide.catoxidesbattlerebuild.server.bodypart.IBodyUnitAbility;
 
 /**
- * Hitbox实现类
- * Hitbox作为血量单元，负责结算伤害比例和部位致命效果
+ * BodyUnit实现类
+ * BodyUnit作为血量单元，负责结算伤害比例和部位致命效果
+ * 每个BodyUnit关联一个Bone（1对1关系）
  */
-public class Hitbox implements IHitbox {
+public class BodyUnit implements IBodyUnit {
     
     // 唯一标识符
     private final UUID id;
     
-    // Hitbox名称
+    // BodyUnit名称
     private final String name;
     
     // 关联的实体ID
     private final long entityId;
+    
+    // 关联的骨骼名称（1对1关系）
+    private final String boneName;
+    
+    // 传导系数（伤害从骨骼传导到BodyUnit的比例）
+    private final float transmissionCoefficient;
     
     // 血量
     private float currentHealth;
@@ -30,12 +36,6 @@ public class Hitbox implements IHitbox {
     
     // 护甲值
     private float armorValue;
-    
-    // 骨骼及其传导系数
-    private final Map<String, Float> boneTransmissionCoefficients;
-    
-    // 默认传导系数
-    private float defaultTransmissionCoefficient;
     
     // 实体传导系数（传导到实体血量的比例）
     private float entityTransmissionCoefficient;
@@ -62,23 +62,23 @@ public class Hitbox implements IHitbox {
     private float fatalThreshold;
     
     // 能力列表
-    private final List<IHitboxAbility> abilities;
+    private final List<IBodyUnitAbility> abilities;
     
     // 配置
-    private IHitboxConfig config;
+    private IBodyUnitConfig config;
     
     /**
-     * 构造函数
+     * 构造函数（基础构造）
      */
-    public Hitbox(long entityId, String name) {
+    public BodyUnit(long entityId, String name, String boneName) {
         this.id = UUID.randomUUID();
         this.entityId = entityId;
         this.name = name;
+        this.boneName = boneName;
+        this.transmissionCoefficient = 1.0f;
         this.currentHealth = 100.0f;
         this.maxHealth = 100.0f;
         this.armorValue = 0.0f;
-        this.boneTransmissionCoefficients = new HashMap<>();
-        this.defaultTransmissionCoefficient = 1.0f;
         this.entityTransmissionCoefficient = 0.5f;
         this.isCritical = false;
         this.collisionTag = "default";
@@ -93,25 +93,30 @@ public class Hitbox implements IHitbox {
     }
     
     /**
-     * 从配置创建Hitbox
+     * 构造函数（指定传导系数）
      */
-    public Hitbox(long entityId, IHitboxConfig config) {
-        this(entityId, config.getHitboxName());
+    public BodyUnit(long entityId, String name, String boneName, float transmissionCoefficient) {
+        this(entityId, name, boneName);
+        // transmissionCoefficient在基础构造中已设置，这里不需要额外设置
+    }
+    
+    /**
+     * 从配置创建BodyUnit
+     */
+    public BodyUnit(long entityId, String boneName, IBodyUnitConfig config) {
+        this(entityId, config.getBodyUnitName(), boneName);
         this.config = config;
+        this.transmissionCoefficient = config.getDefaultTransmissionCoefficient();
         this.maxHealth = config.getMaxHealth();
         this.currentHealth = this.maxHealth;
         this.armorValue = config.getArmorValue();
         this.isCritical = config.isCritical();
         this.collisionTag = config.getCollisionTag();
-        this.defaultTransmissionCoefficient = config.getDefaultTransmissionCoefficient();
         this.entityTransmissionCoefficient = config.getEntityTransmissionCoefficient();
         this.specialEffects = new ArrayList<>(config.getSpecialEffects());
         this.hitSound = config.getHitSound();
         this.fatal = config.isFatal();
         this.fatalThreshold = config.getFatalThreshold();
-        
-        // 添加默认骨骼传导系数
-        this.boneTransmissionCoefficients.putAll(config.getDefaultBoneTransmissions());
         
         // 初始化能力
         // TODO: 从配置创建能力实例
@@ -120,7 +125,7 @@ public class Hitbox implements IHitbox {
             // 通过反射创建能力实例
             try {
                 Class<?> clazz = Class.forName(abilityClassName);
-                IHitboxAbility ability = (IHitboxAbility) clazz.getDeclaredConstructor().newInstance();
+                IBodyUnitAbility ability = (IBodyUnitAbility) clazz.getDeclaredConstructor().newInstance();
                 ability.initialize(this);
                 this.abilities.add(ability);
             } catch (Exception e) {
@@ -147,80 +152,45 @@ public class Hitbox implements IHitbox {
         return entityId;
     }
     
-    // ==================== 血量管理 ====================
+    // ==================== 骨骼管理（1对1关系） ====================
     
-    @Override
-    public float getCurrentHealth() {
-        return currentHealth;
+    /**
+     * 获取关联的骨骼名称
+     */
+    public String getBoneName() {
+        return boneName;
     }
     
-    @Override
-    public float getMaxHealth() {
-        return maxHealth;
+    /**
+     * 获取传导系数
+     */
+    public float getTransmissionCoefficient() {
+        return transmissionCoefficient;
     }
     
-    @Override
-    public void setCurrentHealth(float health) {
-        this.currentHealth = Math.max(0, Math.min(health, maxHealth));
-    }
-    
-    @Override
-    public void setMaxHealth(float maxHealth) {
-        this.maxHealth = maxHealth;
-        if (this.currentHealth > maxHealth) {
-            this.currentHealth = maxHealth;
-        }
-    }
-    
-    @Override
-    public boolean isAlive() {
-        return currentHealth > 0;
-    }
-    
-    // ==================== 骨骼管理 ====================
-    
-    @Override
-    public void addBone(String boneName, float transmissionCoefficient) {
-        this.boneTransmissionCoefficients.put(boneName, 
-            Math.max(0.0f, Math.min(1.0f, transmissionCoefficient)));
-    }
-    
-    @Override
-    public void removeBone(String boneName) {
-        this.boneTransmissionCoefficients.remove(boneName);
-    }
-    
-    @Override
-    public Map<String, Float> getBones() {
-        return Collections.unmodifiableMap(boneTransmissionCoefficients);
-    }
-    
-    @Override
-    public float getTransmissionCoefficient(String boneName) {
-        return boneTransmissionCoefficients.getOrDefault(boneName, defaultTransmissionCoefficient);
-    }
-    
-    @Override
-    public boolean hasBone(String boneName) {
-        return boneTransmissionCoefficients.containsKey(boneName);
-    }
-    
-    // ==================== 伤害处理 ====================
-    
+    /**
+     * 接收伤害（从关联的骨骼）
+     * @param rawDamage 原始伤害
+     * @param damageType 伤害类型
+     * @return 实际受到的伤害
+     */
     @Override
     public float receiveDamage(String boneName, float rawDamage, String damageType) {
         if (!active) {
             return 0.0f;
         }
         
-        // 获取传导系数
-        float transmission = getTransmissionCoefficient(boneName);
+        // 验证骨骼名称是否匹配
+        if (!this.boneName.equals(boneName)) {
+            // 骨骼不匹配，不处理伤害
+            return 0.0f;
+        }
         
         // 计算传导后的伤害
-        float transmittedDamage = rawDamage * transmission;
+        float transmittedDamage = rawDamage * transmissionCoefficient;
         
         // 触发能力的前置钩子
-        for (IHitboxAbility ability : abilities) {
+        for (IBodyUnitAbility ability : abilities) {
             if (ability.isActive()) {
                 float modifiedDamage = ability.onDamagePre(boneName, transmittedDamage, damageType);
                 if (modifiedDamage < 0) {
@@ -240,7 +210,7 @@ public class Hitbox implements IHitbox {
         currentHealth = Math.max(0, currentHealth - actualDamage);
         
         // 触发能力的后置钩子
-        for (IHitboxAbility ability : abilities) {
+        for (IBodyUnitAbility ability : abilities) {
             if (ability.isActive()) {
                 ability.onDamagePost(boneName, transmittedDamage, actualDamage, damageType);
             }
@@ -271,7 +241,7 @@ public class Hitbox implements IHitbox {
         // 检查血量是否低于致命阈值
         if (currentHealth <= fatalThreshold) {
             // 触发能力的致命检查钩子
-            for (IHitboxAbility ability : abilities) {
+            for (IBodyUnitAbility ability : abilities) {
                 if (ability.isActive()) {
                     if (!ability.onFatalCheck(currentHealth, maxHealth - currentHealth)) {
                         return false;
@@ -287,7 +257,7 @@ public class Hitbox implements IHitbox {
     @Override
     public void triggerFatalEffect() {
         // 触发能力的致命效果钩子
-        for (IHitboxAbility ability : abilities) {
+        for (IBodyUnitAbility ability : abilities) {
             if (ability.isActive()) {
                 ability.onFatalEffect();
             }
@@ -364,7 +334,7 @@ public class Hitbox implements IHitbox {
         lastHitTime = System.currentTimeMillis();
         
         // 触发能力的击中钩子
-        for (IHitboxAbility ability : abilities) {
+        for (IBodyUnitAbility ability : abilities) {
             if (ability.isActive()) {
                 ability.onHit(damage);
             }
@@ -426,7 +396,7 @@ public class Hitbox implements IHitbox {
         this.lastHitTime = 0L;
         
         // 重置能力
-        for (IHitboxAbility ability : abilities) {
+        for (IBodyUnitAbility ability : abilities) {
             ability.reset();
         }
     }
@@ -434,12 +404,12 @@ public class Hitbox implements IHitbox {
     // ==================== 能力系统 ====================
     
     @Override
-    public List<IHitboxAbility> getAbilities() {
+    public List<IBodyUnitAbility> getAbilities() {
         return Collections.unmodifiableList(abilities);
     }
     
     @Override
-    public void addAbility(IHitboxAbility ability) {
+    public void addAbility(IBodyUnitAbility ability) {
         if (!abilities.contains(ability)) {
             ability.initialize(this);
             abilities.add(ability);
@@ -447,7 +417,7 @@ public class Hitbox implements IHitbox {
     }
     
     @Override
-    public void removeAbility(IHitboxAbility ability) {
+    public void removeAbility(IBodyUnitAbility ability) {
         abilities.remove(ability);
     }
     
@@ -456,7 +426,7 @@ public class Hitbox implements IHitbox {
      */
     public void tick(int deltaTick) {
         // 更新能力
-        for (IHitboxAbility ability : abilities) {
+        for (IBodyUnitAbility ability : abilities) {
             if (ability.isActive()) {
                 ability.onTick(deltaTick);
             }

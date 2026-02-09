@@ -5,36 +5,36 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.UUID;
-import com.catoxide.catoxidesbattlerebuild.server.bodypart.IHitbox;
-import com.catoxide.catoxidesbattlerebuild.server.bodypart.Hitbox;
-import com.catoxide.catoxidesbattlerebuild.server.bodypart.config.IHitboxConfig;
-import com.catoxide.catoxidesbattlerebuild.server.bodypart.config.StandardHitboxConfig;
+import com.catoxide.catoxidesbattlerebuild.server.bodypart.IBodyUnit;
+import com.catoxide.catoxidesbattlerebuild.server.bodypart.BodyUnit;
+import com.catoxide.catoxidesbattlerebuild.server.bodypart.config.IBodyUnitConfig;
+import com.catoxide.catoxidesbattlerebuild.server.bodypart.config.StandardBodyUnitConfig;
 
 /**
- * Hitbox工厂
- * 负责创建Hitbox实例和管理配置模板
+ * BodyUnit工厂
+ * 负责创建BodyUnit实例和管理配置模板
  */
-public class HitboxFactory {
+public class BodyUnitFactory {
     
     // 单例实例
-    private static HitboxFactory instance;
+    private static BodyUnitFactory instance;
     
     // 配置模板映射
-    private final Map<String, IHitboxConfig> configTemplates;
+    private final Map<String, IBodyUnitConfig> configTemplates;
     
     /**
      * 私有构造函数
      */
-    private HitboxFactory() {
+    private BodyUnitFactory() {
         this.configTemplates = new HashMap<>();
     }
     
     /**
      * 获取单例实例
      */
-    public static HitboxFactory getInstance() {
+    public static BodyUnitFactory getInstance() {
         if (instance == null) {
-            instance = new HitboxFactory();
+            instance = new BodyUnitFactory();
         }
         return instance;
     }
@@ -44,19 +44,19 @@ public class HitboxFactory {
     /**
      * 注册配置模板
      */
-    public void registerConfigTemplate(IHitboxConfig config) {
+    public void registerConfigTemplate(IBodyUnitConfig config) {
         configTemplates.put(config.getConfigName(), config);
     }
     
     /**
      * 注册配置模板（使用Builder）
      */
-    public void registerConfigTemplate(String configName, String hitboxName, 
+    public void registerConfigTemplate(String configName, String bodyUnitName, String boneName,
                                         float maxHealth, float armorValue, 
                                         boolean critical, String collisionTag,
                                         float defaultTransmissionCoefficient,
                                         float entityTransmissionCoefficient) {
-        StandardHitboxConfig.Builder builder = new StandardHitboxConfig.Builder(configName, hitboxName)
+        StandardBodyUnitConfig.Builder builder = new StandardBodyUnitConfig.Builder(configName, bodyUnitName, boneName)
             .maxHealth(maxHealth)
             .armorValue(armorValue)
             .critical(critical)
@@ -70,7 +70,7 @@ public class HitboxFactory {
     /**
      * 获取配置模板
      */
-    public IHitboxConfig getConfigTemplate(String templateName) {
+    public IBodyUnitConfig getConfigTemplate(String templateName) {
         return configTemplates.get(templateName);
     }
     
@@ -102,53 +102,62 @@ public class HitboxFactory {
         configTemplates.clear();
     }
     
-    // ==================== Hitbox创建 ====================
+    // ==================== BodyUnit创建 ====================
     
     /**
-     * 创建Hitbox（基本构造）
+     * 创建BodyUnit（基本构造，使用默认配置）
      */
-    public IHitbox createHitbox(long entityId, String hitboxName) {
-        return new Hitbox(entityId, hitboxName);
+    public IBodyUnit createBodyUnit(long entityId, String bodyUnitName, String boneName) {
+        return new BodyUnit(entityId, bodyUnitName, boneName);
     }
     
     /**
-     * 从配置模板创建Hitbox
+     * 批量创建BodyUnit（使用默认配置）
+     * @param entityId 实体ID
+     * @param bodyUnitNames BodyUnit名称列表
+     * @return 创建的BodyUnit列表
      */
-    public IHitbox createHitbox(long entityId,String hitboxName,String templateName) {
-        IHitboxConfig config = configTemplates.get(templateName);
+    public List<IBodyUnit> createBodyUnitsFromNames(long entityId, List<String> bodyUnitNames) {
+        List<IBodyUnit> bodyUnits = new ArrayList<>();
+        for (String bodyUnitName : bodyUnitNames) {
+            // 使用bodyUnitName作为boneName
+            bodyUnits.add(new BodyUnit(entityId, bodyUnitName, bodyUnitName));
+        }
+        return bodyUnits;
+    }
+    
+    /**
+     * 从配置模板创建BodyUnit
+     */
+    public IBodyUnit createFromTemplate(long entityId, String templateName, String boneName) {
+        IBodyUnitConfig config = configTemplates.get(templateName);
         if (config == null) {
             throw new IllegalArgumentException("Config template not found: " + templateName);
         }
-        return new Hitbox(entityId, config);
+        return new BodyUnit(entityId, boneName, config);
     }
     
     /**
-     * 从配置对象创建Hitbox
+     * 从配置对象创建BodyUnit
      */
-    public IHitbox createHitbox(long entityId, IHitboxConfig config) {
-        return new Hitbox(entityId, config);
+    public IBodyUnit createFromConfig(long entityId, String boneName, IBodyUnitConfig config) {
+        return new BodyUnit(entityId, boneName, config);
     }
     
     /**
-     * 批量创建Hitbox（从配置模板）
+     * 批量创建BodyUnit（从配置对象）
+     * @param entityId 实体ID
+     * @param configMap 骨骼名称到配置的映射
+     * @return 创建的BodyUnit列表
      */
-    public List<IHitbox> createHitboxes(long entityId, List<String> templateNames) {
-        List<IHitbox> hitboxes = new ArrayList<>();
-        for (String templateName : templateNames) {
-            hitboxes.add(createHitbox(entityId, templateName));
+    public List<IBodyUnit> createBodyUnits(long entityId, Map<String, IBodyUnitConfig> configMap) {
+        List<IBodyUnit> bodyUnits = new ArrayList<>();
+        for (Map.Entry<String, IBodyUnitConfig> entry : configMap.entrySet()) {
+            String boneName = entry.getKey();
+            IBodyUnitConfig config = entry.getValue();
+            bodyUnits.add(new BodyUnit(entityId, boneName, config));
         }
-        return hitboxes;
-    }
-    
-    /**
-     * 批量创建Hitbox（从配置对象）
-     */
-    public List<IHitbox> createHitboxes(long entityId, List<IHitboxConfig> configs) {
-        List<IHitbox> hitboxes = new ArrayList<>();
-        for (IHitboxConfig config : configs) {
-            hitboxes.add(new Hitbox(entityId, config));
-        }
-        return hitboxes;
+        return bodyUnits;
     }
     
     // ==================== 预设配置 ====================
@@ -156,8 +165,8 @@ public class HitboxFactory {
     /**
      * 创建头部配置
      */
-    public IHitboxConfig createHeadConfig(String configName) {
-        return new StandardHitboxConfig.Builder(configName, "head")
+    public IBodyUnitConfig createHeadConfig(String configName) {
+        return new StandardBodyUnitConfig.Builder(configName, "head", "head")
             .maxHealth(50.0f)
             .armorValue(0.2f)
             .critical(true)
@@ -172,8 +181,8 @@ public class HitboxFactory {
     /**
      * 创建躯干配置
      */
-    public IHitboxConfig createTorsoConfig(String configName) {
-        return new StandardHitboxConfig.Builder(configName, "torso")
+    public IBodyUnitConfig createTorsoConfig(String configName) {
+        return new StandardBodyUnitConfig.Builder(configName, "torso", "torso")
             .maxHealth(100.0f)
             .armorValue(0.3f)
             .critical(false)
@@ -188,8 +197,8 @@ public class HitboxFactory {
     /**
      * 创建四肢配置
      */
-    public IHitboxConfig createLimbConfig(String configName, String limbName) {
-        return new StandardHitboxConfig.Builder(configName, limbName)
+    public IBodyUnitConfig createLimbConfig(String configName, String limbName) {
+        return new StandardBodyUnitConfig.Builder(configName, limbName, limbName)
             .maxHealth(40.0f)
             .armorValue(0.1f)
             .critical(false)

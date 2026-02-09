@@ -21,7 +21,7 @@ public class AdvancedCollisionDetector {
     public static AdvancedCollisionDetector getInstance() {
         return INSTANCE;
     }
-    
+    //todo:碰撞检测与伤害联动
     /**
      * 检测射线与实体骨骼的碰撞
      */

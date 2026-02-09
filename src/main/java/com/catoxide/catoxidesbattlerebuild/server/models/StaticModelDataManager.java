@@ -8,8 +8,9 @@ import software.bernie.geckolib.core.animatable.GeoAnimatable;
 import software.bernie.geckolib.core.animation.Animation;
 import software.bernie.geckolib.core.animation.AnimationState;
 import software.bernie.geckolib.core.object.Color;
-import software.bernie.geckolib.loading.object.Bone;
-import software.bernie.geckolib.loading.object.Cube;
+import software.bernie.geckolib.loading.json.raw.Bone;
+import software.bernie.geckolib.loading.json.raw.Cube;
+import software.bernie.geckolib.loading.object.BoneStructure;
 import software.bernie.geckolib.loading.object.GeometryTree;
 
 import java.util.*;
@@ -132,10 +133,9 @@ public class StaticModelDataManager {
         List<String> boneHierarchy = new ArrayList<>();
         Map<String, List<String>> childBoneMap = new HashMap<>();
         
-        // 遍历顶层骨骼
-        for (Map.Entry<String, software.bernie.geckolib.loading.object.Bone> entry : 
-             geometryTree.topLevelBones().entrySet()) {
-            processBoneForStaticData(entry.getValue(), boneStaticDataMap, boneHierarchy, childBoneMap, null);
+        // 遍历顶层骨骼 - topLevelBones返回的是Map<String, BoneStructure>
+        for (Map.Entry<String, BoneStructure> entry : geometryTree.topLevelBones().entrySet()) {
+            processBoneStructureForStaticData(entry.getValue(), boneStaticDataMap, boneHierarchy, childBoneMap, null);
         }
         
         // 创建静态模型数据
@@ -148,20 +148,26 @@ public class StaticModelDataManager {
     }
     
     /**
-     * 递归处理骨骼以提取静态数据
+     * 递归处理BoneStructure以提取静态数据
+     * 适配GeckoLib API：使用BoneStructure来处理骨骼层次结构
      */
-    private void processBoneForStaticData(Bone bone, Map<String, BoneStaticData> boneStaticDataMap,
-                                         List<String> boneHierarchy, Map<String, List<String>> childBoneMap,
-                                         String parentBoneName) {
+    private void processBoneStructureForStaticData(BoneStructure boneStructure,
+                                                  Map<String, BoneStaticData> boneStaticDataMap,
+                                                  List<String> boneHierarchy,
+                                                  Map<String, List<String>> childBoneMap,
+                                                  String parentBoneName) {
+        // 获取Bone对象
+        Bone bone = boneStructure.self();
+        
         // 添加到层次结构
         boneHierarchy.add(bone.name());
         
-        // 处理当前骨骼的cube
+        // 处理当前骨骼的cube - cubes()返回的是Cube[]数组
         List<CubeStaticData> cubeStaticDataList = new ArrayList<>();
         
-        if (bone.cubes() != null) {
-            for (int i = 0; i < bone.cubes().size(); i++) {
-                Cube cube = bone.cubes().get(i);
+        if (bone.cubes() != null && bone.cubes().length > 0) {
+            for (int i = 0; i < bone.cubes().length; i++) {
+                Cube cube = bone.cubes()[i];
                 
                 // 从原始cube数据创建CubeStaticData
                 String id = String.format("%s_cube_%d", bone.name(), i);
@@ -194,12 +200,15 @@ public class StaticModelDataManager {
             }
         }
         
+        // 获取骨骼的pivot数据
+        double[] pivot = bone.pivot() != null ? bone.pivot() : new double[]{0, 0, 0};
+        
         // 创建骨骼静态数据
         BoneStaticData boneStaticData = new BoneStaticData(
                 bone.name(),
                 parentBoneName,
                 cubeStaticDataList,
-                new Vector3f((float) pivot[0], (float) pivot[1], (float) pivot[2]), // 使用第一个cube的pivot作为骨骼的局部pivot
+                new Vector3f((float) pivot[0], (float) pivot[1], (float) pivot[2]), // 骨骼的局部pivot
                 new Vector3f(0, 0, 0), // 默认旋转
                 new Vector3f(1, 1, 1)  // 默认缩放
         );
@@ -211,10 +220,10 @@ public class StaticModelDataManager {
             childBoneMap.computeIfAbsent(parentBoneName, k -> new ArrayList<>()).add(bone.name());
         }
         
-        // 递归处理子骨骼
-        if (bone.children() != null) {
-            for (Bone childBone : bone.children()) {
-                processBoneForStaticData(childBone, boneStaticDataMap, boneHierarchy, childBoneMap, bone.name());
+        // 递归处理子骨骼 - children返回的是Map<String, BoneStructure>
+        if (boneStructure.children() != null && !boneStructure.children().isEmpty()) {
+            for (BoneStructure childBoneStructure : boneStructure.children().values()) {
+                processBoneStructureForStaticData(childBoneStructure, boneStaticDataMap, boneHierarchy, childBoneMap, bone.name());
             }
         }
     }
