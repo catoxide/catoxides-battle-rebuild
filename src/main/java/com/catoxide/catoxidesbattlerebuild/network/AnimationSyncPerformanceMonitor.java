@@ -66,40 +66,33 @@ public class AnimationSyncPerformanceMonitor {
      * 记录服务器发送数据包
      * 
      * @param packet 数据包
-     * @param packetSize 数据包大小（字节）
      * @param processingTime 处理时间（毫秒）
      */
-    public void recordServerPacketSent(AnimationSyncPacket packet, int packetSize, long processingTime) {
-        serverStats.totalPacketsSent.incrementAndGet();
-        serverStats.totalBytesSent.addAndGet(packetSize);
-        serverStats.totalProcessingTime.addAndGet(processingTime);
-        
-        // 统计每个实体的同步信息
-        for (EntityBoneSyncData syncData : packet.getEntitySyncData()) {
-            recordEntitySync(syncData, packetSize, processingTime);
-        }
-        
-        // 检查告警
-        checkServerAlerts();
-    }
+     public void recordServerPacketSent(AnimationSyncPacket packet, int actualSize, long processingTime) {
+         serverStats.totalPacketsSent.incrementAndGet();
+         serverStats.totalBytesSent.addAndGet(actualSize);
+         serverStats.totalProcessingTime.addAndGet(processingTime);
+         
+         // 记录实体同步统计
+         for (EntityBoneSyncData syncData : packet.getEntityDataMap().values()) {
+             recordEntitySync(syncData, actualSize / packet.getEntityDataMap().size(), processingTime / packet.getEntityDataMap().size());
+         }
+     }
     
     /**
-     * 记录客户端接收数据包
-     * 
-     * @param playerId 玩家ID
-     * @param packetSize 数据包大小（字节）
-     * @param processingTime 处理时间（毫秒）
+     * 记录客户端接收的数据包
      */
-    public void recordClientPacketReceived(UUID playerId, int packetSize, long processingTime) {
+    public void recordClientPacketReceived(UUID playerId, AnimationSyncPacket packet, int actualSize, long processingTime) {
         ClientStats stats = clientStatsMap.computeIfAbsent(playerId, id -> new ClientStats());
-        
         stats.totalPacketsReceived.incrementAndGet();
-        stats.totalBytesReceived.addAndGet(packetSize);
+        stats.totalBytesReceived.addAndGet(actualSize);
         stats.totalProcessingTime.addAndGet(processingTime);
         stats.lastUpdateTime = System.currentTimeMillis();
         
-        // 检查告警
-        checkClientAlerts(playerId, stats);
+        // 记录实体同步统计
+        for (EntityBoneSyncData syncData : packet.getEntityDataMap().values()) {
+            recordEntitySync(syncData, actualSize / packet.getEntityDataMap().size(), processingTime / packet.getEntityDataMap().size());
+        }
     }
     
     /**
@@ -109,16 +102,16 @@ public class AnimationSyncPerformanceMonitor {
      * @param packetSize 数据包大小
      * @param processingTime 处理时间
      */
-    private void recordEntitySync(EntityBoneSyncData syncData, int packetSize, long processingTime) {
-        int entityId = syncData.getEntityId();
-        EntitySyncStats stats = entitySyncStatsMap.computeIfAbsent(entityId, id -> new EntitySyncStats(id));
-        
-        stats.syncCount.incrementAndGet();
-        stats.totalBytes.addAndGet(packetSize);
-        stats.totalProcessingTime.addAndGet(processingTime);
-        stats.boneCount = syncData.getBoneTransforms().size();
-        stats.lastSyncTime = System.currentTimeMillis();
-    }
+     private void recordEntitySync(EntityBoneSyncData syncData, int packetSize, long processingTime) {
+         int entityId = syncData.entityId;
+         EntitySyncStats stats = entitySyncStatsMap.computeIfAbsent(entityId, id -> new EntitySyncStats(id));
+         
+         stats.syncCount.incrementAndGet();
+         stats.totalBytes.addAndGet(packetSize);
+         stats.totalProcessingTime.addAndGet(processingTime);
+         stats.boneCount = syncData.boneTransforms.size();
+         stats.lastSyncTime = System.currentTimeMillis();
+     }
     
     /**
      * 计算压缩率
@@ -329,3 +322,4 @@ public class AnimationSyncPerformanceMonitor {
         public long clientTimeout = 30000;          // 客户端超时（毫秒）
     }
 }
+

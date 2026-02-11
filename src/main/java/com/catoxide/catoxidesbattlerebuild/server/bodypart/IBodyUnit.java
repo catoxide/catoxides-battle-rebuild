@@ -27,33 +27,6 @@ public interface IBodyUnit {
      */
     long getEntityId();
     
-    // ==================== 血量管理 ====================
-    
-    /**
-     * 获取当前血量
-     */
-    float getCurrentHealth();
-    
-    /**
-     * 获取最大血量
-     */
-    float getMaxHealth();
-    
-    /**
-     * 设置当前血量
-     */
-    void setCurrentHealth(float health);
-    
-    /**
-     * 设置最大血量
-     */
-    void setMaxHealth(float maxHealth);
-    
-    /**
-     * 检查是否存活
-     */
-    boolean isAlive();
-    
     // ==================== 骨骼管理 ====================
     
     /**
@@ -189,6 +162,12 @@ public interface IBodyUnit {
      * 设置激活状态
      */
     void setActive(boolean active);
+    
+    /**
+     * 检查是否存活
+     * 调用BodyPart的isAlive方法
+     */
+    boolean isAlive();
     
     /**
      * 重置状态

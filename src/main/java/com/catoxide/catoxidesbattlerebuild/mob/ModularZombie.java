@@ -1,6 +1,5 @@
 package com.catoxide.catoxidesbattlerebuild.mob;
 
-import com.catoxide.catoxidesbattlerebuild.client.model.ModularZombieModel;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -26,7 +25,6 @@ public class ModularZombie extends Zombie implements GeoEntity {
     private LivingEntity lastTarget = null;
     private double lastDistanceToTarget = 0;
     private long lastStateChangeTime = 0;
-    private final GeoModel<ModularZombie> model = new ModularZombieModel();
 //    private final ServerAnimationSystem serverAnimationSystem;
 
     // 动画控制器
@@ -380,11 +378,6 @@ public class ModularZombie extends Zombie implements GeoEntity {
     // 如果需要，添加获取模型的方法（根据你的 GeckoLib 实现）
     public software.bernie.geckolib.core.animatable.GeoAnimatable getAnimatable() {
         return this;
-    }
-
-    // 修正 getModel() 方法 - 返回 BakedGeoModel
-    public BakedGeoModel getModel(AnimationState<ModularZombie> state) {
-        return this.model.getBakedModel(this.model.getModelResource(this));
     }
 
 }

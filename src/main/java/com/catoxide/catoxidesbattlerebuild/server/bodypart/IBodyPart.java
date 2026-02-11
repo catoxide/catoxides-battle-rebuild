@@ -31,6 +31,18 @@ public interface IBodyPart {
     float getMaxHealth();
     
     /**
+     * 设置当前血量
+     * 分配到各个BodyUnit
+     */
+    void setCurrentHealth(float health);
+    
+    /**
+     * 设置最大血量
+     * 分配到各个BodyUnit
+     */
+    void setMaxHealth(float maxHealth);
+    
+    /**
      * 接收伤害
      * @param damage 伤害值
      * @param source 伤害来源

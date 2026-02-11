@@ -200,11 +200,40 @@ public class EntityBodySystem {
     public boolean isEntityRegistered(long entityId) {
         return activeEntities.contains(entityId);
     }
+    
+    /**
+     * 获取实体的总血量
+     * @param entityId 实体ID
+     * @return 所有部位当前血量之和
+     */
+    public float getTotalHealth(long entityId) {
+        Map<String, IBodyPart> parts = entityBodyParts.get(entityId);
+        if (parts == null) {
+            return 0.0f;
+        }
+        
+        float totalHealth = 0.0f;
+        for (IBodyPart part : parts.values()) {
+            totalHealth += part.getCurrentHealth();
+        }
+        return totalHealth;
+    }
+    
+    /**
+     * 获取实体的最大总血量
+     * @param entityId 实体ID
+     * @return 所有部位最大血量之和
+     */
+    public float getMaxTotalHealth(long entityId) {
+        Map<String, IBodyPart> parts = entityBodyParts.get(entityId);
+        if (parts == null) {
+            return 0.0f;
+        }
+        
+        float maxTotalHealth = 0.0f;
+        for (IBodyPart part : parts.values()) {
+            maxTotalHealth += part.getMaxHealth();
+        }
+        return maxTotalHealth;
+    }
 }
-
-
-
-
-
-
-

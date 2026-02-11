@@ -106,7 +106,7 @@ public class AnimationSyncManager {
                     
                     // 准备骨骼变换数据
                     Map<String, Matrix4f> boneMatrices = 
-                        entityCollection.getBoneMatrices();
+                        entityCollection.boneMatrices();
                     
                     if (boneMatrices == null || boneMatrices.isEmpty()) {
                         continue;
@@ -338,7 +338,7 @@ public class AnimationSyncManager {
         
         if (entityCollection == null) return;
         
-        Map<String, Matrix4f> boneMatrices = entityCollection.getBoneMatrices();
+        Map<String, Matrix4f> boneMatrices = entityCollection.boneMatrices();
         if (boneMatrices == null || boneMatrices.isEmpty()) return;
         
         // 压缩骨骼变换（使用高精度）
@@ -416,4 +416,6 @@ public class AnimationSyncManager {
         }
     }
 }
+
+
 

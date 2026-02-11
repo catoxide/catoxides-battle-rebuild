@@ -1,6 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.network;
 
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.network.NetworkEvent;
 
 import java.util.HashMap;
@@ -249,16 +250,41 @@ public class AnimationSyncPacket {
     /**
      * 处理数据包（客户端执行）
      */
-    public void handle(Supplier<NetworkEvent.Context> contextSupplier) {
-        NetworkEvent.Context context = contextSupplier.get();
-        context.enqueueWork(() -> {
-            // 确保在客户端执行
-            if (context.getDirection().getReceptionSide().isClient()) {
-                com.catoxide.catoxidesbattlerebuild.client.ClientAnimationSyncHandler.getInstance().handleAnimationSync(this);
-            }
-        });
-        context.setPacketHandled(true);
-    }
+     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {
+         NetworkEvent.Context context = contextSupplier.get();
+         context.enqueueWork(() -> {
+             // 确保在客户端执行
+             if (context.getDirection().getReceptionSide().isClient()) {
+                 // 获取客户端玩家UUID
+                 java.util.UUID playerId = net.minecraft.client.Minecraft.getInstance().player.getUUID();
+                 
+                 // 记录开始时间
+                 long startTime = System.currentTimeMillis();
+                 
+                 // 计算数据包大小
+                 int packetSize = getEstimatedSize();
+                 
+                 // TODO: 实现完整的客户端处理逻辑
+                 // 1. 解析骨骼变换数据
+                 // 2. 更新客户端骨骼状态
+                 // 3. 应用动画变换
+                 
+                 // 记录接收统计
+                 long processingTime = System.currentTimeMillis() - startTime;
+                 AnimationSyncPerformanceMonitor.getInstance().recordClientPacketReceived(
+                     playerId, 
+                     this, 
+                     packetSize, 
+                     processingTime
+                 );
+                 
+                 if (net.minecraft.client.Minecraft.getInstance().player != null) {
+                     System.out.println("[AnimationSyncPacket] Received animation sync packet for " + entityDataMap.size() + " entities");
+                 }
+             }
+         });
+         context.setPacketHandled(true);
+     }
     
     /**
      * 获取实体数据映射
@@ -296,4 +322,7 @@ public class AnimationSyncPacket {
         return deltaUpdate;
     }
 }
+
+
+
 

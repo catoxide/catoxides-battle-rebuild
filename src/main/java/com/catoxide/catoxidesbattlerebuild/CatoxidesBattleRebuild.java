@@ -26,8 +26,9 @@ public class CatoxidesBattleRebuild {
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);
 
     public CatoxidesBattleRebuild() {
+        // 获取MOD事件总线
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
-
+        
         // 注册Deferred Register
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);
@@ -37,8 +38,7 @@ public class CatoxidesBattleRebuild {
         // 注册事件总线
         MinecraftForge.EVENT_BUS.register(this);
         
-        // 手动注册RenderEventHandler到Forge事件总线
-        MinecraftForge.EVENT_BUS.register(RenderEventHandler.class);
+        // RenderEventHandler现在是ClientInitializer的内部类，会自动通过@Mod.EventBusSubscriber注册
 
         MixinBootstrap.init();
         Mixins.addConfiguration("catoxidesbattlerebuild.mixins.json");

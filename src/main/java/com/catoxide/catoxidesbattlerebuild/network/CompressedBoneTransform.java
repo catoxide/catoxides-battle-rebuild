@@ -85,7 +85,9 @@ public class CompressedBoneTransform {
             matrixData[i] = compressedMatrix[i] / scale;
         }
         
-        return new Matrix4f(matrixData);
+        Matrix4f matrix = new Matrix4f();
+        matrix.set(matrixData);
+        return matrix;
     }
     
     /**
@@ -164,9 +166,14 @@ public class CompressedBoneTransform {
         Matrix4f thisMatrix = decompressMatrix();
         Matrix4f otherMatrix = other.decompressMatrix();
         
+        float[] thisData = new float[16];
+        float[] otherData = new float[16];
+        thisMatrix.get(thisData);
+        otherMatrix.get(otherData);
+        
         float diff = 0.0f;
         for (int i = 0; i < 16; i++) {
-            diff += Math.abs(thisMatrix.get(i) - otherMatrix.get(i));
+            diff += Math.abs(thisData[i] - otherData[i]);
         }
         
         return diff;
@@ -180,3 +187,5 @@ public class CompressedBoneTransform {
         return 10 + 32 + 2;
     }
 }
+
+

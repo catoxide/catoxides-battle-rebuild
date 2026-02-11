@@ -247,14 +247,22 @@ public class EntityBoneBodyUnitSystem {
      * 获取实体的总血量
      */
     public float getTotalHealth(long entityId) {
-        return bodyUnitSystem.getTotalHealth(entityId);
+        EntityBodySystem bodyPartSystem = EntityBodySystem.getInstance();
+        if (bodyPartSystem != null) {
+            return bodyPartSystem.getTotalHealth(entityId);
+        }
+        return 0.0f;
     }
     
     /**
      * 获取实体的最大总血量
      */
     public float getMaxTotalHealth(long entityId) {
-        return bodyUnitSystem.getMaxTotalHealth(entityId);
+        EntityBodySystem bodyPartSystem = EntityBodySystem.getInstance();
+        if (bodyPartSystem != null) {
+            return bodyPartSystem.getMaxTotalHealth(entityId);
+        }
+        return 0.0f;
     }
     
     /**

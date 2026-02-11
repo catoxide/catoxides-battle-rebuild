@@ -105,6 +105,18 @@ public class BodyUnitSystem {
         if (boneName != null && !boneName.isEmpty()) {
             boneMap.put(boneName, bodyUnit);
         }
+        
+        // 关联BodyUnit到对应的BodyPart
+        EntityBodySystem bodyPartSystem = EntityBodySystem.getInstance();
+        if (bodyPartSystem != null) {
+            IBodyPart bodyPart = bodyPartSystem.getBodyPartByBone(entityId, bodyUnit.getBoneName());
+            if (bodyPart != null) {
+                // 如果是BodyUnit实例，调用setBodyPart方法
+                if (bodyUnit instanceof BodyUnit) {
+                    ((BodyUnit) bodyUnit).setBodyPart(bodyPart);
+                }
+            }
+        }
     }
     
     /**
@@ -298,38 +310,6 @@ public class BodyUnitSystem {
             }
         }
         return false;
-    }
-    
-    /**
-     * 获取实体的总血量
-     */
-    public float getTotalHealth(long entityId) {
-        List<IBodyUnit> bodyUnits = entityBodyUnits.get(entityId);
-        if (bodyUnits == null || bodyUnits.isEmpty()) {
-            return 0.0f;
-        }
-        
-        float total = 0.0f;
-        for (IBodyUnit bodyUnit : bodyUnits) {
-            total += bodyUnit.getCurrentHealth();
-        }
-        return total;
-    }
-    
-    /**
-     * 获取实体的最大总血量
-     */
-    public float getMaxTotalHealth(long entityId) {
-        List<IBodyUnit> bodyUnits = entityBodyUnits.get(entityId);
-        if (bodyUnits == null || bodyUnits.isEmpty()) {
-            return 0.0f;
-        }
-        
-        float total = 0.0f;
-        for (IBodyUnit bodyUnit : bodyUnits) {
-            total += bodyUnit.getMaxHealth();
-        }
-        return total;
     }
     
     // ==================== Tick更新 ====================

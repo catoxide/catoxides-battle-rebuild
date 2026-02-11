@@ -28,11 +28,7 @@ public class BodyUnit implements IBodyUnit {
     private final String boneName;
     
     // 传导系数（伤害从骨骼传导到BodyUnit的比例）
-    private final float transmissionCoefficient;
-    
-    // 血量
-    private float currentHealth;
-    private float maxHealth;
+    private float transmissionCoefficient;
     
     // 护甲值
     private float armorValue;
@@ -67,6 +63,23 @@ public class BodyUnit implements IBodyUnit {
     // 配置
     private IBodyUnitConfig config;
     
+    // 关联的BodyPart
+    private IBodyPart bodyPart;
+    
+    /**
+     * 设置关联的BodyPart
+     */
+    public void setBodyPart(IBodyPart bodyPart) {
+        this.bodyPart = bodyPart;
+    }
+    
+    /**
+     * 获取关联的BodyPart
+     */
+    public IBodyPart getBodyPart() {
+        return bodyPart;
+    }
+    
     /**
      * 构造函数（基础构造）
      */
@@ -76,8 +89,6 @@ public class BodyUnit implements IBodyUnit {
         this.name = name;
         this.boneName = boneName;
         this.transmissionCoefficient = 1.0f;
-        this.currentHealth = 100.0f;
-        this.maxHealth = 100.0f;
         this.armorValue = 0.0f;
         this.entityTransmissionCoefficient = 0.5f;
         this.isCritical = false;
@@ -97,7 +108,7 @@ public class BodyUnit implements IBodyUnit {
      */
     public BodyUnit(long entityId, String name, String boneName, float transmissionCoefficient) {
         this(entityId, name, boneName);
-        // transmissionCoefficient在基础构造中已设置，这里不需要额外设置
+        this.transmissionCoefficient = transmissionCoefficient;
     }
     
     /**
@@ -107,8 +118,6 @@ public class BodyUnit implements IBodyUnit {
         this(entityId, config.getBodyUnitName(), boneName);
         this.config = config;
         this.transmissionCoefficient = config.getTransmissionCoefficient();
-        this.maxHealth = config.getMaxHealth();
-        this.currentHealth = this.maxHealth;
         this.armorValue = config.getArmorValue();
         this.isCritical = config.isCritical();
         this.collisionTag = config.getCollisionTag();
@@ -175,6 +184,7 @@ public class BodyUnit implements IBodyUnit {
 
     /**
      * 接收伤害（从关联的骨骼）
+     * @param boneName 来源骨骼
      * @param rawDamage 原始伤害
      * @param damageType 伤害类型
      * @return 实际受到的伤害
@@ -210,17 +220,6 @@ public class BodyUnit implements IBodyUnit {
         float armorReduction = calculateArmorReduction(transmittedDamage);
         float actualDamage = transmittedDamage - armorReduction;
         
-        // 扣除血量
-        float oldHealth = currentHealth;
-        currentHealth = Math.max(0, currentHealth - actualDamage);
-        
-        // 触发能力的后置钩子
-        for (IBodyUnitAbility ability : abilities) {
-            if (ability.isActive()) {
-                ability.onDamagePost(boneName, transmittedDamage, actualDamage, damageType);
-            }
-        }
-        
         // 记录击中
         recordHit(actualDamage);
         
@@ -243,19 +242,8 @@ public class BodyUnit implements IBodyUnit {
             return false;
         }
         
-        // 检查血量是否低于致命阈值
-        if (currentHealth <= fatalThreshold) {
-            // 触发能力的致命检查钩子
-            for (IBodyUnitAbility ability : abilities) {
-                if (ability.isActive()) {
-                    if (!ability.onFatalCheck(currentHealth, maxHealth - currentHealth)) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
-        
+        // TODO: 实现致命检查逻辑
+        // 由于血量管理移至BodyPart，这里需要调整致命检查逻辑
         return false;
     }
     
@@ -395,8 +383,17 @@ public class BodyUnit implements IBodyUnit {
     }
     
     @Override
+    public boolean isAlive() {
+        // 调用BodyPart的isAlive方法
+        if (bodyPart != null) {
+            return bodyPart.isAlive();
+        }
+        // 如果BodyPart未设置，默认返回true
+        return true;
+    }
+    
+    @Override
     public void reset() {
-        this.currentHealth = maxHealth;
         this.hitCount = 0;
         this.lastHitTime = 0L;
         
@@ -436,35 +433,5 @@ public class BodyUnit implements IBodyUnit {
                 ability.onTick(deltaTick);
             }
         }
-    }
-    
-    // ==================== 血量管理 ====================
-    
-    @Override
-    public float getCurrentHealth() {
-        return currentHealth;
-    }
-    
-    @Override
-    public float getMaxHealth() {
-        return maxHealth;
-    }
-    
-    @Override
-    public void setHealth(float health) {
-        this.currentHealth = Math.max(0, Math.min(health, maxHealth));
-    }
-    
-    @Override
-    public void setMaxHealth(float maxHealth) {
-        this.maxHealth = Math.max(0, maxHealth);
-        if (currentHealth > this.maxHealth) {
-            currentHealth = this.maxHealth;
-        }
-    }
-    
-    @Override
-    public boolean isAlive() {
-        return currentHealth > 0;
     }
 }

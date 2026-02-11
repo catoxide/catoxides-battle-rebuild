@@ -5,6 +5,10 @@ import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import software.bernie.geckolib.renderer.GeoEntityRenderer;
 
+/**
+ * ModularZombie 的 GeckoLib 渲染器类
+ * 负责渲染 ModularZombie 实体的 3D 模型
+ */
 public class ModularZombieRenderer extends GeoEntityRenderer<ModularZombie> {
 
     public ModularZombieRenderer(EntityRendererProvider.Context renderManager) {
