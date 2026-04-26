@@ -58,11 +58,25 @@ public class ServerSideExecutor {
                 GeckoLib.LOGGER.info("Server: {}", level.getServer());
                 GeckoLib.LOGGER.info("资源管理器: {}", resourceManager);
 
-
+                // 初始化 ServerGeoModelManager（必须最先初始化，因为其他组件依赖它）
+                GeckoLib.LOGGER.info("初始化 ServerGeoModelManager...");
                 ServerGeoModelManager.getInstance().initialize(
                         resourceManager,
                         MODEL_LOADING_EXECUTOR
                 );
+                GeckoLib.LOGGER.info("✅ ServerGeoModelManager 初始化完成");
+
+                // 初始化 ModelDataManager（统一模型数据管理器，依赖 ServerGeoModelManager）
+                GeckoLib.LOGGER.info("初始化 ModelDataManager...");
+                com.catoxide.catoxidesbattlerebuild.server.models.ModelDataManager.getInstance()
+                        .initialize(resourceManager);
+                GeckoLib.LOGGER.info("✅ ModelDataManager 初始化完成");
+
+                // 初始化 ServerEntityManager（依赖 ModelDataManager）
+                GeckoLib.LOGGER.info("初始化 ServerEntityManager...");
+                ServerEntityManager.getInstance().initialize(resourceManager);
+                GeckoLib.LOGGER.info("✅ ServerEntityManager 初始化完成");
+
                 initialized = true;
                 GeckoLib.LOGGER.info("✅ ServerSideExecutor 初始化完成");
             } catch (Exception e) {
@@ -87,6 +101,20 @@ public class ServerSideExecutor {
     @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.HIGHEST)
     public static void onEntityJoinWorld(EntityJoinLevelEvent event) {
         if (!event.getLevel().isClientSide() && event.getEntity() instanceof GeoAnimatable) {
+            // 确保服务端组件已初始化
+            if (!INSTANCE.initialized) {
+                if (event.getLevel() instanceof ServerLevel serverLevel) {
+                    INSTANCE.initializeServerComponents(serverLevel);
+                }
+                
+                // 如果仍然未初始化，跳过注册
+                if (!INSTANCE.initialized) {
+                    GeckoLib.LOGGER.warn("Server components not initialized, skipping entity registration for: {}", 
+                            event.getEntity());
+                    return;
+                }
+            }
+            
             Entity entity = event.getEntity();
 
             // 直接为所有GeckoAnimatable实体注册
@@ -330,3 +358,6 @@ public class ServerSideExecutor {
         return defaultValue;
     }
 }
+
+
+

@@ -1,10 +1,10 @@
 package com.catoxide.catoxidesbattlerebuild.server.geometry;
 
 import com.catoxide.catoxidesbattlerebuild.server.models.BoneModelData;
+import com.catoxide.catoxidesbattlerebuild.server.models.ModelDataManager;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.Entity;
 import org.joml.Matrix4f;
 
 import java.util.*;
@@ -24,9 +24,6 @@ public class ServerEntityManager {
     // 实体ID映射：long -> UUID
     private final Map<Long, UUID> idMap = new ConcurrentHashMap<>();
     
-    // 实体骨骼数据缓存
-    private final Map<String, BoneModelData> modelBoneCache = new ConcurrentHashMap<>();
-    
     private ServerEntityManager() {}
     
     public static ServerEntityManager getInstance() {
@@ -34,11 +31,25 @@ public class ServerEntityManager {
     }
     
     /**
+     * 初始化实体管理器
+     */
+    public void initialize(net.minecraft.server.packs.resources.ResourceManager resourceManager) {
+        // 确保UnifiedModelDataManager已初始化
+        ModelDataManager unifiedManager = ModelDataManager.getInstance();
+        if (!unifiedManager.isInitialized()) {
+            unifiedManager.initialize(resourceManager);
+        }
+    }
+    
+    /**
      * 注册新实体
      */
     public void registerEntity(UUID uuid, long entityId, String modelName) {
-        // 从缓存获取骨骼数据
-        BoneModelData boneData = modelBoneCache.get(modelName);
+        // 使用UnifiedModelDataManager获取骨骼数据
+        ModelDataManager unifiedManager = ModelDataManager.getInstance();
+        ResourceLocation modelLocation = new ResourceLocation(modelName);
+        
+        BoneModelData boneData = unifiedManager.getBoneModelData(modelLocation);
         if (boneData == null) {
             throw new IllegalArgumentException("Model data not found for model: " + modelName);
         }
@@ -46,13 +57,28 @@ public class ServerEntityManager {
         // 创建实体集合 - 使用新架构的构造函数
         EntityCollection entityCollection = EntityCollection.create(
             uuid,
-            ResourceLocation.parse(modelName),
+            modelLocation,
             null, // modelCollection - 暂时为null，需要从BoneModelData创建
             null  // entity - 暂时为null
         );
         
         entityMap.put(uuid, entityCollection);
         idMap.put(entityId, uuid);
+    }
+    
+    /**
+     * 注册实体（重载方法，接受Entity参数）
+     */
+    public void registerEntity(net.minecraft.world.entity.Entity entity, net.minecraft.resources.ResourceLocation modelLocation) {
+        registerEntity(entity.getUUID(), entity.getId(), modelLocation.toString());
+    }
+    
+    /**
+     * 获取BoneModelData（通过UnifiedModelDataManager）
+     */
+    public BoneModelData getBoneModelData(ResourceLocation modelLocation) {
+        ModelDataManager unifiedManager = ModelDataManager.getInstance();
+        return unifiedManager.getBoneModelData(modelLocation);
     }
     
     /**
@@ -76,9 +102,26 @@ public class ServerEntityManager {
             return Collections.emptyList();
         }
         
-        // 从ModelCollection中获取骨骼数据
-        // 暂时返回空列表，需要实现从ModelCollection提取骨骼的逻辑
-        return Collections.emptyList();
+        // 查找对应的long entityId
+        Long entityId = null;
+        for (Map.Entry<Long, UUID> entry : idMap.entrySet()) {
+            if (entry.getValue().equals(uuid)) {
+                entityId = entry.getKey();
+                break;
+            }
+        }
+        
+        if (entityId == null) {
+            return Collections.emptyList();
+        }
+        
+        // 使用ModelDataManager获取骨骼集合
+        ModelDataManager unifiedManager = ModelDataManager.getInstance();
+        Map<String, BoneCollection> boneCollections = unifiedManager.getBoneCollections(
+            entityId, 
+            entity.modelLocation()
+        );
+        return new ArrayList<>(boneCollections.values());
     }
     
     /**
@@ -90,9 +133,26 @@ public class ServerEntityManager {
             return Collections.emptyList();
         }
         
-        // 从ModelCollection中获取立方体数据
-        // 暂时返回空列表，需要实现从ModelCollection提取立方体的逻辑
-        return Collections.emptyList();
+        // 查找对应的long entityId
+        Long entityId = null;
+        for (Map.Entry<Long, UUID> entry : idMap.entrySet()) {
+            if (entry.getValue().equals(uuid)) {
+                entityId = entry.getKey();
+                break;
+            }
+        }
+        
+        if (entityId == null) {
+            return Collections.emptyList();
+        }
+        
+        // 使用ModelDataManager获取立方体集合
+        ModelDataManager unifiedManager = ModelDataManager.getInstance();
+        CubeCollection cubeCollection = unifiedManager.getCubeCollection(
+            entityId, 
+            entity.modelLocation()
+        );
+        return cubeCollection != null ? Collections.singletonList(cubeCollection) : Collections.emptyList();
     }
     
     /**
@@ -190,13 +250,6 @@ public class ServerEntityManager {
     public void cleanupInvalidEntities() {
         // 这里可以添加清理逻辑，比如移除不存在的实体
         // 暂时留空
-    }
-    
-    /**
-     * 注册实体（重载方法，接受Entity参数）
-     */
-    public void registerEntity(net.minecraft.world.entity.Entity entity, net.minecraft.resources.ResourceLocation modelLocation) {
-        registerEntity(entity.getUUID(), entity.getId(), modelLocation.toString());
     }
     
     /**

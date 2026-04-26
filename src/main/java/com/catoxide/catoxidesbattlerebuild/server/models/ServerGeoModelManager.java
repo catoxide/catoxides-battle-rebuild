@@ -77,6 +77,15 @@ public class ServerGeoModelManager {
         initialized = false;
         GeckoLib.LOGGER.info("ServerGeoModelManager cache cleared");
     }
+    
+    /**
+     * 获取模型架子（所有已加载的模型集合）
+     * 供UnifiedModelDataManager使用
+     */
+    public Map<ResourceLocation, ModelCollection> getModelShelf() {
+        ensureInitialized();
+        return modelShelf;
+    }
     //获取Baked模型
     public BakedGeoModel getBakedModel(ResourceLocation modelLocation) {
         ensureInitialized();
@@ -220,3 +229,4 @@ private long getUniqueIdForAnimatable(GeoAnimatable animatable) {
     }
 }
 
+

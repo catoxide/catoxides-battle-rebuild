@@ -12,6 +12,7 @@ import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.EntityRenderers;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
@@ -118,6 +119,11 @@ public class ClientInitializer {
                 return;
             }
             
+            // 只在实体渲染之后渲染，这样可以确保我们的渲染在实体之上
+            if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) {
+                return;
+            }
+            
             Minecraft mc = Minecraft.getInstance();
             if (mc.level == null || mc.player == null) {
                 return;
@@ -129,18 +135,96 @@ public class ClientInitializer {
                     ClientHitboxManager.getInstance().updateEntityHitboxes(entityUuid);
                 });
                 
-                // 渲染调试信息
-                // 注意：RenderLevelStageEvent不提供MultiBufferSource()方法，需要使用LevelRenderer
-                // 暂时禁用调试渲染，直到找到正确的方法
-                // if (HitboxDebugRenderer.isDebugEnabled()) {
-                //     HitboxDebugRenderer.renderAllHitboxes(
-                //         event.getPoseStack(), 
-                //         null
-                //     );
-                // }
+                // 渲染调试信息（使用BufferBuilder管线）
+                if (HitboxDebugRenderer.isDebugEnabled()) {
+                    // 获取相机位置
+                    Vec3 camPos = mc.gameRenderer.getMainCamera().getPosition();
+                    
+                    // 调用HitboxDebugRenderer渲染（内部会使用BufferBuilder）
+                    HitboxDebugRenderer.renderAllHitboxes(
+                        event.getPoseStack(),
+                        camPos,
+                        event.getPartialTick()
+                    );
+                    
+                    LOGGER.debug("[RenderEventHandler] Debug hitboxes rendered");
+                }
                 
             } catch (Exception e) {
                 LOGGER.error("[RenderEventHandler] Error during render", e);
+            }
+        }
+    }
+    
+    /**
+     * 按键事件处理器
+     * 用于监听F4键来启用/禁用调试渲染（简化版本，用于测试）
+     */
+    @Mod.EventBusSubscriber(modid = "catoxidesbattlerebuild", bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
+    public static class KeyInputEventHandler {
+        private static final Logger LOGGER = LoggerFactory.getLogger(KeyInputEventHandler.class);
+        
+        @SubscribeEvent
+        public static void onKeyInput(net.minecraftforge.client.event.InputEvent.Key event) {
+            if (!initialized) {
+                return;
+            }
+            
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player == null) {
+                return;
+            }
+            
+            // 检查是否按下了F4键（键码61）
+            if (event.getKey() == 61 && event.getAction() == 1) {
+                boolean currentEnabled = HitboxDebugRenderer.isDebugEnabled();
+                HitboxDebugRenderer.setDebugEnabled(!currentEnabled);
+                
+                mc.player.displayClientMessage(
+                    net.minecraft.network.chat.Component.literal(
+                        "[Catoxide's Battle Rebuild] Debug hitbox rendering " + 
+                        (!currentEnabled ? "enabled" : "disabled")
+                    ),
+                    true
+                );
+                
+                LOGGER.info("[KeyInputEventHandler] F4 pressed, debug rendering toggled to {}", 
+                        !currentEnabled);
+            }
+        }
+    }
+    
+    /**
+     * 客户端Tick事件处理器
+     * 用于在游戏启动后自动启用调试渲染（用于测试）
+     */
+    @Mod.EventBusSubscriber(modid = "catoxidesbattlerebuild", bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
+    public static class ClientTickEventHandler {
+        private static final Logger LOGGER = LoggerFactory.getLogger(ClientTickEventHandler.class);
+        private static boolean autoEnabled = false;
+        
+        @SubscribeEvent
+        public static void onClientTick(net.minecraftforge.event.TickEvent.ClientTickEvent event) {
+            if (!initialized || autoEnabled) {
+                return;
+            }
+            
+            if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.player != null && mc.level != null) {
+                    // 自动启用调试渲染（用于测试）
+                    HitboxDebugRenderer.setDebugEnabled(true);
+                    autoEnabled = true;
+                    
+                    mc.player.displayClientMessage(
+                        net.minecraft.network.chat.Component.literal(
+                            "[Catoxide's Battle Rebuild] Debug hitbox rendering auto-enabled for testing"
+                        ),
+                        true
+                    );
+                    
+                    LOGGER.info("[ClientTickEventHandler] Debug rendering auto-enabled");
+                }
             }
         }
     }

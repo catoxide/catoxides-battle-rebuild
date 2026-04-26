@@ -3,6 +3,7 @@ package com.catoxide.catoxidesbattlerebuild.network;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.network.NetworkEvent;
+import software.bernie.geckolib.GeckoLib;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -250,42 +251,114 @@ public class AnimationSyncPacket {
     /**
      * 处理数据包（客户端执行）
      */
-     public void handle(Supplier<NetworkEvent.Context> contextSupplier) {
-         NetworkEvent.Context context = contextSupplier.get();
-         context.enqueueWork(() -> {
-             // 确保在客户端执行
-             if (context.getDirection().getReceptionSide().isClient()) {
-                 // 获取客户端玩家UUID
-                 java.util.UUID playerId = net.minecraft.client.Minecraft.getInstance().player.getUUID();
-                 
-                 // 记录开始时间
-                 long startTime = System.currentTimeMillis();
-                 
-                 // 计算数据包大小
-                 int packetSize = getEstimatedSize();
-                 
-                 // TODO: 实现完整的客户端处理逻辑
-                 // 1. 解析骨骼变换数据
-                 // 2. 更新客户端骨骼状态
-                 // 3. 应用动画变换
-                 
-                 // 记录接收统计
-                 long processingTime = System.currentTimeMillis() - startTime;
-                 AnimationSyncPerformanceMonitor.getInstance().recordClientPacketReceived(
-                     playerId, 
-                     this, 
-                     packetSize, 
-                     processingTime
-                 );
-                 
-                 if (net.minecraft.client.Minecraft.getInstance().player != null) {
-                     System.out.println("[AnimationSyncPacket] Received animation sync packet for " + entityDataMap.size() + " entities");
-                 }
-             }
-         });
-         context.setPacketHandled(true);
-     }
+    /**
+     * 处理接收到的数据包
+     */
+    public void handle(Supplier<NetworkEvent.Context> context) {
+        context.get().enqueueWork(() -> {
+            try {
+                net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+                if (mc.player == null) return;
+                
+                // 记录开始时间
+                long startTime = System.currentTimeMillis();
+                
+                // 记录接收到的实体数量
+                System.out.println("Received animation sync packet for " + entityDataMap.size() + " entities");
+                
+                // 处理每个实体的同步数据
+                for (EntityBoneSyncData syncData : entityDataMap.values()) {
+                    int entityId = syncData.entityId;
+                    
+                    // 获取客户端实体
+                    net.minecraft.world.entity.Entity entity = mc.level.getEntity(entityId);
+                    if (entity == null) {
+                        GeckoLib.LOGGER.warn("Entity {} not found on client", entityId);
+                        continue;
+                    }
+                    
+                    // 应用骨骼变换
+                    applyBoneTransforms(entity, syncData);
+                    
+                    // 应用动画状态
+                    applyAnimationState(entity, syncData.animationState);
+                }
+                
+                // 记录性能数据
+                long processingTime = System.currentTimeMillis() - startTime;
+                int packetSize = estimatePacketSize();
+                AnimationSyncPerformanceMonitor.getInstance().recordClientPacketReceived(
+                    mc.player.getUUID(), 
+                    this, 
+                    packetSize, 
+                    processingTime
+                );
+                
+                // 使用独立的日志类记录接收内容
+                AnimationSyncLogger.logReceivePacket(
+                    mc.player.getUUID(),
+                    entityDataMap,
+                    deltaUpdate,
+                    compressed,
+                    packetSize,
+                    processingTime
+                );
+                
+            } catch (Exception e) {
+                AnimationSyncLogger.logError("处理动画同步数据包失败", e);
+            }
+        });
+        
+        context.get().setPacketHandled(true);
+    }
     
+    /**
+     * 应用骨骼变换到实体
+     */
+    private void applyBoneTransforms(net.minecraft.world.entity.Entity entity, EntityBoneSyncData syncData) {
+        // TODO: 实现骨骼变换应用逻辑
+        // 这里需要将压缩的骨骼变换应用到客户端实体的骨骼上
+    }
+    
+    /**
+     * 应用动画状态到实体
+     */
+    private void applyAnimationState(net.minecraft.world.entity.Entity entity, EntityBoneSyncData.AnimationState animationState) {
+        // TODO: 实现动画状态应用逻辑
+        // 这里需要将动画状态应用到客户端实体的动画系统上
+    }
+    
+    /**
+     * 估算数据包大小
+     */
+    private int estimatePacketSize() {
+        int size = 4; // protocol version (int)
+        size += 1; // flags (byte)
+        size += 4; // entity count (int)
+        
+        for (EntityBoneSyncData entityData : entityDataMap.values()) {
+            size += 4; // entity ID (int)
+            size += 1; // first sync flag (boolean)
+            
+            if (entityData.isFirstSync && entityData.modelLocation != null) {
+                size += 30; // ResourceLocation average size
+            }
+            
+            size += 4; // bone count (int)
+            
+            for (CompressedBoneTransform transform : entityData.boneTransforms.values()) {
+                size += transform.boneName.length() * 2; // UTF-16 encoding
+                size += 32 + 2; // compressed matrix (16 shorts + 2 bytes)
+            }
+            
+            size += entityData.animationState.animationName.length() * 2; // animation name
+            size += 8 + 8 + 1; // time, speed, looping
+            size += 8; // timestamp (long)
+        }
+        
+        return size;
+    }
+
     /**
      * 获取实体数据映射
      */
@@ -322,6 +395,9 @@ public class AnimationSyncPacket {
         return deltaUpdate;
     }
 }
+
+
+
 
 
 

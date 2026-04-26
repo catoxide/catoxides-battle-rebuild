@@ -1,10 +1,11 @@
 package com.catoxide.catoxidesbattlerebuild.client.renderer;
 
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
@@ -12,13 +13,20 @@ import java.awt.*;
 
 public class OBBRenderer {
 
-    public static void renderOBB(PoseStack poseStack, VertexConsumer vertexConsumer,
-                                 AABB localAABB, Quaternionf rotation, Color color, float alpha) {
-        renderOBB(poseStack, vertexConsumer, localAABB, rotation, color, alpha, new Vector3f(0, 0, 0));
-    }
-
-    public static void renderOBB(PoseStack poseStack, VertexConsumer vertexConsumer,
-                                 AABB localAABB, Quaternionf rotation, Color color, float alpha, Vector3f pivot) {
+    /**
+     * 使用BufferBuilder渲染OBB（带枢轴点）
+     * @param bufferBuilder BufferBuilder实例
+     * @param poseStack 姿态堆栈
+     * @param localAABB 局部AABB
+     * @param rotation 旋转四元数
+     * @param color 颜色
+     * @param alpha 透明度
+     * @param pivot 枢轴点（世界坐标）
+     * @param camPos 相机位置
+     */
+    public static void renderOBB(BufferBuilder bufferBuilder, PoseStack poseStack,
+                                 AABB localAABB, Quaternionf rotation, Color color, float alpha, 
+                                 Vector3f pivot, Vec3 camPos) {
         // 计算半尺寸
         double halfSizeX = (localAABB.maxX - localAABB.minX) / 2;
         double halfSizeY = (localAABB.maxY - localAABB.minY) / 2;
@@ -57,21 +65,21 @@ public class OBBRenderer {
         float g = color.getGreen() / 255.0f;
         float b = color.getBlue() / 255.0f;
 
+        PoseStack.Pose pose = poseStack.last();
+
         for (int[] edge : edges) {
             Vector3f start = rotatedVertices[edge[0]];
             Vector3f end = rotatedVertices[edge[1]];
-            renderLine(poseStack, vertexConsumer, start, end, r, g, b, alpha);
+            renderLine(bufferBuilder, pose, start, end, r, g, b, alpha, camPos);
         }
     }
 
-    private static void renderLine(PoseStack poseStack, VertexConsumer vertexConsumer,
+    /**
+     * 使用BufferBuilder渲染线条
+     */
+    private static void renderLine(BufferBuilder bufferBuilder, PoseStack.Pose pose,
                                    Vector3f start, Vector3f end,
-                                   float r, float g, float b, float alpha) {
-        PoseStack.Pose pose = poseStack.last();
-
-        // 获取相机位置
-        net.minecraft.world.phys.Vec3 camPos = net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
-
+                                   float r, float g, float b, float alpha, Vec3 camPos) {
         // 将世界坐标转换为相对于相机的坐标
         float startX = start.x() - (float)camPos.x;
         float startY = start.y() - (float)camPos.y;
@@ -81,23 +89,15 @@ public class OBBRenderer {
         float endY = end.y() - (float)camPos.y;
         float endZ = end.z() - (float)camPos.z;
 
-        vertexConsumer.vertex(pose.pose(), startX, startY, startZ)
+        // 使用BufferBuilder的vertex方法添加顶点
+        bufferBuilder.vertex(pose.pose(), startX, startY, startZ)
                 .color(r, g, b, alpha)
-                .normal(pose.normal(), 0, 1, 0) // 对于线条，法线影响不大
+                .normal(pose.normal(), 0, 1, 0)
                 .endVertex();
 
-        vertexConsumer.vertex(pose.pose(), endX, endY, endZ)
+        bufferBuilder.vertex(pose.pose(), endX, endY, endZ)
                 .color(r, g, b, alpha)
                 .normal(pose.normal(), 0, 1, 0)
                 .endVertex();
     }
 }
-
-
-
-
-
-
-
-
-

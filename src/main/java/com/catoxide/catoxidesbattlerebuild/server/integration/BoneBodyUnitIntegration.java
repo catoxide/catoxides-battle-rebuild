@@ -3,11 +3,10 @@ package com.catoxide.catoxidesbattlerebuild.server.integration;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.*;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.config.*;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.factory.*;
-import com.catoxide.catoxidesbattlerebuild.server.geometry.*;
 import com.catoxide.catoxidesbattlerebuild.server.models.BoneModelData;
+import com.catoxide.catoxidesbattlerebuild.server.models.ModelDataManager;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -29,7 +28,6 @@ import java.util.*;
 public class BoneBodyUnitIntegration {
     
     private static EntityBoneBodyUnitSystem bodyUnitSystem = EntityBoneBodyUnitSystem.getInstance();
-    private static BoneCollectionFactory boneCollectionFactory = new BoneCollectionFactory();
     private static BodyPartFactory bodyPartFactory = BodyPartFactory.getInstance();
     
     // 默认部位名称
@@ -109,13 +107,9 @@ public class BoneBodyUnitIntegration {
      * 新架构：从模型数据创建BodyPart和BodyUnit
      */
     private static void createAndRegisterBodyParts(long entityId, ResourceLocation modelLocation, ResourceManager resourceManager) {
-        // 1. 获取BoneModelData
-        BoneModelData boneModelData = boneCollectionFactory.getBoneModelData(modelLocation);
-        if (boneModelData == null) {
-            // 如果未缓存，先加载
-            boneCollectionFactory.preloadBoneModelData(modelLocation, resourceManager);
-            boneModelData = boneCollectionFactory.getBoneModelData(modelLocation);
-        }
+        // 1. 使用UnifiedModelDataManager获取BoneModelData
+        ModelDataManager unifiedManager = ModelDataManager.getInstance();
+        BoneModelData boneModelData = unifiedManager.getBoneModelData(modelLocation);
         
         if (boneModelData == null) {
             throw new RuntimeException("Failed to load BoneModelData for: " + modelLocation);
@@ -259,24 +253,25 @@ public class BoneBodyUnitIntegration {
     
     /**
      * 为实体获取模型位置
+     * 修改：使用与ServerGeoModelManager一致的模型位置
      */
     private static ResourceLocation getModelLocationForEntity(Entity entity) {
         // 根据实体类型确定其模型位置
-        // 这需要与你的实体模型系统集成
         // 注意：使用EntityType.getKey()获取实体类型的ResourceLocation
         ResourceLocation entityType = net.minecraft.world.entity.EntityType.getKey(entity.getType());
         String entityPath = entityType != null ? entityType.getPath() : "generic";
         
         // 示例：为不同类型的实体分配不同的模型
+        // 修改：使用与ServerGeoModelManager一致的命名空间和路径
         if (entityPath.contains("zombie")) {
-            return ResourceLocation.fromNamespaceAndPath("catoxide", "zombie_model");
+            return ResourceLocation.fromNamespaceAndPath("catoxidesbattlerebuild", "geo/modular_zombie.geo.json");
         } else if (entityPath.contains("skeleton")) {
-            return ResourceLocation.fromNamespaceAndPath("catoxide", "skeleton_model");
+            return ResourceLocation.fromNamespaceAndPath("catoxidesbattlerebuild", "geo/skeleton_model.geo.json");
         } else if (entityPath.contains("player")) {
-            return ResourceLocation.fromNamespaceAndPath("catoxide", "player_model");
+            return ResourceLocation.fromNamespaceAndPath("catoxidesbattlerebuild", "geo/player_model.geo.json");
         } else {
             // 默认模型
-            return ResourceLocation.fromNamespaceAndPath("catoxide", "generic_model");
+            return ResourceLocation.fromNamespaceAndPath("catoxidesbattlerebuild", "geo/generic_model.geo.json");
         }
     }
     

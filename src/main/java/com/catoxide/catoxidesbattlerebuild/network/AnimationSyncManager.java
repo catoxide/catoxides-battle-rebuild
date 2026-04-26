@@ -262,17 +262,18 @@ public class AnimationSyncManager {
             totalBoneTransformsSent += boneCount;
             totalBytesSent += packetSize;
             
-            if (GeckoLib.LOGGER.isDebugEnabled()) {
-                GeckoLib.LOGGER.debug("Sent animation sync to player {}: {} entities, {} bones, ~{} bytes, time: {} ms",
-                    player.getName().getString(),
-                    entityDataMap.size(),
-                    boneCount,
-                    packetSize,
-                    processingTime
-                );
-            }
+            // 使用独立的日志类记录发送内容
+            AnimationSyncLogger.logSendPacket(
+                player,
+                entityDataMap,
+                packet.isDeltaUpdate(),
+                packet.isCompressed(),
+                packetSize,
+                processingTime
+            );
+            
         } catch (Exception e) {
-            GeckoLib.LOGGER.error("Failed to send animation sync packet: {}", e.getMessage(), e);
+            AnimationSyncLogger.logError("发送动画同步数据包失败", e);
         }
     }
     
@@ -416,6 +417,7 @@ public class AnimationSyncManager {
         }
     }
 }
+
 
 
 
