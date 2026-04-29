@@ -9,7 +9,7 @@ import software.bernie.geckolib.GeckoLib;
  * 动画同步集成
  * 负责在服务器tick时触发动画同步
  */
-@Mod.EventBusSubscriber
+@Mod.EventBusSubscriber(bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class AnimationSyncIntegration {
 
     /**

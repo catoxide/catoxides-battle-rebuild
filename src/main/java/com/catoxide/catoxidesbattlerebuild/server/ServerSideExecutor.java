@@ -1,5 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.server;
 
+import com.catoxide.catoxidesbattlerebuild.network.NetworkDebugHelper;
 import com.catoxide.catoxidesbattlerebuild.server.geometry.EntityCollection;
 import com.catoxide.catoxidesbattlerebuild.server.geometry.EntityCollectionFactory;
 import com.catoxide.catoxidesbattlerebuild.server.geometry.ServerEntityManager;
@@ -23,7 +24,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-@Mod.EventBusSubscriber
+@Mod.EventBusSubscriber(bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class ServerSideExecutor {
     private static final ServerSideExecutor INSTANCE = new ServerSideExecutor();
     private boolean initialized = false;
@@ -100,21 +101,24 @@ public class ServerSideExecutor {
      */
     @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.HIGHEST)
     public static void onEntityJoinWorld(EntityJoinLevelEvent event) {
-        if (!event.getLevel().isClientSide() && event.getEntity() instanceof GeoAnimatable) {
+        if (!event.getLevel().isClientSide() && event.getEntity() instanceof GeoAnimatable geoEntity) {
+            GeckoLib.LOGGER.info("[ServerSideExecutor] Entity joined world: type={}, class={}",
+                event.getEntity().getType(), event.getEntity().getClass().getSimpleName());
+
             // 确保服务端组件已初始化
             if (!INSTANCE.initialized) {
                 if (event.getLevel() instanceof ServerLevel serverLevel) {
                     INSTANCE.initializeServerComponents(serverLevel);
                 }
-                
+
                 // 如果仍然未初始化，跳过注册
                 if (!INSTANCE.initialized) {
-                    GeckoLib.LOGGER.warn("Server components not initialized, skipping entity registration for: {}", 
+                    GeckoLib.LOGGER.warn("[ServerSideExecutor] Server components not initialized, skipping entity registration for: {}",
                             event.getEntity());
                     return;
                 }
             }
-            
+
             Entity entity = event.getEntity();
 
             // 直接为所有GeckoAnimatable实体注册
@@ -123,7 +127,7 @@ public class ServerSideExecutor {
             ResourceLocation modelLocation = determineModelForEntity(entity);
             if (modelLocation != null) {
                 registerGeckoEntity(entity, modelLocation);
-                GeckoLib.LOGGER.debug("Auto-registered Gecko entity: {}", entity);
+                GeckoLib.LOGGER.debug("[ServerSideExecutor] Auto-registered Gecko entity: {}", entity);
             }
         }
     }
@@ -154,7 +158,7 @@ public class ServerSideExecutor {
         }
 
         // 4. 没有找到匹配的模型
-        GeckoLib.LOGGER.warn("No exact model match for entity: {} (core identifier: {})",
+        GeckoLib.LOGGER.warn("[ServerSideExecutor] No exact model match for entity: {} (core identifier: {})",
                 entity.getDisplayName().getString(), entityCore);
         return null;
     }
@@ -309,7 +313,12 @@ public class ServerSideExecutor {
             // 3. 不存在，才进行注册
             ServerEntityManager.getInstance().registerEntity(entity, modelLocation);
 
-            GeckoLib.LOGGER.debug("Registered Gecko entity: {} with model: {}", entity, modelLocation);
+            GeckoLib.LOGGER.info("[ServerSideExecutor] Registered Gecko entity: {} with model: {}",
+                entity.getUUID(), modelLocation);
+            
+            // 检查断点：实体注册
+            NetworkDebugHelper.getInstance().checkBreakpoint(
+                    NetworkDebugHelper.BreakpointType.ENTITY_REGISTER, entity.getId());
 
         } catch (Exception e) {
             GeckoLib.LOGGER.error("Failed to register Gecko entity: {}", entity, e);

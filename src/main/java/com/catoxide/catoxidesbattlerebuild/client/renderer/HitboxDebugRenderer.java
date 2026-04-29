@@ -10,6 +10,7 @@ import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -89,6 +90,9 @@ public class HitboxDebugRenderer {
             // 先渲染debug立方体（在0,0,0位置，大小1m）
             renderDebugCube(bufferBuilder, poseStack, cameraPosition);
             
+            // 使用OBBRenderer渲染斜着的debug立方体（在2,0,0位置）
+            renderTiltedDebugCube(bufferBuilder, poseStack, cameraPosition);
+            
             // 获取所有实体UUID
             Map<UUID, Map<String, ClientBoneCollection>> allBoneCollections = 
                 ClientHitboxManager.getInstance().getAllBoneCollections();
@@ -119,7 +123,7 @@ public class HitboxDebugRenderer {
      * 颜色：红色
      */
     private static void renderDebugCube(BufferBuilder bufferBuilder, PoseStack poseStack, Vec3 cameraPosition) {
-        LOGGER.info("[HitboxDebugRenderer] Rendering debug cube at (0,0,0) with size 1m");
+        LOGGER.debug("[HitboxDebugRenderer] Rendering debug cube at (0,0,0) with size 1m");
         
         // 定义立方体的8个顶点（世界坐标，以原点为中心）
         Vector3f[] vertices = {
@@ -170,9 +174,30 @@ public class HitboxDebugRenderer {
                 .endVertex();
         }
         
-        LOGGER.info("[HitboxDebugRenderer] Debug cube rendered successfully");
+        LOGGER.debug("[HitboxDebugRenderer] Debug cube rendered successfully");
     }
-    
+
+    /**
+     * 使用OBBRenderer渲染一个斜着的debug立方体
+     * 位置：在红色立方体旁边 (2, 0, 0)
+     * 大小：1m x 1m x 1m
+     * 颜色：绿色
+     * 旋转：绕Y轴旋转45度
+     */
+    private static void renderTiltedDebugCube(BufferBuilder bufferBuilder, PoseStack poseStack, Vec3 cameraPosition) {
+        LOGGER.debug("[HitboxDebugRenderer] Rendering tilted debug cube at (2,0,0) with 45-degree Y rotation");
+
+        Vector3f pivot = new Vector3f(2.0f, 0.0f, 0.0f);
+        AABB localAABB = new AABB(-0.5, -0.5, -0.5, 0.5, 0.5, 0.5);
+        Quaternionf rotation = new Quaternionf().rotateY((float) (Math.PI / 4));
+        Color color = Color.GREEN;
+        float alpha = 1.0f;
+
+        OBBRenderer.renderOBB(bufferBuilder, poseStack, localAABB, rotation, color, alpha, pivot, cameraPosition);
+
+        LOGGER.debug("[HitboxDebugRenderer] Tilted debug cube rendered successfully");
+    }
+
     /**
      * 渲染指定实体的受击盒
      */

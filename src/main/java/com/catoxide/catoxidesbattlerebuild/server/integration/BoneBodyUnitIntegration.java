@@ -35,11 +35,17 @@ public class BoneBodyUnitIntegration {
     
     /**
      * 当实体加入世界时注册BodyUnit
+     * 注意：这个方法在客户端和服务端都会被调用，需要过滤客户端
      */
     @SubscribeEvent
     public static void onEntityJoinWorld(EntityJoinLevelEvent event) {
+        // 过滤客户端：BodyPart系统只在服务端需要
+        if (event.getLevel().isClientSide) {
+            return;
+        }
+
         Entity entity = event.getEntity();
-        
+
         // 检查实体是否需要骨骼BodyUnit（例如，具有自定义模型的生物）
         if (shouldRegisterBodyUnitForEntity(entity)) {
             long entityId = entity.getId();
@@ -246,9 +252,12 @@ public class BoneBodyUnitIntegration {
      * 检查实体是否有自定义模型
      */
     private static boolean hasCustomModel(Entity entity) {
-        // 这是一个简化的检查，实际实现需要根据你的实体系统设计
-        // 可能基于实体的类型、NBT数据或其他标识
-        return true; // 假设所有实体都有自定义模型，实际应根据具体情况判断
+        // 排除玩家实体
+        if (entity.getType().toString().contains("player")) {
+            return false;
+        }
+        // 对于其他实体，假设它们有自定义模型
+        return true;
     }
     
     /**

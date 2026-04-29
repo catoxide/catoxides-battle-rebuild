@@ -2,6 +2,7 @@ package com.catoxide.catoxidesbattlerebuild.network;
 
 import com.catoxide.catoxidesbattlerebuild.server.geometry.ServerEntityManager;
 import com.catoxide.catoxidesbattlerebuild.server.geometry.EntityCollection;
+import com.catoxide.catoxidesbattlerebuild.server.models.ServerGeoModelManager;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.network.PacketDistributor;
@@ -69,23 +70,41 @@ public class AnimationSyncManager {
      */
     private void syncAllEntities() {
         try {
-            net.minecraft.server.MinecraftServer server = 
+            net.minecraft.server.MinecraftServer server =
                 net.minecraftforge.server.ServerLifecycleHooks.getCurrentServer();
             if (server == null) return;
-            
+
             List<ServerPlayer> players = server.getPlayerList().getPlayers();
             if (players.isEmpty()) return;
-            
+
+            // 获取所有注册的实体UUID
+            Collection<java.util.UUID> entityUuids =
+                ServerEntityManager.getInstance().getAllEntityUuids();
+
+            GeckoLib.LOGGER.debug("[AnimationSyncManager] syncAllEntities called, players={}, registeredEntities={}",
+                players.size(), entityUuids.size());
+
+            if (entityUuids.isEmpty()) {
+                return;
+            }
+
+            // 更新所有实体的动画（关键：这一步之前缺失！）
+            ServerGeoModelManager modelManager = ServerGeoModelManager.getInstance();
+            for (java.util.UUID uuid : entityUuids) {
+                EntityCollection entityCollection = 
+                    ServerEntityManager.getInstance().getEntity(uuid);
+                if (entityCollection != null && entityCollection.isValid()) {
+                    modelManager.updateAnimation(entityCollection, 0.0f);
+                }
+            }
+
             // 为每个玩家准备同步数据
             Map<ServerPlayer, Map<Integer, EntityBoneSyncData>> playerSyncData = new HashMap<>();
-            
+
             for (ServerPlayer player : players) {
                 Map<Integer, EntityBoneSyncData> entityDataMap = new HashMap<>();
-                
+
                 // 获取所有实体
-                Collection<java.util.UUID> entityUuids = 
-                    ServerEntityManager.getInstance().getAllEntityUuids();
-                
                 for (java.util.UUID uuid : entityUuids) {
                     EntityCollection entityCollection = 
                         ServerEntityManager.getInstance().getEntity(uuid);
@@ -157,11 +176,15 @@ public class AnimationSyncManager {
             }
             
             // 发送数据包
-            for (Map.Entry<ServerPlayer, Map<Integer, EntityBoneSyncData>> entry : 
+            for (Map.Entry<ServerPlayer, Map<Integer, EntityBoneSyncData>> entry :
                  playerSyncData.entrySet()) {
                 sendAnimationSyncPacket(entry.getKey(), entry.getValue());
             }
-            
+
+            GeckoLib.LOGGER.debug("[AnimationSyncManager] Sent animation sync packets to {} players, total entities synced: {}",
+                playerSyncData.size(),
+                playerSyncData.values().stream().mapToInt(Map::size).sum());
+
         } catch (Exception e) {
             GeckoLib.LOGGER.error("Error syncing animations: {}", e.getMessage(), e);
         }
@@ -195,6 +218,9 @@ public class AnimationSyncManager {
     private Map<String, CompressedBoneTransform> calculateDelta(
             int entityId,
             Map<String, CompressedBoneTransform> currentTransforms) {
+        
+        // 检查断点：差异检测
+        NetworkDebugHelper.getInstance().checkBreakpoint(NetworkDebugHelper.BreakpointType.DELTA_DETECTION, entityId);
         
         Map<String, CompressedBoneTransform> delta = new HashMap<>();
         Map<String, CompressedBoneTransform> lastTransforms = 
@@ -235,6 +261,12 @@ public class AnimationSyncManager {
         if (entityDataMap.isEmpty()) return;
         
         try {
+            // 检查断点：发送前
+            NetworkDebugHelper debugHelper = NetworkDebugHelper.getInstance();
+            for (int entityId : entityDataMap.keySet()) {
+                debugHelper.checkBreakpoint(NetworkDebugHelper.BreakpointType.BEFORE_SEND, entityId);
+            }
+            
             // 创建数据包
             AnimationSyncPacket packet = AnimationSyncPacket.createDeltaSync(entityDataMap);
             
@@ -271,6 +303,11 @@ public class AnimationSyncManager {
                 packetSize,
                 processingTime
             );
+            
+            // 检查断点：发送后
+            for (int entityId : entityDataMap.keySet()) {
+                debugHelper.checkBreakpoint(NetworkDebugHelper.BreakpointType.AFTER_SEND, entityId);
+            }
             
         } catch (Exception e) {
             AnimationSyncLogger.logError("发送动画同步数据包失败", e);

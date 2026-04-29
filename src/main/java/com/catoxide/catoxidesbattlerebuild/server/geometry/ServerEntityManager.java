@@ -6,6 +6,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
+import software.bernie.geckolib.GeckoLib;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -68,9 +69,33 @@ public class ServerEntityManager {
     
     /**
      * 注册实体（重载方法，接受Entity参数）
+     * 使用EntityCollectionFactory创建包含实际Entity引用的EntityCollection
      */
     public void registerEntity(net.minecraft.world.entity.Entity entity, net.minecraft.resources.ResourceLocation modelLocation) {
-        registerEntity(entity.getUUID(), entity.getId(), modelLocation.toString());
+        UUID uuid = entity.getUUID();
+        long entityId = entity.getId();
+
+        // 检查是否已存在
+        if (entityMap.containsKey(uuid)) {
+            GeckoLib.LOGGER.debug("Entity {} already registered in entityMap, skipping", uuid);
+            return;
+        }
+
+        // 使用EntityCollectionFactory创建EntityCollection（这会包含实体引用）
+        EntityCollection entityCollection = EntityCollectionFactory.getInstance()
+                .createEntityCollection(entity, modelLocation);
+
+        if (entityCollection == null) {
+            GeckoLib.LOGGER.error("Failed to create EntityCollection for entity: {} with model: {}", uuid, modelLocation);
+            return;
+        }
+
+        // 存储到entityMap和idMap
+        entityMap.put(uuid, entityCollection);
+        idMap.put(entityId, uuid);
+
+        GeckoLib.LOGGER.info("[ServerEntityManager] Registered entity {} with model {} - entityCollection.isValid()={}",
+                uuid, modelLocation, entityCollection.isValid());
     }
     
     /**

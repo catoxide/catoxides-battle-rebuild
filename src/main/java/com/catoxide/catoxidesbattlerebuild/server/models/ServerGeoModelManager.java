@@ -1,6 +1,8 @@
 package com.catoxide.catoxidesbattlerebuild.server.models;
 
 import com.catoxide.catoxidesbattlerebuild.server.geometry.EntityCollection;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.EntityCollectionFactory;
+import com.catoxide.catoxidesbattlerebuild.server.geometry.ServerEntityManager;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import software.bernie.geckolib.GeckoLib;
@@ -185,7 +187,59 @@ public class ServerGeoModelManager {
         GeoAnimatable animatable = (GeoAnimatable) collection.entity(); // 已知entity是GeoAnimatable
         ResourceLocation modelLocation = collection.modelLocation();
 
+        // 更新动画
         updateAnimation(processor, modelLocation, animatable, partialTick);
+        
+        // 获取动画后的骨骼矩阵并更新EntityCollection
+        Map<String, org.joml.Matrix4f> boneMatrices = getBoneMatricesFromProcessor(processor);
+        GeckoLib.LOGGER.info("[ServerGeoModelManager] updateAnimation for {}: boneMatrices={}",
+            collection.entityId(), boneMatrices != null ? boneMatrices.size() : "null");
+
+        if (boneMatrices != null && !boneMatrices.isEmpty()) {
+            EntityCollectionFactory.getInstance().updateEntityCollection(collection, boneMatrices, null);
+            ServerEntityManager.getInstance().updateEntitySkeleton(collection.entityId(), boneMatrices);
+        }
+    }
+
+    /**
+     * 从AnimationProcessor获取骨骼矩阵
+     */
+    private Map<String, org.joml.Matrix4f> getBoneMatricesFromProcessor(AnimationProcessor<GeoAnimatable> processor) {
+        try {
+            // bones字段是 Map<String, GeoBone>
+            java.lang.reflect.Field bonesField = processor.getClass().getDeclaredField("bones");
+            bonesField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Map<String, software.bernie.geckolib.cache.object.GeoBone> bones =
+                (Map<String, software.bernie.geckolib.cache.object.GeoBone>) bonesField.get(processor);
+
+            // 将GeoBone转换为Matrix4f
+            Map<String, org.joml.Matrix4f> boneMatrices = new java.util.HashMap<>();
+            if (bones != null) {
+                for (Map.Entry<String, software.bernie.geckolib.cache.object.GeoBone> entry : bones.entrySet()) {
+                    software.bernie.geckolib.cache.object.GeoBone bone = entry.getValue();
+                    if (bone != null) {
+                        // 启用矩阵跟踪（如果尚未启用）
+                        if (!bone.isTrackingMatrices()) {
+                            bone.setTrackingMatrices(true);
+                        }
+                        // 获取世界空间矩阵（动画后的）
+                        org.joml.Matrix4f matrix = bone.getWorldSpaceMatrix();
+                        if (matrix != null) {
+                            boneMatrices.put(entry.getKey(), matrix);
+                        }
+                    }
+                }
+            }
+
+            GeckoLib.LOGGER.info("[ServerGeoModelManager] getBoneMatricesFromProcessor: found {} bones with matrices",
+                boneMatrices.size());
+            return boneMatrices;
+        } catch (Exception e) {
+            GeckoLib.LOGGER.error("[ServerGeoModelManager] Failed to get bone matrices from processor: {}", e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
     }
     //更新动画 - 基于资源位置和实体
     public void updateAnimation(ResourceLocation modelLocation, GeoAnimatable animatable, float partialTick) {
@@ -229,4 +283,4 @@ private long getUniqueIdForAnimatable(GeoAnimatable animatable) {
     }
 }
 
-
+

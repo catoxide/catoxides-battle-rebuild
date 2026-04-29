@@ -2,6 +2,7 @@ package com.catoxide.catoxidesbattlerebuild.network;
 
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkEvent;
 import software.bernie.geckolib.GeckoLib;
 
@@ -258,29 +259,35 @@ public class AnimationSyncPacket {
         context.get().enqueueWork(() -> {
             try {
                 net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-                if (mc.player == null) return;
+                if (mc.player == null) {
+                    System.out.println("[AnimationSyncPacket] Player is null, skipping");
+                    return;
+                }
                 
-                // 记录开始时间
                 long startTime = System.currentTimeMillis();
+                int entityCount = this.entityDataMap.size();
+                System.out.println("[AnimationSyncPacket] === HANDLE CALLED ===");
+                System.out.println("[AnimationSyncPacket] entityDataMap size: " + entityCount);
                 
-                // 记录接收到的实体数量
-                System.out.println("Received animation sync packet for " + entityDataMap.size() + " entities");
+                if (entityCount == 0) {
+                    System.out.println("[AnimationSyncPacket] entityDataMap is EMPTY!");
+                }
                 
-                // 处理每个实体的同步数据
-                for (EntityBoneSyncData syncData : entityDataMap.values()) {
+                for (EntityBoneSyncData syncData : this.entityDataMap.values()) {
                     int entityId = syncData.entityId;
+                    System.out.println("[AnimationSyncPacket] Processing entity: " + entityId);
                     
-                    // 获取客户端实体
                     net.minecraft.world.entity.Entity entity = mc.level.getEntity(entityId);
                     if (entity == null) {
-                        GeckoLib.LOGGER.warn("Entity {} not found on client", entityId);
+                        System.out.println("[AnimationSyncPacket] Entity " + entityId + " NOT FOUND on client");
                         continue;
                     }
                     
-                    // 应用骨骼变换
-                    applyBoneTransforms(entity, syncData);
+                    System.out.println("[AnimationSyncPacket] Found entity: " + entity.getType().toString());
+                    System.out.println("[AnimationSyncPacket] UUID: " + entity.getUUID());
+                    System.out.println("[AnimationSyncPacket] isFirstSync: " + syncData.isFirstSync);
                     
-                    // 应用动画状态
+                    applyBoneTransforms(entity, syncData);
                     applyAnimationState(entity, syncData.animationState);
                 }
                 
@@ -304,6 +311,12 @@ public class AnimationSyncPacket {
                     processingTime
                 );
                 
+                // 检查断点：接收后
+                NetworkDebugHelper debugHelper = NetworkDebugHelper.getInstance();
+                for (EntityBoneSyncData syncData : entityDataMap.values()) {
+                    debugHelper.checkBreakpoint(NetworkDebugHelper.BreakpointType.AFTER_RECEIVE, syncData.entityId);
+                }
+                
             } catch (Exception e) {
                 AnimationSyncLogger.logError("处理动画同步数据包失败", e);
             }
@@ -316,16 +329,69 @@ public class AnimationSyncPacket {
      * 应用骨骼变换到实体
      */
     private void applyBoneTransforms(net.minecraft.world.entity.Entity entity, EntityBoneSyncData syncData) {
-        // TODO: 实现骨骼变换应用逻辑
-        // 这里需要将压缩的骨骼变换应用到客户端实体的骨骼上
+        try {
+            com.catoxide.catoxidesbattlerebuild.client.manager.ClientHitboxManager hitboxManager = 
+                com.catoxide.catoxidesbattlerebuild.client.manager.ClientHitboxManager.getInstance();
+            
+            // 如果是首次同步，需要先注册实体
+            if (syncData.isFirstSync && syncData.modelLocation != null) {
+                GeckoLib.LOGGER.info("[AnimationSyncPacket] Attempting to register entity {} with model {}", 
+                    entity.getId(), syncData.modelLocation);
+                hitboxManager.registerEntity(entity.getUUID(), entity, syncData.modelLocation);
+                GeckoLib.LOGGER.info("[AnimationSyncPacket] Registered entity {} with model {}", 
+                    entity.getId(), syncData.modelLocation);
+            } else {
+                GeckoLib.LOGGER.info("[AnimationSyncPacket] Skipping registration: isFirstSync={}, modelLocation={}", 
+                    syncData.isFirstSync, syncData.modelLocation);
+            }
+            
+            // 获取实体的骨骼集合
+            Map<String, com.catoxide.catoxidesbattlerebuild.client.geometry.ClientBoneCollection> boneCollections = 
+                hitboxManager.getBoneCollections(entity.getUUID());
+            
+            if (boneCollections.isEmpty()) {
+                GeckoLib.LOGGER.warn("[AnimationSyncPacket] No bone collections for entity {}", entity.getId());
+                return;
+            }
+            
+            // 解压并应用每个骨骼的变换矩阵
+            for (Map.Entry<String, CompressedBoneTransform> entry : syncData.boneTransforms.entrySet()) {
+                String boneName = entry.getKey();
+                CompressedBoneTransform compressedTransform = entry.getValue();
+                
+                // 从压缩数据解压出完整的4x4变换矩阵
+                org.joml.Matrix4f worldTransform = compressedTransform.decompressMatrix();
+                
+                // 获取对应的骨骼集合
+                com.catoxide.catoxidesbattlerebuild.client.geometry.ClientBoneCollection boneCollection = 
+                    boneCollections.get(boneName);
+                
+                if (boneCollection != null) {
+                    // 更新骨骼的世界变换矩阵（会自动更新下属所有立方体的世界顶点）
+                    boneCollection.updateWorldTransform(worldTransform);
+                } else {
+                    GeckoLib.LOGGER.debug("[AnimationSyncPacket] Bone '{}' not found for entity {}", boneName, entity.getId());
+                }
+            }
+            
+            // 更新实体的位置（确保模型位置与实体位置同步）
+            hitboxManager.updateEntityHitboxes(entity.getUUID());
+            
+        } catch (Exception e) {
+            GeckoLib.LOGGER.error("[AnimationSyncPacket] Failed to apply bone transforms for entity {}", 
+                syncData.entityId, e);
+        }
     }
     
     /**
      * 应用动画状态到实体
      */
     private void applyAnimationState(net.minecraft.world.entity.Entity entity, EntityBoneSyncData.AnimationState animationState) {
-        // TODO: 实现动画状态应用逻辑
-        // 这里需要将动画状态应用到客户端实体的动画系统上
+        // 当前版本动画状态仅用于调试日志
+        // 未来可以这里接入GeckoLib的动画系统
+        GeckoLib.LOGGER.debug("[AnimationSyncPacket] Animation state for entity {}: name={}, time={}, speed={}, looping={}",
+            entity.getId(), animationState.animationName, animationState.animationTime, 
+            animationState.animationSpeed, animationState.looping);
     }
     
     /**
