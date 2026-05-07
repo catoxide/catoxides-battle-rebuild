@@ -94,7 +94,11 @@ public class AnimationSyncManager {
                 EntityCollection entityCollection = 
                     ServerEntityManager.getInstance().getEntity(uuid);
                 if (entityCollection != null && entityCollection.isValid()) {
-                    modelManager.updateAnimation(entityCollection, 0.0f);
+                    Entity entity = entityCollection.entity();
+                    if (entity != null && entity instanceof software.bernie.geckolib.core.animatable.GeoAnimatable) {
+                        net.minecraft.resources.ResourceLocation modelLocation = entityCollection.modelLocation();
+                        modelManager.updateAnimation(modelLocation, (software.bernie.geckolib.core.animatable.GeoAnimatable) entity, 0.0f);
+                    }
                 }
             }
 

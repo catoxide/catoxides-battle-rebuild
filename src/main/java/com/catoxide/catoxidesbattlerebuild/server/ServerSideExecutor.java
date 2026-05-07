@@ -141,7 +141,7 @@ public class ServerSideExecutor {
 
         // 2. 获取所有已加载的模型
         Collection<ResourceLocation> loadedModels =
-                ServerGeoModelManager.getInstance().getAllLoadedModelLocations();
+                ServerGeoModelManager.getInstance().getLoadedModelLocations();
 
         if (loadedModels == null || loadedModels.isEmpty()) {
             return null;

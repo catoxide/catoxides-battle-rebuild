@@ -130,12 +130,8 @@ public class ClientInitializer {
             }
             
             try {
-                // 更新所有实体的受击盒
-                ClientHitboxManager.getInstance().getAllBoneCollections().forEach((entityUuid, boneCollections) -> {
-                    ClientHitboxManager.getInstance().updateEntityHitboxes(entityUuid);
-                });
-                
                 // 渲染调试信息（使用BufferBuilder管线）
+                // 注意：骨骼矩阵已经在收到动画同步数据包时更新，不需要在此重新计算
                 if (HitboxDebugRenderer.isDebugEnabled()) {
                     // 获取相机位置
                     Vec3 camPos = mc.gameRenderer.getMainCamera().getPosition();

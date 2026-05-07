@@ -272,6 +272,15 @@ public class HitboxDebugRenderer {
             return;
         }
         
+        // 调试：打印世界顶点
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("[HitboxDebugRenderer] Cube '{}' world vertices:", cube.getId());
+            for (int i = 0; i < worldVertices.size(); i++) {
+                Vec3 v = worldVertices.get(i);
+                LOGGER.debug("  v" + i + ": (" + v.x + ", " + v.y + ", " + v.z + ")");
+            }
+        }
+        
         // 定义立方体的12条边（顶点索引对）
         int[][] edges = {
             {0, 1}, {1, 2}, {2, 3}, {3, 0}, // 后表面

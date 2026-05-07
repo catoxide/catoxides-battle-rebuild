@@ -369,13 +369,12 @@ public class AnimationSyncPacket {
                 if (boneCollection != null) {
                     // 更新骨骼的世界变换矩阵（会自动更新下属所有立方体的世界顶点）
                     boneCollection.updateWorldTransform(worldTransform);
+                    GeckoLib.LOGGER.debug("[AnimationSyncPacket] Updated bone '{}' world transform for entity {}", 
+                        boneName, entity.getId());
                 } else {
                     GeckoLib.LOGGER.debug("[AnimationSyncPacket] Bone '{}' not found for entity {}", boneName, entity.getId());
                 }
             }
-            
-            // 更新实体的位置（确保模型位置与实体位置同步）
-            hitboxManager.updateEntityHitboxes(entity.getUUID());
             
         } catch (Exception e) {
             GeckoLib.LOGGER.error("[AnimationSyncPacket] Failed to apply bone transforms for entity {}", 

@@ -77,11 +77,11 @@ public class BoneModelDataExtractor {
                 double[] rotation = cube.rotation() != null ? cube.rotation() : new double[]{0, 0, 0};
                 double[] pivot = cube.pivot() != null ? cube.pivot() : new double[]{0, 0, 0};
 
-                // 将double数组转换为Vec3
-                Vec3 originVec = new Vec3(origin[0], origin[1], origin[2]);
-                Vec3 sizeVec = new Vec3(size[0], size[1], size[2]);
+                // 将double数组转换为Vec3，并将像素坐标转换为方块坐标（除以16）
+                Vec3 originVec = new Vec3(origin[0] / 16.0, origin[1] / 16.0, origin[2] / 16.0);
+                Vec3 sizeVec = new Vec3(size[0] / 16.0, size[1] / 16.0, size[2] / 16.0);
                 Vec3 rotationVec = new Vec3(rotation[0], rotation[1], rotation[2]);
-                Vec3 pivotVec = new Vec3(pivot[0], pivot[1], pivot[2]);
+                Vec3 pivotVec = new Vec3(pivot[0] / 16.0, pivot[1] / 16.0, pivot[2] / 16.0);
 
                 // 计算originOffset：origin相对于pivot的偏移
                 Vec3 originOffsetVec = originVec.subtract(pivotVec);
@@ -102,12 +102,12 @@ public class BoneModelDataExtractor {
         // 获取骨骼的pivot数据
         double[] pivot = bone.pivot() != null ? bone.pivot() : new double[]{0, 0, 0};
 
-        // 创建骨骼静态数据
+        // 创建骨骼静态数据（pivot需要转换为方块坐标）
         BoneModelData.BoneStaticData boneStaticData = new BoneModelData.BoneStaticData(
                 bone.name(),
                 parentBoneName,
                 cubeStaticDataList,
-                new Vec3(pivot[0], pivot[1], pivot[2]), // 骨骼的局部pivot
+                new Vec3(pivot[0] / 16.0, pivot[1] / 16.0, pivot[2] / 16.0), // 骨骼的局部pivot（转换为方块坐标）
                 new Vec3(0, 0, 0), // 默认旋转
                 new Vec3(1, 1, 1)  // 默认缩放
         );
