@@ -1,16 +1,20 @@
 pluginManagement {
     repositories {
+        maven {
+            name = 'NeoForged'
+            url 'https://maven.neoforged.net/releases'
+        }
+        maven {
+            name = 'GeckoLib'
+            url 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
+        }
+        maven {
+            name = 'Modrinth'
+            url 'https://api.modrinth.com/maven'
+        }
         gradlePluginPortal()
-        maven {
-            name = 'MinecraftForge'
-            url = 'https://maven.minecraftforge.net/'
-        }
-        maven {
-            url = 'https://maven.parchmentmc.org'
-        }
+        mavenCentral()
     }
 }
 
-plugins {
-    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.7.0'
-}
+rootProject.name = 'CatoxidesBattleRebuild'

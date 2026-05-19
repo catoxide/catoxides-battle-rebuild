@@ -2,19 +2,18 @@ package com.catoxide.catoxidesbattlerebuild.registry;
 
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuild;
 import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
-import net.minecraftforge.registries.DeferredRegister;
-import net.minecraftforge.registries.ForgeRegistries;
-import net.minecraftforge.registries.RegistryObject;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredRegister;
 
 public class ModEntities {
-    // 创建延迟注册器
     public static final DeferredRegister<EntityType<?>> ENTITIES =
-            DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, CatoxidesBattleRebuild.MODID);
+            DeferredRegister.create(Registries.ENTITY_TYPE, CatoxidesBattleRebuild.MODID);
 
-    // 注册 ModularZombie
-    public static final RegistryObject<EntityType<ModularZombie>> MODULAR_ZOMBIE =
+    // 修正点：使用 DeferredHolder，泛型参数依次为：注册表类型，实际注册类型
+    public static final DeferredHolder<EntityType<?>, EntityType<ModularZombie>> MODULAR_ZOMBIE =
             ENTITIES.register("modular_zombie",
                     () -> EntityType.Builder.<ModularZombie>of(ModularZombie::new, MobCategory.MONSTER)
                             .sized(0.6f, 1.95f)

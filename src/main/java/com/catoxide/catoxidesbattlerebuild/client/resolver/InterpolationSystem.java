@@ -1,127 +1,108 @@
 package com.catoxide.catoxidesbattlerebuild.client.resolver;
 
+import com.catoxide.catoxidesbattlerebuild.util.LogManager;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-/**
- * 客户端插值系统
- * 负责平滑过渡骨骼变换矩阵
- */
 public class InterpolationSystem {
-    private static final Logger LOGGER = LoggerFactory.getLogger(InterpolationSystem.class);
-    
-    // 插值速度（0.0-1.0，值越大插值越快）
-    private static final float INTERPOLATION_SPEED = 0.3f;
-    
-    /**
-     * 插值两个矩阵
-     */
-    public static Matrix4f interpolateMatrix(Matrix4f from, Matrix4f to, float alpha) {
-        if (from == null || to == null) {
-            LOGGER.warn("[InterpolationSystem] Cannot interpolate null matrices");
-            return to != null ? new Matrix4f(to) : new Matrix4f().identity();
-        }
+
+    private static final float DEFAULT_INTERPOLATION_SPEED = 0.1f;
+
+    public static Vec3 interpolate(Vec3 start, Vec3 end, float alpha) {
+        float clampedAlpha = Math.max(0.0f, Math.min(1.0f, alpha));
         
-        // 提取平移、旋转、缩放
-        Vector3f fromTranslation = new Vector3f();
-        Vector3f fromScale = new Vector3f();
-        Quaternionf fromRotation = new Quaternionf();
-        from.getTranslation(fromTranslation);
-        from.getScale(fromScale);
-        from.getNormalizedRotation(fromRotation);
+        double x = start.x + (end.x - start.x) * clampedAlpha;
+        double y = start.y + (end.y - start.y) * clampedAlpha;
+        double z = start.z + (end.z - start.z) * clampedAlpha;
         
-        Vector3f toTranslation = new Vector3f();
-        Vector3f toScale = new Vector3f();
-        Quaternionf toRotation = new Quaternionf();
-        to.getTranslation(toTranslation);
-        to.getScale(toScale);
-        to.getNormalizedRotation(toRotation);
+        return new Vec3(x, y, z);
+    }
+
+    public static Quaternionf interpolate(Quaternionf start, Quaternionf end, float alpha) {
+        float clampedAlpha = Math.max(0.0f, Math.min(1.0f, alpha));
         
-        // 插值
-        Vector3f interpolatedTranslation = new Vector3f(fromTranslation).lerp(toTranslation, alpha);
-        Vector3f interpolatedScale = new Vector3f(fromScale).lerp(toScale, alpha);
-        Quaternionf interpolatedRotation = new Quaternionf(fromRotation).slerp(toRotation, alpha);
+        Quaternionf result = new Quaternionf();
+        start.slerp(end, clampedAlpha, result);
         
-        // 构建插值后的矩阵
-        Matrix4f result = new Matrix4f().identity()
-            .translate(interpolatedTranslation)
-            .rotate(interpolatedRotation)
-            .scale(interpolatedScale);
-        
-        LOGGER.debug("[InterpolationSystem] Interpolated matrices: alpha={}, from={}, to={}", 
-                alpha, from, to);
+        LogManager.clientDebug("InterpolationSystem", "Interpolated quaternion: alpha={}", clampedAlpha);
         
         return result;
     }
-    
-    /**
-     * 使用默认插值速度插值两个矩阵
-     */
-    public static Matrix4f interpolateMatrix(Matrix4f from, Matrix4f to) {
-        return interpolateMatrix(from, to, INTERPOLATION_SPEED);
-    }
-    
-    /**
-     * 插值两个向量
-     */
-    public static Vector3f interpolateVector(Vector3f from, Vector3f to, float alpha) {
-        if (from == null || to == null) {
-            LOGGER.warn("[InterpolationSystem] Cannot interpolate null vectors");
-            return to != null ? new Vector3f(to) : new Vector3f();
-        }
+
+    public static Matrix4f interpolate(Matrix4f start, Matrix4f end, float alpha) {
+        Vector3f startScale = new Vector3f();
+        Vector3f endScale = new Vector3f();
+        Vector3f startTranslation = new Vector3f();
+        Vector3f endTranslation = new Vector3f();
+        Quaternionf startRotation = new Quaternionf();
+        Quaternionf endRotation = new Quaternionf();
         
-        Vector3f result = new Vector3f(from).lerp(to, alpha);
-        LOGGER.debug("[InterpolationSystem] Interpolated vectors: alpha={}, from={}, to={}", 
-                alpha, from, to);
+        decomposeMatrix(start, startTranslation, startRotation, startScale);
+        decomposeMatrix(end, endTranslation, endRotation, endScale);
+        
+        Vector3f interpolatedTranslation = new Vector3f(
+            interpolateComponent(startTranslation.x(), endTranslation.x(), alpha),
+            interpolateComponent(startTranslation.y(), endTranslation.y(), alpha),
+            interpolateComponent(startTranslation.z(), endTranslation.z(), alpha)
+        );
+        
+        Quaternionf interpolatedRotation = interpolate(startRotation, endRotation, alpha);
+        
+        Vector3f interpolatedScale = new Vector3f(
+            interpolateComponent(startScale.x(), endScale.x(), alpha),
+            interpolateComponent(startScale.y(), endScale.y(), alpha),
+            interpolateComponent(startScale.z(), endScale.z(), alpha)
+        );
+        
+        Matrix4f result = new Matrix4f();
+        result.translation(interpolatedTranslation);
+        result.rotate(interpolatedRotation);
+        result.scale(interpolatedScale);
+        
         return result;
     }
-    
-    /**
-     * 使用默认插值速度插值两个向量
-     */
-    public static Vector3f interpolateVector(Vector3f from, Vector3f to) {
-        return interpolateVector(from, to, INTERPOLATION_SPEED);
+
+    private static float interpolateComponent(float start, float end, float alpha) {
+        return start + (end - start) * alpha;
     }
-    
-    /**
-     * 插值两个四元数
-     */
-    public static Quaternionf interpolateQuaternion(Quaternionf from, Quaternionf to, float alpha) {
-        if (from == null || to == null) {
-            LOGGER.warn("[InterpolationSystem] Cannot interpolate null quaternions");
-            return to != null ? new Quaternionf(to) : new Quaternionf();
-        }
+
+    private static void decomposeMatrix(Matrix4f matrix, Vector3f translation, 
+            Quaternionf rotation, Vector3f scale) {
+        translation.set(matrix.m30(), matrix.m31(), matrix.m32());
         
-        Quaternionf result = new Quaternionf(from).slerp(to, alpha);
-        LOGGER.debug("[InterpolationSystem] Interpolated quaternions: alpha={}, from={}, to={}", 
-                alpha, from, to);
-        return result;
+        float sx = (float) Math.sqrt(matrix.m00() * matrix.m00() + matrix.m01() * matrix.m01() + matrix.m02() * matrix.m02());
+        float sy = (float) Math.sqrt(matrix.m10() * matrix.m10() + matrix.m11() * matrix.m11() + matrix.m12() * matrix.m12());
+        float sz = (float) Math.sqrt(matrix.m20() * matrix.m20() + matrix.m21() * matrix.m21() + matrix.m22() * matrix.m22());
+        
+        scale.set(sx, sy, sz);
+        
+        Matrix4f rotationMatrix = new Matrix4f(matrix);
+        rotationMatrix.m00(matrix.m00() / sx);
+        rotationMatrix.m01(matrix.m01() / sx);
+        rotationMatrix.m02(matrix.m02() / sx);
+        rotationMatrix.m10(matrix.m10() / sy);
+        rotationMatrix.m11(matrix.m11() / sy);
+        rotationMatrix.m12(matrix.m12() / sy);
+        rotationMatrix.m20(matrix.m20() / sz);
+        rotationMatrix.m21(matrix.m21() / sz);
+        rotationMatrix.m22(matrix.m22() / sz);
+        
+        rotation.setFromUnnormalized(rotationMatrix);
     }
-    
-    /**
-     * 使用默认插值速度插值两个四元数
-     */
-    public static Quaternionf interpolateQuaternion(Quaternionf from, Quaternionf to) {
-        return interpolateQuaternion(from, to, INTERPOLATION_SPEED);
+
+    public static float smoothstep(float edge0, float edge1, float x) {
+        float t = Math.max(0.0f, Math.min(1.0f, (x - edge0) / (edge1 - edge0)));
+        return t * t * (3.0f - 2.0f * t);
     }
-    
-    /**
-     * 设置插值速度
-     */
-    public static void setInterpolationSpeed(float speed) {
-        LOGGER.info("[InterpolationSystem] Setting interpolation speed: old={}, new={}", 
-                INTERPOLATION_SPEED, speed);
-        // 注意：这里需要修改为实例变量或使用其他方式存储
-        // 当前实现中是静态常量，需要重构为实例变量
+
+    public static float easeOutCubic(float t) {
+        float f = 1.0f - t;
+        return 1.0f - f * f * f;
     }
-    
-    /**
-     * 获取插值速度
-     */
-    public static float getInterpolationSpeed() {
-        return INTERPOLATION_SPEED;
+
+    public static float easeInOutCubic(float t) {
+        return t < 0.5f ? 4.0f * t * t * t : 1.0f - (float)Math.pow(-2.0f * t + 2.0f, 3.0f) / 2.0f;
     }
 }
