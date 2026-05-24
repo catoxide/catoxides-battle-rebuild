@@ -1,0 +1,25 @@
+modLoader="javafml"
+loaderVersion="[1,]"
+license="All Rights Reserved"
+
+[[mods]]
+modId="catoxidesbattlerebuild"
+version="0.2.0-alpha"
+displayName="Catoxide's battle rebuild"
+authors="Catoxide,FAS_Hood"
+description='''Example mod description.
+Newline characters can be used and will be replaced properly.'''
+
+[[dependencies.catoxidesbattlerebuild]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.221,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.catoxidesbattlerebuild]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1]"
+ordering="NONE"
+side="BOTH"

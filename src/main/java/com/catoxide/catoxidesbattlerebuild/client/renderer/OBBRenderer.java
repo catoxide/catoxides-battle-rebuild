@@ -62,10 +62,12 @@ public class OBBRenderer {
         Vector4f startVec = poseMatrix.transform(new Vector4f(start.x(), start.y(), start.z(), 1.0f));
         Vector4f endVec = poseMatrix.transform(new Vector4f(end.x(), end.y(), end.z(), 1.0f));
 
-        int color = (int)(alpha * 255) << 24 | (int)(r * 255) << 16 | (int)(g * 255) << 8 | (int)(b * 255);
-
-        buffer.addVertex(startVec.x(), startVec.y(), startVec.z(), color, 0, 0, 0, 0, normal.x(), normal.y(), normal.z());
-        buffer.addVertex(endVec.x(), endVec.y(), endVec.z(), color, 0, 0, 0, 0, normal.x(), normal.y(), normal.z());
+        buffer.addVertex(startVec.x(), startVec.y(), startVec.z())
+              .setColor((int)(r * 255), (int)(g * 255), (int)(b * 255), (int)(alpha * 255))
+              .setNormal(normal.x(), normal.y(), normal.z());
+        buffer.addVertex(endVec.x(), endVec.y(), endVec.z())
+              .setColor((int)(r * 255), (int)(g * 255), (int)(b * 255), (int)(alpha * 255))
+              .setNormal(normal.x(), normal.y(), normal.z());
     }
 
     public static void renderAABB(VertexConsumer buffer, PoseStack poseStack, AABB aabb,
@@ -98,8 +100,12 @@ public class OBBRenderer {
             Vector4f v1Transformed = poseMatrix.transform(new Vector4f(v1.x(), v1.y(), v1.z(), 1.0f));
             Vector4f v2Transformed = poseMatrix.transform(new Vector4f(v2.x(), v2.y(), v2.z(), 1.0f));
 
-            buffer.addVertex(v1Transformed.x(), v1Transformed.y(), v1Transformed.z(), color, 0, 0, 0, 0, normal.x(), normal.y(), normal.z());
-            buffer.addVertex(v2Transformed.x(), v2Transformed.y(), v2Transformed.z(), color, 0, 0, 0, 0, normal.x(), normal.y(), normal.z());
+            buffer.addVertex(v1Transformed.x(), v1Transformed.y(), v1Transformed.z())
+                  .setColor((int)(r * 255), (int)(g * 255), (int)(b * 255), (int)(alpha * 255))
+                  .setNormal(normal.x(), normal.y(), normal.z());
+            buffer.addVertex(v2Transformed.x(), v2Transformed.y(), v2Transformed.z())
+                  .setColor((int)(r * 255), (int)(g * 255), (int)(b * 255), (int)(alpha * 255))
+                  .setNormal(normal.x(), normal.y(), normal.z());
         }
     }
 }
