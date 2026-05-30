@@ -11,21 +11,17 @@ public class LogManager {
     private static final Logger LOGGER = LoggerFactory.getLogger("CatoxidesBattleRebuild");
 
     private static final ConcurrentHashMap<String, Long> lastLogTime = new ConcurrentHashMap<>();
-    
+
     private static final ConcurrentHashMap<String, java.util.concurrent.ConcurrentLinkedQueue<String>> debugCache = new ConcurrentHashMap<>();
-    
+
     private static final long DEFAULT_MIN_INTERVAL = 100;
-    
+
     private static final long DEV_MODE_FLUSH_INTERVAL = 500;
-    
-    /**
-     * 强制启用开发模式 - 开发时可以直接设置为 true
-     * 设置为 true 后无需环境变量即可启用开发模式
-     */
+
     public static final boolean FORCE_DEV_MODE = true;
-    
+
     private static final AtomicBoolean devMode = new AtomicBoolean(false);
-    
+
     private static ScheduledExecutorService scheduler;
     private static final AtomicBoolean schedulerRunning = new AtomicBoolean(false);
 
@@ -52,6 +48,39 @@ public class LogManager {
         }
     }
 
+    public enum DevModule {
+        ANIMATION("Animation", true),
+        RENDER("Render", true),
+        MOB("Mob", true),
+        AI("AI", true),
+        COMBAT("Combat", true),
+        ALL("All", true);
+
+        private final String name;
+        private final AtomicBoolean enabled;
+
+        DevModule(String name, boolean defaultEnabled) {
+            this.name = name;
+            this.enabled = new AtomicBoolean(defaultEnabled);
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public boolean isEnabled() {
+            return enabled.get();
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled.set(enabled);
+        }
+
+        public void toggle() {
+            this.enabled.set(!this.enabled.get());
+        }
+    }
+
     static {
         String devModeEnv = System.getProperty("catoxide.devmode", System.getenv("CATOXIDE_DEVMODE"));
         if (FORCE_DEV_MODE || "true".equalsIgnoreCase(devModeEnv) || "1".equals(devModeEnv)) {
@@ -63,6 +92,7 @@ public class LogManager {
         if (devMode.compareAndSet(false, true)) {
             LOGGER.info("[*] [LogManager] ========== DEVELOPMENT MODE ENABLED ==========");
             LOGGER.info("[*] [LogManager] Debug logs will be flushed to INFO every {}ms", DEV_MODE_FLUSH_INTERVAL);
+            logDevModulesStatus();
             startDevModeScheduler();
         }
     }
@@ -84,6 +114,28 @@ public class LogManager {
         return devMode.get();
     }
 
+    public static boolean isModuleEnabled(DevModule module) {
+        return isDevMode() && module.isEnabled();
+    }
+
+    public static void setModuleEnabled(DevModule module, boolean enabled) {
+        module.setEnabled(enabled);
+        LOGGER.info("[*] [LogManager] Module '{}' {}", module.getName(), enabled ? "ENABLED" : "DISABLED");
+    }
+
+    public static void toggleModule(DevModule module) {
+        module.toggle();
+        LOGGER.info("[*] [LogManager] Module '{}' {}", module.getName(), module.isEnabled() ? "ENABLED" : "DISABLED");
+    }
+
+    public static void logDevModulesStatus() {
+        LOGGER.info("[*] [LogManager] ========== DEV MODULES STATUS ==========");
+        for (DevModule module : DevModule.values()) {
+            LOGGER.info("[*] [LogManager]   {}: {}", module.getName(), module.isEnabled() ? "ON" : "OFF");
+        }
+        LOGGER.info("[*] [LogManager] =========================================");
+    }
+
     private static void startDevModeScheduler() {
         if (schedulerRunning.compareAndSet(false, true)) {
             scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -91,7 +143,7 @@ public class LogManager {
                 t.setDaemon(true);
                 return t;
             });
-            
+
             scheduler.scheduleAtFixedRate(() -> {
                 try {
                     flushDebugCache();
@@ -119,7 +171,6 @@ public class LogManager {
         int totalEntries = debugCache.values().stream().mapToInt(java.util.concurrent.ConcurrentLinkedQueue::size).sum();
 
         if (totalEntries == 0) {
-            LOGGER.info("[*] [LogManager] --- DEBUG FLUSH (empty) ---");
             return;
         }
 
@@ -284,10 +335,59 @@ public class LogManager {
         clientDebugThrottled(tag, transformInfo, 500);
     }
 
+    public static void animationDebug(String entityId, String animationName, String additionalInfo) {
+        if (isModuleEnabled(DevModule.ANIMATION)) {
+            String message = String.format("[Entity:%s] Anim:%s | %s", entityId, animationName, additionalInfo);
+            clientDebug("Animation", message);
+        }
+    }
+
+    public static void animationDebug(String entityId, String animationName) {
+        animationDebug(entityId, animationName, "");
+    }
+
+    public static void animationDebug(String entityId, String animationName, String additionalInfo, long minIntervalMs) {
+        if (isModuleEnabled(DevModule.ANIMATION)) {
+            String tag = "Animation:" + entityId;
+            String message = String.format("[Entity:%s] Anim:%s | %s", entityId, animationName, additionalInfo);
+            clientDebugThrottled(tag, message, minIntervalMs);
+        }
+    }
+
+    public static void mobDebug(String entityId, String message) {
+        if (isModuleEnabled(DevModule.MOB)) {
+            clientDebug("Mob", String.format("[Entity:%s] %s", entityId, message));
+        }
+    }
+
+    public static void renderDebug(String message) {
+        if (isModuleEnabled(DevModule.RENDER)) {
+            clientDebug("Render", message);
+        }
+    }
+
+    public static void renderDebug(String format, Object... args) {
+        if (isModuleEnabled(DevModule.RENDER)) {
+            clientDebug("Render", String.format(format, args));
+        }
+    }
+
+    public static void aiDebug(String entityId, String message) {
+        if (isModuleEnabled(DevModule.AI)) {
+            serverDebug("AI", String.format("[Entity:%s] %s", entityId, message));
+        }
+    }
+
+    public static void combatDebug(String entityId, String message) {
+        if (isModuleEnabled(DevModule.COMBAT)) {
+            serverDebug("Combat", String.format("[Entity:%s] %s", entityId, message));
+        }
+    }
+
     private static boolean checkRateLimit(String tag, long minIntervalMs) {
         long now = System.currentTimeMillis();
         Long lastTime = lastLogTime.get(tag);
-        
+
         if (lastTime == null || now - lastTime >= minIntervalMs) {
             lastLogTime.put(tag, now);
             return true;
@@ -297,7 +397,7 @@ public class LogManager {
 
     private static void log(LogLevel level, LogSource source, String tag, String message) {
         String formattedMessage = String.format("%s [%s] %s", source.getPrefix(), tag, message);
-        
+
         switch (level) {
             case DEBUG:
                 LOGGER.debug(formattedMessage);
@@ -316,7 +416,7 @@ public class LogManager {
 
     private static void log(LogLevel level, LogSource source, String tag, String message, Throwable t) {
         String formattedMessage = String.format("%s [%s] %s", source.getPrefix(), tag, message);
-        
+
         switch (level) {
             case DEBUG:
                 LOGGER.debug(formattedMessage, t);
@@ -335,15 +435,5 @@ public class LogManager {
 
     public static void clearRateLimitCache() {
         lastLogTime.clear();
-    }
-
-    public static long getDefaultMinInterval() {
-        return DEFAULT_MIN_INTERVAL;
-    }
-
-    public static void flushDebugCacheNow() {
-        if (isDevMode()) {
-            flushDebugCache();
-        }
     }
 }

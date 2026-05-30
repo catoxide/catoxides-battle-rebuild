@@ -20,11 +20,12 @@ public class SmartAttackGoal extends Goal {
     public boolean canUse() {
         if (aiManager == null) {
             aiManager = zombie.getAIManager();
-            return false;
         }
-
+        
+        if (aiManager == null) return false;
+        
         LivingEntity target = zombie.getTarget();
-        return target != null && target.isAlive();
+        return target != null && target.isAlive() && !aiManager.shouldLoseTarget();
     }
 
     @Override
@@ -40,11 +41,7 @@ public class SmartAttackGoal extends Goal {
     @Override
     public void tick() {
         LivingEntity target = zombie.getTarget();
-        if (target == null) return;
-
-        if (attackDelay > 0) {
-            attackDelay--;
-        }
+        if (target == null || aiManager == null) return;
 
         zombie.getLookControl().setLookAt(target, 30.0F, 30.0F);
 
@@ -53,20 +50,11 @@ public class SmartAttackGoal extends Goal {
 
         if (distance <= (attackRange * attackRange)) {
             zombie.getNavigation().stop();
-
-            if (attackDelay <= 0 && !aiManager.isWindingUp()) {
-                aiManager.startWindUp();
-                attackDelay = 20;
-            }
         } else {
-            if (!zombie.getNavigation().isDone()) {
-                zombie.getNavigation().moveTo(target, 1.0D);
-            } else {
+            if (!zombie.getNavigation().isInProgress()) {
                 zombie.getNavigation().moveTo(target, 1.0D);
             }
         }
-
-        zombie.getLookControl().setLookAt(target, 30.0F, 30.0F);
     }
 
     @Override

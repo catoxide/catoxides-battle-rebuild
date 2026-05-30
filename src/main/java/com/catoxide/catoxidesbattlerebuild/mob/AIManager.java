@@ -41,6 +41,7 @@ public class AIManager {
     }
 
     public void tick() {
+        updateTargetTracking();
         updateAttackRange();
         combatSystem.tick();
 

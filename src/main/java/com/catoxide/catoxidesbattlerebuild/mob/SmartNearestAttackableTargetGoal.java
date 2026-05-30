@@ -1,6 +1,5 @@
 package com.catoxide.catoxidesbattlerebuild.mob;
 
-import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
 

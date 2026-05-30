@@ -1,7 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.mob;
 
+import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import software.bernie.geckolib.animation.AnimatableManager;
 import software.bernie.geckolib.animation.AnimationController;
 import software.bernie.geckolib.animation.AnimationState;
@@ -10,10 +10,10 @@ import software.bernie.geckolib.animation.RawAnimation;
 
 public class ZombieAnimationController {
     private final ModularZombie zombie;
+    private AnimationController<ModularZombie> controller;
 
-    private String currentAnimation = "";
-    private boolean animationLocked = false;
-    private int animationLockTime = 0;
+    private RawAnimation currentAnimation = IDLE_ANIMATION;
+    private String currentAnimationName = "animation.zombie.still";
 
     private static final RawAnimation IDLE_ANIMATION = RawAnimation.begin().thenLoop("animation.zombie.still");
     private static final RawAnimation WALKING_ANIMATION = RawAnimation.begin().thenLoop("animation.zombie.walking");
@@ -29,7 +29,11 @@ public class ZombieAnimationController {
     }
 
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
-        controllers.add(new AnimationController<>(zombie, "MainController", 5, this::mainControllerHandler));
+        controller = new AnimationController<>(zombie, "MainController", 5, this::mainControllerHandler);
+        controller.triggerableAnim("hit_front", HIT_FRONT_ANIMATION);
+        controller.triggerableAnim("hit_back", HIT_BACK_ANIMATION);
+        controller.receiveTriggeredAnimations();
+        controllers.add(controller);
     }
 
     private PlayState mainControllerHandler(AnimationState<ModularZombie> state) {
@@ -37,169 +41,128 @@ public class ZombieAnimationController {
             return PlayState.STOP;
         }
 
-        if (zombie.isHit()) {
-            return handleHitAnimation(state);
+        if (controller != null && controller.isPlayingTriggeredAnimation()) {
+            LogManager.animationDebug(String.valueOf(zombie.getId()), "triggered_anim_playing", "", 100);
+            return PlayState.CONTINUE;
         }
 
+        if (zombie.isHit()) {
+            LogManager.animationDebug(String.valueOf(zombie.getId()), "hit_pending", "isPlaying=false but isHit=true", 100);
+            return PlayState.CONTINUE;
+        }
+
+        RawAnimation targetAnimation = determineTargetAnimation();
+
+        if (targetAnimation != currentAnimation) {
+            String newAnimName = getAnimationName(targetAnimation);
+            if (isHitTransition(currentAnimationName, newAnimName) || isReturnToStill(newAnimName)) {
+                String transition = String.format("TRANSITION: %s -> %s", currentAnimationName, newAnimName);
+                LogManager.animationDebug(String.valueOf(zombie.getId()), newAnimName, transition);
+            }
+            state.getController().setAnimation(targetAnimation);
+            currentAnimation = targetAnimation;
+            currentAnimationName = newAnimName;
+        }
+
+        return PlayState.CONTINUE;
+    }
+
+    private String getAnimationName(RawAnimation anim) {
+        if (anim == IDLE_ANIMATION) return "animation.zombie.still";
+        if (anim == WALKING_ANIMATION) return "animation.zombie.walking";
+        if (anim == AGGRESSIVE_ANIMATION) return "animation.zombie.aggressive";
+        if (anim == RUNNING_ANIMATION) return "animation.zombie.running";
+        if (anim == ALERT_ANIMATION) return "animation.zombie.alert";
+        if (anim == ATTACK_ANIMATION) return "animation.zombie.attack";
+        if (anim == HIT_FRONT_ANIMATION) return "animation.zombie.hit_front";
+        if (anim == HIT_BACK_ANIMATION) return "animation.zombie.hit_back";
+        return "unknown";
+    }
+
+    private boolean isHitTransition(String oldAnim, String newAnim) {
+        return newAnim.contains("hit_front") || newAnim.contains("hit_back");
+    }
+
+    private boolean isReturnToStill(String newAnim) {
+        return newAnim.contains("still") || newAnim.contains("idle");
+    }
+
+    private RawAnimation determineTargetAnimation() {
         if (zombie.swinging) {
-            return handleAttackAnimation(state);
+            return ATTACK_ANIMATION;
         }
 
         if (zombie.isWindingUp() || zombie.isInPostAttackCooldown()) {
-            return handleCombatAnimation(state);
+            return AGGRESSIVE_ANIMATION;
         }
 
         if (zombie.isAlerting() && !zombie.isAlertCompleted()) {
-            return handleAlertAnimation(state);
+            return ALERT_ANIMATION;
         }
 
         if (zombie.hasTarget() && zombie.isAlertCompleted()) {
-            return handleTargetMovementAnimation(state);
+            return determineTargetMovementAnimation();
         }
 
-        return handleIdleMovementAnimation(state);
+        return determineIdleAnimation();
     }
 
-    private PlayState handleHitAnimation(AnimationState<ModularZombie> state) {
-        animationLocked = true;
-        animationLockTime = 20;
-
-        RawAnimation hitAnim = zombie.getRandom().nextBoolean() ? HIT_FRONT_ANIMATION : HIT_BACK_ANIMATION;
-
-        if (!"hit".equals(currentAnimation)) {
-            currentAnimation = "hit";
-            state.getController().setAnimation(hitAnim);
-            return PlayState.CONTINUE;
-        }
-
-        return PlayState.CONTINUE;
-    }
-
-    private PlayState handleAttackAnimation(AnimationState<ModularZombie> state) {
-        animationLocked = true;
-        animationLockTime = 20;
-
-        if (!"attack".equals(currentAnimation)) {
-            currentAnimation = "attack";
-            state.getController().setAnimation(ATTACK_ANIMATION);
-            return PlayState.CONTINUE;
-        }
-
-        return PlayState.CONTINUE;
-    }
-
-    private PlayState handleCombatAnimation(AnimationState<ModularZombie> state) {
-        if (!"aggressive".equals(currentAnimation)) {
-            currentAnimation = "aggressive";
-            state.getController().setAnimation(AGGRESSIVE_ANIMATION);
-            return PlayState.CONTINUE;
-        }
-
-        return PlayState.CONTINUE;
-    }
-
-    private PlayState handleAlertAnimation(AnimationState<ModularZombie> state) {
-        if (!"alert".equals(currentAnimation)) {
-            currentAnimation = "alert";
-            state.getController().setAnimation(ALERT_ANIMATION);
-            return PlayState.CONTINUE;
-        }
-
-        return PlayState.CONTINUE;
-    }
-
-    private PlayState handleTargetMovementAnimation(AnimationState<ModularZombie> state) {
-        if (shouldMoveToTarget()) {
-            if (!"running".equals(currentAnimation)) {
-                currentAnimation = "running";
-                state.getController().setAnimation(RUNNING_ANIMATION);
-                return PlayState.CONTINUE;
-            }
-        } else {
-            if (!"aggressive".equals(currentAnimation)) {
-                currentAnimation = "aggressive";
-                state.getController().setAnimation(AGGRESSIVE_ANIMATION);
-                return PlayState.CONTINUE;
-            }
-        }
-
-        return PlayState.CONTINUE;
-    }
-
-    private PlayState handleIdleMovementAnimation(AnimationState<ModularZombie> state) {
-        if (zombie.getDeltaMovement().horizontalDistanceSqr() > 0.001) {
-            if (!"walking".equals(currentAnimation)) {
-                currentAnimation = "walking";
-                state.getController().setAnimation(WALKING_ANIMATION);
-                return PlayState.CONTINUE;
-            }
-        } else {
-            if (!"idle".equals(currentAnimation)) {
-                currentAnimation = "idle";
-                state.getController().setAnimation(IDLE_ANIMATION);
-                return PlayState.CONTINUE;
-            }
-        }
-
-        return PlayState.CONTINUE;
-    }
-
-    private boolean shouldMoveToTarget() {
-        if (!zombie.hasTarget()) {
-            return false;
-        }
-
+    private RawAnimation determineTargetMovementAnimation() {
         LivingEntity target = zombie.getTarget();
         if (target == null) {
-            return false;
+            return AGGRESSIVE_ANIMATION;
         }
 
         double distance = zombie.distanceTo(target);
         double attackRange = zombie.getAIManager().getCurrentAttackRange();
 
         if (distance <= attackRange) {
-            return false;
+            return AGGRESSIVE_ANIMATION;
         }
 
-        PathNavigation navigation = zombie.getNavigation();
-        boolean hasPath = navigation.getPath() != null && !navigation.isDone();
+        if (!isMoving()) {
+            return AGGRESSIVE_ANIMATION;
+        }
 
-        return hasPath || distance > attackRange + 1.0;
+        return RUNNING_ANIMATION;
+    }
+
+    private RawAnimation determineIdleAnimation() {
+        if (zombie.getDeltaMovement().horizontalDistanceSqr() > 0.001) {
+            return WALKING_ANIMATION;
+        }
+        return IDLE_ANIMATION;
+    }
+
+    private boolean isMoving() {
+        return zombie.getDeltaMovement().horizontalDistanceSqr() > 0.001;
     }
 
     public void tick() {
-        if (animationLocked) {
-            animationLockTime--;
-            if (animationLockTime <= 0) {
-                animationLocked = false;
-            }
-        }
     }
 
     public void triggerHit() {
-        animationLocked = true;
-        animationLockTime = 20;
     }
 
     public void reset() {
-        currentAnimation = "idle";
-        animationLocked = false;
+        currentAnimation = IDLE_ANIMATION;
+        currentAnimationName = "animation.zombie.still";
     }
 
     public String getAnimationStateInfo() {
-        if (zombie.isHit()) return "受击状态";
+        if (controller != null && controller.isPlayingTriggeredAnimation()) return "受击动画播放中";
         if (zombie.swinging) return "攻击状态";
         if (zombie.isWindingUp()) return "攻击前摇";
         if (zombie.isInPostAttackCooldown()) return "攻击后冷却";
         if (zombie.isAlerting() && !zombie.isAlertCompleted()) return "警戒中";
         if (zombie.hasTarget() && zombie.isAlertCompleted()) {
-            return shouldMoveToTarget() ? "追击目标" : "警戒待机";
+            return determineTargetMovementAnimation() == RUNNING_ANIMATION ? "追击目标" : "警戒待机";
         }
         if (zombie.getDeltaMovement().horizontalDistanceSqr() > 0.001) return "随机移动";
         return "空闲状态";
     }
 
-    public void setCurrentAnimation(String animation) {
-        this.currentAnimation = animation;
+    public RawAnimation getCurrentAnimation() {
+        return currentAnimation;
     }
 }
