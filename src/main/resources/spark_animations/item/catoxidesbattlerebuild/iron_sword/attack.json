@@ -1,0 +1,31 @@
+{
+  "animations": {
+    "attack": {
+      "loop": "hold_on_last_frame",
+      "animation_length": 0.6,
+      "bones": {
+        "blade": {
+          "rotation": {
+            "0.0": { "post": [0, 0, 0], "lerp_mode": "linear" },
+            "0.15": { "post": [-60, 0, 15], "lerp_mode": "ease_in" },
+            "0.35": { "post": [-10, 0, -5], "lerp_mode": "ease_out" },
+            "0.6": { "post": [0, 0, 0], "lerp_mode": "linear" }
+          }
+        },
+        "handle": {
+          "rotation": {
+            "0.0": { "post": [0, 0, 0], "lerp_mode": "linear" },
+            "0.2": { "post": [15, 0, 10], "lerp_mode": "ease_in" },
+            "0.4": { "post": [-5, 0, -5], "lerp_mode": "ease_out" },
+            "0.6": { "post": [0, 0, 0], "lerp_mode": "linear" }
+          }
+        }
+      },
+      "timeline": {
+        "0.15": ["/* attack_start */"],
+        "0.25": ["/* hit_detection */"],
+        "0.4": ["/* attack_end */"]
+      }
+    }
+  }
+}

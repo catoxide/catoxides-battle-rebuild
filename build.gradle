@@ -27,12 +27,23 @@ sourceSets.main.resources {
 
 repositories {
     maven {
+        name = 'NeoForged'
+        url 'https://maven.neoforged.net/releases'
+    }
+    maven {
+        name = 'KotlinForForge'
+        url 'https://thedarkcolour.github.io/KotlinForForge/'
+    }
+    maven {
         name = 'GeckoLib'
         url 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
     }
     maven {
         name = 'Modrinth'
         url 'https://api.modrinth.com/maven'
+    }
+    flatDir {
+        dirs 'libs'
     }
 }
 
@@ -110,6 +121,12 @@ dependencies {
     // And its provides the option to then use net.minecraft as the group, and one of; client, server or joined as the module name, plus the game version as version.
     // For all intends and purposes: You can treat this dependency as if it is a normal library you would use.
     implementation "net.neoforged:neoforge:${neo_version}"
+
+    // KotlinForForge - required by Spark-Core (Kotlin mod)
+    implementation "thedarkcolour:kotlinforforge-neoforge:${kotlinforforge_version}"
+
+    // Spark-Core for bedrock model loading and server-side bone calculation
+    implementation files("libs/spark-core.jar")
 
     // GeckoLib for animations
     implementation "software.bernie.geckolib:geckolib-neoforge-1.21.1:${geckolib_version}"

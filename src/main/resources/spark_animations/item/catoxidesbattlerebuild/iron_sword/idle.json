@@ -1,0 +1,28 @@
+{
+  "animations": {
+    "idle": {
+      "loop": "loop",
+      "animation_length": 2.0,
+      "bones": {
+        "blade": {
+          "rotation": {
+            "0.0": { "post": [0, 0, 0], "lerp_mode": "linear" },
+            "0.5": { "post": [2, 1, -1], "lerp_mode": "ease_in_out" },
+            "1.0": { "post": [0, 0, 0], "lerp_mode": "ease_in_out" },
+            "1.5": { "post": [-2, -1, 1], "lerp_mode": "ease_in_out" },
+            "2.0": { "post": [0, 0, 0], "lerp_mode": "ease_in_out" }
+          }
+        },
+        "handle": {
+          "rotation": {
+            "0.0": { "post": [0, 0, 0], "lerp_mode": "linear" },
+            "0.5": { "post": [1, 0.5, -0.5], "lerp_mode": "ease_in_out" },
+            "1.0": { "post": [0, 0, 0], "lerp_mode": "ease_in_out" },
+            "1.5": { "post": [-1, -0.5, 0.5], "lerp_mode": "ease_in_out" },
+            "2.0": { "post": [0, 0, 0], "lerp_mode": "ease_in_out" }
+          }
+        }
+      }
+    }
+  }
+}

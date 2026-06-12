@@ -113,6 +113,10 @@ public class ZombieAnimationController {
             return AGGRESSIVE_ANIMATION;
         }
 
+        if (zombie.isSprinting()) {
+            return RUNNING_ANIMATION;
+        }
+
         double distance = zombie.distanceTo(target);
         double attackRange = zombie.getAIManager().getCurrentAttackRange();
 
@@ -120,7 +124,7 @@ public class ZombieAnimationController {
             return AGGRESSIVE_ANIMATION;
         }
 
-        if (!isMoving()) {
+        if (!zombie.getNavigation().isInProgress() && !isMoving()) {
             return AGGRESSIVE_ANIMATION;
         }
 

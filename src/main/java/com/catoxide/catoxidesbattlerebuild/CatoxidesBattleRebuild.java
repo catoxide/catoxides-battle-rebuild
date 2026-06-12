@@ -3,6 +3,7 @@ package com.catoxide.catoxidesbattlerebuild;
 import com.catoxide.catoxidesbattlerebuild.network.ModNetworkHandler;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEvents;
+import com.catoxide.catoxidesbattlerebuild.registry.ModWeapons;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.EntityBoneSystem;
 import com.catoxide.catoxidesbattlerebuild.server.damage.DamageProcessor;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
@@ -30,6 +31,7 @@ public class CatoxidesBattleRebuild {
         ITEMS.register(modEventBus);
         CREATIVE_MODE_TABS.register(modEventBus);
         ModEntities.ENTITIES.register(modEventBus);
+        ModWeapons.ITEMS.register(modEventBus);
 
         LogManager.serverInfo("CatoxidesBattleRebuild", "Mod initialization complete");
     }

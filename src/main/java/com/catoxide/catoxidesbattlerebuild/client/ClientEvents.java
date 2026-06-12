@@ -2,7 +2,6 @@ package com.catoxide.catoxidesbattlerebuild.client;
 
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
 import com.catoxide.catoxidesbattlerebuild.client.model.ModularZombieModel;
-import com.catoxide.catoxidesbattlerebuild.client.renderer.HitboxDebugRenderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombieRenderer;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
@@ -33,31 +32,12 @@ public class ClientEvents {
             }
         });
 
-        HitboxDebugRenderer.setDebugEnabled(true);
-        LogManager.clientInfo("ClientEvents", "HitboxDebugRenderer enabled");
+        LogManager.clientInfo("ClientEvents", "Client setup complete (HitboxDebugRenderer archived)");
     }
 
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) {
-            return;
-        }
-
-        if (!HitboxDebugRenderer.isDebugEnabled()) {
-            return;
-        }
-
-        PoseStack poseStack = event.getPoseStack();
-        Camera camera = Minecraft.getInstance().gameRenderer.getMainCamera();
-        
-        MultiBufferSource.BufferSource bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
-
-        poseStack.pushPose();
-        
-        poseStack.translate(-camera.getPosition().x, -camera.getPosition().y, -camera.getPosition().z);
-
-        HitboxDebugRenderer.renderDebugCubes(poseStack, bufferSource);
-
-        poseStack.popPose();
+        // HitboxDebugRenderer 功能已归档到 Deprecated&References
+        // 如需调试功能，请参考 Deprecated&References 目录
     }
 }

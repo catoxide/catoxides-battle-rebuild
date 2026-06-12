@@ -22,6 +22,15 @@ public class AIManager {
     private int postAttackCooldown = 0;
     private final int minPostAttackTime = 20;
 
+    // 冲刺相关
+    private boolean isSprinting = false;
+    private int sprintCooldown = 0;
+    private final int maxSprintCooldown = 120;  // 6秒冷却
+    private int sprintDuration = 0;
+    private final int maxSprintDuration = 30;   // 1.5秒冲刺
+    private final double sprintSpeedMultiplier = 1.5;
+    private final double sprintRange = 5.0;     // 5格内触发冲刺
+
     public AIManager(ModularZombie zombie) {
         this.zombie = zombie;
         this.combatSystem = new SmartCombatSystem(zombie, this);
@@ -56,6 +65,9 @@ public class AIManager {
         if (postAttackCooldown > 0) {
             postAttackCooldown--;
         }
+
+        // 冲刺逻辑
+        updateSprint();
     }
 
     private void updateAttackRange() {
@@ -166,5 +178,70 @@ public class AIManager {
 
     public void onHurt() {
         combatSystem.onHurt();
+        stopSprint();
+    }
+
+    // ==================== 冲刺相关方法 ====================
+
+    private void updateSprint() {
+        if (sprintCooldown > 0) {
+            sprintCooldown--;
+        }
+
+        if (isSprinting) {
+            sprintDuration++;
+
+            if (sprintDuration >= maxSprintDuration) {
+                stopSprint();
+            }
+        } else {
+            tryStartSprint();
+        }
+    }
+
+    private void tryStartSprint() {
+        if (sprintCooldown > 0) return;
+        if (isWindingUp) return;
+        if (postAttackCooldown > 0) return;
+
+        LivingEntity target = zombie.getTarget();
+        if (target == null || !target.isAlive()) return;
+
+        double distance = zombie.distanceTo(target);
+        // 在5格以内且超出攻击范围时冲刺
+        if (distance > currentAttackRange && distance <= sprintRange) {
+            startSprint();
+        }
+    }
+
+    private void startSprint() {
+        isSprinting = true;
+        sprintDuration = 0;
+        sprintCooldown = maxSprintCooldown;
+
+        zombie.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(originalSpeed * sprintSpeedMultiplier);
+        
+        // 冲刺时朝向目标并移动
+        LivingEntity target = zombie.getTarget();
+        if (target != null) {
+            zombie.getLookControl().setLookAt(target, 30.0F, 30.0F);
+            zombie.getNavigation().moveTo(target, 1.0D);
+        }
+    }
+
+    private void stopSprint() {
+        if (isSprinting) {
+            isSprinting = false;
+            sprintDuration = 0;
+            zombie.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(originalSpeed);
+        }
+    }
+
+    public boolean isSprinting() {
+        return isSprinting;
+    }
+
+    public boolean canSprint() {
+        return sprintCooldown == 0 && !isWindingUp && postAttackCooldown == 0;
     }
 }

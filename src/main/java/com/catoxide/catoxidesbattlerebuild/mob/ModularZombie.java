@@ -2,9 +2,14 @@ package com.catoxide.catoxidesbattlerebuild.mob;
 
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 
+import cn.solarmoon.spark_core.animation.IEntityAnimatable;
+import cn.solarmoon.spark_core.animation.anim.AnimController;
+import cn.solarmoon.spark_core.animation.model.ModelController;
+import cn.solarmoon.spark_core.animation.model.ModelIndex;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
@@ -19,7 +24,7 @@ import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
 import software.bernie.geckolib.animation.AnimatableManager;
 import software.bernie.geckolib.util.GeckoLibUtil;
 
-public class ModularZombie extends Zombie implements GeoEntity {
+public class ModularZombie extends Zombie implements GeoEntity, IEntityAnimatable<ModularZombie> {
     private int hitTime = 0;
     private LivingEntity lastTarget = null;
     private double lastDistanceToTarget = 0;
@@ -41,10 +46,35 @@ public class ModularZombie extends Zombie implements GeoEntity {
     private AIManager aiManager;
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
+    // Spark-Core animation system
+    private final AnimController animController = new AnimController(this);
+    private final ModelController modelController = new ModelController(this);
+
     public ModularZombie(EntityType<? extends Zombie> entityType, Level level) {
         super(entityType, level);
         this.aiManager = new AIManager(this);
         this.animationController = new ZombieAnimationController(this);
+    }
+
+    // ========== Spark-Core IEntityAnimatable implementation ==========
+    @Override
+    public ModularZombie getAnimatable() {
+        return this;
+    }
+
+    @Override
+    public AnimController getAnimController() {
+        return animController;
+    }
+
+    @Override
+    public ModelController getModelController() {
+        return modelController;
+    }
+
+    // ========== Spark-Core helpers ==========
+    public IEntityAnimatable<ModularZombie> getSparkAnimatable() {
+        return this;
     }
 
     public AIManager getAIManager() {
@@ -56,6 +86,10 @@ public class ModularZombie extends Zombie implements GeoEntity {
 
     public ZombieAnimationController getAnimationController() {
         return animationController;
+    }
+
+    public boolean isSprinting() {
+        return getAIManager().isSprinting();
     }
 
     @Override

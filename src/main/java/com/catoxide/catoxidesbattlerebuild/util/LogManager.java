@@ -18,7 +18,7 @@ public class LogManager {
 
     private static final long DEV_MODE_FLUSH_INTERVAL = 500;
 
-    public static final boolean FORCE_DEV_MODE = true;
+    public static final boolean FORCE_DEV_MODE = false;
 
     private static final AtomicBoolean devMode = new AtomicBoolean(false);
 
@@ -49,8 +49,8 @@ public class LogManager {
     }
 
     public enum DevModule {
-        ANIMATION("Animation", true),
-        RENDER("Render", true),
+        ANIMATION("Animation", false),
+        RENDER("Render", false),
         MOB("Mob", true),
         AI("AI", true),
         COMBAT("Combat", true),
