@@ -1,4 +1,4 @@
-package com.catoxide.catoxidesbattlerebuild.mob;
+package com.catoxide.catoxidesbattlerebuild.mob.zombie1;
 
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.world.entity.LivingEntity;

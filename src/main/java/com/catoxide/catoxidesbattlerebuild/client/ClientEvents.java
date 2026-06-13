@@ -2,6 +2,7 @@ package com.catoxide.catoxidesbattlerebuild.client;
 
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
 import com.catoxide.catoxidesbattlerebuild.client.model.ModularZombieModel;
+import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombie2Renderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombieRenderer;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
@@ -29,6 +30,14 @@ public class ClientEvents {
                 LogManager.clientInfo("ClientEvents", "ModularZombieRenderer registered successfully");
             } catch (Exception e) {
                 LogManager.clientError("ClientEvents", "Failed to register ModularZombieRenderer", e);
+            }
+            
+            try {
+                net.minecraft.client.renderer.entity.EntityRenderers.register(
+                    ModEntities.MODULAR_ZOMBIE_2.get(), ModularZombie2Renderer::new);
+                LogManager.clientInfo("ClientEvents", "ModularZombie2Renderer registered successfully");
+            } catch (Exception e) {
+                LogManager.clientError("ClientEvents", "Failed to register ModularZombie2Renderer", e);
             }
         });
 

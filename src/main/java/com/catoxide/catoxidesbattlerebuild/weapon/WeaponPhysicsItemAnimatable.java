@@ -8,6 +8,7 @@ import cn.solarmoon.spark_core.animation.model.ModelPose;
 import cn.solarmoon.spark_core.animation.model.origin.OCube;
 import cn.solarmoon.spark_core.animation.model.origin.OLocator;
 import cn.solarmoon.spark_core.animation.model.origin.OModel;
+import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import com.catoxide.catoxidesbattlerebuild.weapon.physics.OBBCollisionUtil;
 import com.catoxide.catoxidesbattlerebuild.weapon.physics.OBBCollisionUtil.OBB;
 import net.minecraft.world.entity.Entity;
@@ -43,6 +44,8 @@ public abstract class WeaponPhysicsItemAnimatable extends ItemAnimatable {
 
     public WeaponPhysicsItemAnimatable(net.minecraft.world.item.ItemStack itemStack, Level level) {
         super(itemStack, level);
+        LogManager.serverDebug("WeaponPhysicsItemAnimatable", 
+            "Initializing weapon animatable with bone name: {}", hitboxBoneName);
     }
 
     /**
@@ -87,8 +90,9 @@ public abstract class WeaponPhysicsItemAnimatable extends ItemAnimatable {
             attackCooldown -= 1f / 20f; // 假设 20 tick/s
         }
 
-        // 执行碰撞检测
-        if (isAttacking && attackCooldown <= 0) {
+        // 只有在攻击状态且冷却结束时才执行碰撞检测
+        // 添加额外的检查：如果没有持有者，不需要检测
+        if (isAttacking && attackCooldown <= 0 && getOwner() != null) {
             performCollisionDetection();
         }
     }
@@ -124,9 +128,9 @@ public abstract class WeaponPhysicsItemAnimatable extends ItemAnimatable {
             return;
         }
 
-        // 获取武器碰撞箱的世界坐标
-        Vec3 weaponTipPos = getWeaponBoneWorldPosition(1.0f);
-        if (weaponTipPos == null) {
+        // 获取武器 OBB（这是最耗时的操作，放在前面以便快速失败）
+        OBB weaponOBB = getWeaponOBB(1.0f);
+        if (weaponOBB == null) {
             return;
         }
 
@@ -136,27 +140,40 @@ public abstract class WeaponPhysicsItemAnimatable extends ItemAnimatable {
             livingOwner.getX() + attackRange, livingOwner.getY() + attackRange, livingOwner.getZ() + attackRange
         );
 
+        // 使用 EntityPredicate 进行快速过滤
         List<Entity> entities = livingOwner.level().getEntities(owner, searchBox, 
-            entity -> entity != owner && entity instanceof LivingEntity);
+            entity -> entity instanceof LivingEntity && entity.isAlive() && !entity.isInvulnerable());
 
-        // 获取武器 OBB
-        OBB weaponOBB = getWeaponOBB(1.0f);
+        // 如果没有实体，直接返回
+        if (entities.isEmpty()) {
+            return;
+        }
+
+        // 获取武器尖端位置（用于伤害计算）
+        Vec3 weaponTipPos = getWeaponBoneWorldPosition(1.0f);
         
         for (Entity entity : entities) {
-            if (entity instanceof LivingEntity livingTarget) {
-                // OBB vs AABB 碰撞检测
-                AABB targetAABB = livingTarget.getBoundingBox();
+            LivingEntity livingTarget = (LivingEntity) entity;
+            
+            // 距离预检查：先进行简单的距离检测，避免复杂的 OBB 计算
+            double distance = livingOwner.distanceTo(livingTarget);
+            if (distance > attackRange) {
+                continue;
+            }
+            
+            // OBB vs AABB 碰撞检测
+            AABB targetAABB = livingTarget.getBoundingBox();
+            
+            if (OBBCollisionUtil.obbIntersectsAABB(weaponOBB, targetAABB)) {
+                // 碰撞发生，触发伤害
+                onWeaponHit(livingOwner, livingTarget, weaponTipPos);
                 
-                if (weaponOBB != null && OBBCollisionUtil.obbIntersectsAABB(weaponOBB, targetAABB)) {
-                    // 碰撞发生，触发伤害
-                    onWeaponHit(livingOwner, livingTarget, weaponTipPos);
-                    
-                    // 触发命中回调
-                    getHitCallback().accept(livingOwner, livingTarget);
-                    
-                    // 设置冷却
-                    attackCooldown = getAttackCooldown();
-                }
+                // 触发命中回调
+                getHitCallback().accept(livingOwner, livingTarget);
+                
+                // 设置冷却并退出循环（单次攻击只命中一个目标）
+                attackCooldown = getAttackCooldown();
+                break;
             }
         }
     }
@@ -167,20 +184,37 @@ public abstract class WeaponPhysicsItemAnimatable extends ItemAnimatable {
     protected Vec3 getWeaponBoneWorldPosition(float partialTick) {
         try {
             ModelInstance model = getModelController().getModel();
-            if (model == null) return null;
+            if (model == null) {
+                LogManager.serverDebug("WeaponPhysicsItemAnimatable", 
+                    "getWeaponBoneWorldPosition: model is null");
+                return null;
+            }
             
             ModelPose pose = model.getPose();
-            if (pose == null) return null;
+            if (pose == null) {
+                LogManager.serverDebug("WeaponPhysicsItemAnimatable", 
+                    "getWeaponBoneWorldPosition: pose is null");
+                return null;
+            }
             
             BonePose bonePose = pose.getBonePose(hitboxBoneName);
-            if (bonePose == null) return null;
+            if (bonePose == null) {
+                LogManager.serverDebug("WeaponPhysicsItemAnimatable", 
+                    "getWeaponBoneWorldPosition: bonePose is null for bone '{}'", hitboxBoneName);
+                return null;
+            }
             
             Vector3f worldPos = bonePose.getWorldBonePivot(
                 Vec3.ZERO, partialTick
             );
             
-            return new Vec3(worldPos.x, worldPos.y, worldPos.z);
+            Vec3 result = new Vec3(worldPos.x, worldPos.y, worldPos.z);
+            LogManager.serverDebug("WeaponPhysicsItemAnimatable", 
+                "getWeaponBoneWorldPosition: bone '{}' position = {}", hitboxBoneName, result);
+            return result;
         } catch (Exception e) {
+            LogManager.serverDebug("WeaponPhysicsItemAnimatable", 
+                "getWeaponBoneWorldPosition: exception - {}", e.getMessage());
             return null;
         }
     }

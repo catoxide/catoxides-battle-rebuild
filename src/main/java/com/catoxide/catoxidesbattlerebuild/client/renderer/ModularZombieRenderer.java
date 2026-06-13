@@ -1,7 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.client.renderer;
 
 import com.catoxide.catoxidesbattlerebuild.client.model.ModularZombieModel;
-import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
+import com.catoxide.catoxidesbattlerebuild.mob.zombie1.ModularZombie;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import software.bernie.geckolib.renderer.GeoEntityRenderer;

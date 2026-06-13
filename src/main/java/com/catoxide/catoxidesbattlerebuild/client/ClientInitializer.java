@@ -3,8 +3,10 @@ package com.catoxide.catoxidesbattlerebuild.client;
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
 import com.catoxide.catoxidesbattlerebuild.client.geometry.EntityBoneManager;
 import com.catoxide.catoxidesbattlerebuild.client.models.ModelDataManager;
+import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombie2Renderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombieRenderer;
-import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
+import com.catoxide.catoxidesbattlerebuild.mob.zombie1.ModularZombie;
+import com.catoxide.catoxidesbattlerebuild.mob.zombie2.ModularZombie2;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.neoforged.api.distmarker.Dist;
@@ -30,5 +32,8 @@ public class ClientInitializer {
         LogManager.clientStartup("ClientInitializer", "Registering ModularZombieRenderer...");
         event.registerEntityRenderer(ModEntities.MODULAR_ZOMBIE.get(), ModularZombieRenderer::new);
         LogManager.clientStartup("ClientInitializer", "ModularZombieRenderer registered");
+        LogManager.clientStartup("ClientInitializer", "Registering ModularZombie2Renderer...");
+        event.registerEntityRenderer(ModEntities.MODULAR_ZOMBIE_2.get(), ModularZombie2Renderer::new);
+        LogManager.clientStartup("ClientInitializer", "ModularZombie2Renderer registered");
     }
 }

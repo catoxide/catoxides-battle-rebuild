@@ -1,6 +1,8 @@
 package com.catoxide.catoxidesbattlerebuild.network;
 
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
+import com.catoxide.catoxidesbattlerebuild.mob.zombie2.ModularZombie2;
+import net.minecraft.world.entity.Entity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -30,6 +32,9 @@ public class ModNetworkHandler {
                         ModNetworkHandler::handleSyncBodyPartConfigOnClient,
                         ModNetworkHandler::handleSyncBodyPartConfigOnServer
                 ));
+        // Server to client only packet
+        registrar.playToClient(SyncBoneDataPacket.TYPE, SyncBoneDataPacket.STREAM_CODEC,
+                ModNetworkHandler::handleSyncBoneDataOnClient);
     }
 
     private static void handleHitAttemptOnClient(HitAttemptPacket packet, IPayloadContext context) {
@@ -57,6 +62,17 @@ public class ModNetworkHandler {
     }
 
     private static void handleSyncBodyPartConfigOnServer(SyncBodyPartConfigPacket packet, IPayloadContext context) {
+    }
+
+    private static void handleSyncBoneDataOnClient(SyncBoneDataPacket packet, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            CatoxidesBattleRebuildConstants.LOGGER.debug("Received bone data sync: entityId={}, boneCount={}", 
+                    packet.entityId(), packet.bonePositions().size());
+            Entity entity = context.player().level().getEntity(packet.entityId());
+            if (entity instanceof ModularZombie2 zombie) {
+                zombie.updateClientBonePositions(packet.bonePositions());
+            }
+        });
     }
 
     public static void init() {}

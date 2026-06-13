@@ -12,6 +12,7 @@ public class ModEvents {
     public static void entityAttributeCreation(EntityAttributeCreationEvent event) {
         LogManager.serverDebug("ModEvents", "Registering entity attributes...");
         event.put(ModEntities.MODULAR_ZOMBIE.get(), net.minecraft.world.entity.monster.Zombie.createAttributes().build());
+        event.put(ModEntities.MODULAR_ZOMBIE_2.get(), net.minecraft.world.entity.monster.Zombie.createAttributes().build());
         LogManager.serverDebug("ModEvents", "Entity attributes registered successfully");
     }
 }

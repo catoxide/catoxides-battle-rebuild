@@ -5,6 +5,7 @@ import cn.solarmoon.spark_core.animation.ItemAnimatable;
 import cn.solarmoon.spark_core.animation.model.ModelIndex;
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuild;
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
+import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
@@ -13,8 +14,6 @@ import net.minecraft.world.level.Level;
 import org.joml.Vector3f;
 
 import java.awt.Color;
-
-import static net.neoforged.neoforge.internal.versions.neoforge.NeoForgeVersion.MOD_ID;
 
 /**
  * 铁剑武器 - 实现 ICustomModelItem 接口以支持 Spark-Core 自定义模型
@@ -54,8 +53,9 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
         // 从 spark_models/item/catoxidesbattlerebuild/iron_sword.json 加载模型
         ResourceLocation modelLoc = ResourceLocation.fromNamespaceAndPath(
                 CatoxidesBattleRebuildConstants.MODID,
-            "item/catoxidesbattlerebuild/iron_sword"
+            "iron_sword"
         );
+        LogManager.serverDebug("IronSword","IronSword Model Get");
         return new ModelIndex("item", modelLoc);
     }
 

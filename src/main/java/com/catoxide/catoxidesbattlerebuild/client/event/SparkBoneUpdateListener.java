@@ -22,14 +22,14 @@ public class SparkBoneUpdateListener {
         KeyAnimData currentTransform = event.getNewTransform();
         KeyAnimData previousTransform = event.getOldTransform();
         
-        LogManager.clientDebug("SparkBoneUpdateListener", 
-            "Bone updated: model={}, bone={}, pos={}, rot={}, scale={}",
-            model.getIndex(),
-            bonePose.getName(),
-            currentTransform.getPosition(),
-            currentTransform.getRotation(),
-            currentTransform.getScale()
-        );
+//        LogManager.clientDebug("SparkBoneUpdateListener",
+//            "Bone updated: model={}, bone={}, pos={}, rot={}, scale={}",
+//            model.getIndex(),
+//            bonePose.getName(),
+//            currentTransform.getPosition(),
+//            currentTransform.getRotation(),
+//            currentTransform.getScale()
+//        );
         
         // 如果需要修改骨骼变换，可以在这里修改 event.newTransform
         // event.setNewTransform(new KeyAnimData(...));

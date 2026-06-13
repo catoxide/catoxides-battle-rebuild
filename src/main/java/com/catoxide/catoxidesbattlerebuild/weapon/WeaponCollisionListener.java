@@ -71,13 +71,14 @@ public class WeaponCollisionListener {
         
         if (animatable instanceof WeaponPhysicsItemAnimatable weaponAnim) {
             weaponAnim.startAttack();
-            LogManager.clientDebug("WeaponCollisionListener", 
-                "Started weapon attack animation for player {}", player.getName().getString());
+//            LogManager.clientDebug("WeaponCollisionListener",
+//                "Started weapon attack animation for player {}", player.getName().getString());
         }
     }
 
     /**
      * 处理服务端攻击
+     * 现在只负责启动攻击动画，实际的碰撞检测由 WeaponPhysicsItemAnimatable.physicsTick() 处理
      */
     private static void processAttack(Player attacker, LivingEntity target, ItemStack itemStack) {
         IronSwordWeapon weapon = (IronSwordWeapon) itemStack.getItem();
@@ -92,30 +93,19 @@ public class WeaponCollisionListener {
             return;
         }
         
-        // 获取武器尖端正置
-        var weaponTip = weaponAnim.getWeaponBoneWorldPosition(1.0f);
-        if (weaponTip == null) {
+        // 启动攻击动画（服务端）
+        weaponAnim.startAttack();
+        
+        // 设置持有者
+        weaponAnim.setOwner(attacker);
+        
+        // 简化处理：直接使用距离检测进行快速伤害计算
+        double distance = attacker.distanceTo(target);
+        if (distance <= weaponAnim.getAttackRange()) {
+            // 使用简单的距离检测作为快速路径
             performFallbackAttack(attacker, target);
-            return;
-        }
-        
-        // 使用 OBB 碰撞检测
-        var weaponOBB = weaponAnim.getWeaponOBB(1.0f);
-        var targetAABB = target.getBoundingBox();
-        
-        if (weaponOBB != null && com.catoxide.catoxidesbattlerebuild.weapon.physics.OBBCollisionUtil.obbIntersectsAABB(weaponOBB, targetAABB)) {
-            // 碰撞发生，触发命中
-            weaponAnim.onWeaponHit(attacker, target, weaponTip);
-            weaponAnim.getHitCallback().accept(attacker, target);
-            
             LogManager.serverInfo("WeaponCollisionListener", 
-                "Hit target {} with OBB collision", target.getName().getString());
-        } else {
-            // OBB 检测未命中，但如果是范围内的目标仍然造成部分伤害（fallback）
-            double distance = weaponTip.distanceTo(target.position());
-            if (distance <= weaponAnim.getAttackRange()) {
-                performFallbackAttack(attacker, target);
-            }
+                "Processed attack on target {} at distance {}", target.getName().getString(), distance);
         }
     }
 

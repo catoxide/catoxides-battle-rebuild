@@ -1,6 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.client.model;
 
-import com.catoxide.catoxidesbattlerebuild.mob.ModularZombie;
+import com.catoxide.catoxidesbattlerebuild.mob.zombie1.ModularZombie;
 import net.minecraft.resources.ResourceLocation;
 import software.bernie.geckolib.model.GeoModel;
 
