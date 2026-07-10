@@ -25,20 +25,18 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 铁剑武器 - 实现 ICustomModelItem 接口以支持 Spark-Core 自定义模型
+ * 第一人称和第三人称使用独立的模型和动画资源（swords_fp / swords_tp）
  */
 public class IronSwordWeapon extends Item implements ICustomModelItem {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     /**
-     * 按 Level 缓存 ItemAnimatable 实例
-     * 默认实现的缓存依赖数据组件和 level 身份比较，但 ItemStack 频繁复制导致缓存失效，
-     * 每次调用都创建新实例，动画状态无法持续。
-     *
-     * 这里按 Level 缓存：客户端 ClientLevel 和服务端 ServerLevel 各自拥有独立的实例，
-     * 避免 Render thread 和 Server thread 同时 tick 同一个状态机导致并发修改崩溃。
-     * 同一 Level 内的所有调用返回同一实例，确保 tick 和渲染使用同一实例，动画状态能持续。
+     * 按 Level + Context 缓存 ItemAnimatable 实例
+     * 第一人称（fp）和第三人称（tp）各自拥有独立的 ItemAnimatable，
+     * 加载不同的模型和动画资源。
+     * 按 Level 分离避免客户端/服务端跨线程并发 tick 崩溃。
      */
-    private static final Map<Level, ItemAnimatable> cachedAnimatables = new ConcurrentHashMap<>();
+    private static final Map<Level, Map<ItemDisplayContext, ItemAnimatable>> cachedAnimatables = new ConcurrentHashMap<>();
 
     /**
      * 跟踪每个玩家上一帧的挥动状态，用于检测挥动开始（上升沿触发）
@@ -60,9 +58,17 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
     }
 
     /**
+     * 判断 context 是否为第一人称视角
+     */
+    private static boolean isFirstPerson(ItemDisplayContext context) {
+        return context == ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
+                || context == ItemDisplayContext.FIRST_PERSON_LEFT_HAND;
+    }
+
+    /**
      * 物品在背包中每 tick 调用
      * 在客户端检测玩家开始挥动武器时，在 MAIN layer 播放 attack 动画
-     * MAIN layer 会覆盖 STATE layer 的 still 动画，attack 结束后自动回到 still
+     * 同时触发第一人称和第三人称实例的 attack 动画
      */
     @Override
     public void inventoryTick(ItemStack stack, Level level, Entity entity, int slotId, boolean isSelected) {
@@ -81,14 +87,17 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
 
     /**
      * 在 MAIN layer 播放 attack 动画
-     * MAIN layer 的 blendMode 为 OVERRIDE，会覆盖 STATE layer 的 still 动画
-     * attack 动画播放完毕后自动被 physicsTick 移除，still 动画恢复显示
+     * 同时触发第一人称和第三人称实例，确保两个视角的攻击动画同步
      */
     private void triggerAttackAnimation(ItemStack stack, Level level) {
-        ItemAnimatable animatable = getRenderInstance(stack, level, ItemDisplayContext.FIRST_PERSON_RIGHT_HAND);
+        triggerAttackOnInstance(stack, level, ItemDisplayContext.FIRST_PERSON_RIGHT_HAND);
+        triggerAttackOnInstance(stack, level, ItemDisplayContext.THIRD_PERSON_RIGHT_HAND);
+    }
+
+    private void triggerAttackOnInstance(ItemStack stack, Level level, ItemDisplayContext context) {
+        ItemAnimatable animatable = getRenderInstance(stack, level, context);
         var controller = animatable.getAnimController();
 
-        // 检查是否已经在播放 attack 动画，避免重复触发
         for (var layer : controller.getLayers().values()) {
             for (var anim : layer.getAnimations()) {
                 if ("attack".equals(anim.getAnimIndex().getName())) {
@@ -104,48 +113,59 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
             attackAnim.setGroup(AnimGroups.MAIN);
             attackAnim.enter();
             controller.playAnimation(attackAnim);
-            LOGGER.info("[IronSwordWeapon] Attack animation triggered on MAIN layer");
+            LOGGER.info("[IronSwordWeapon] Attack animation triggered on {} MAIN layer", context);
         } catch (Exception e) {
-            LOGGER.warn("[IronSwordWeapon] Failed to play attack animation: {}", e.getMessage());
+            LOGGER.warn("[IronSwordWeapon] Failed to play attack animation on {}: {}", context, e.getMessage());
         }
     }
 
     /**
      * 获取渲染实例
-     * 按 Level 缓存，确保同一 side（客户端/服务端）内的 capability tick 和渲染使用同一实例。
-     * 客户端和服务端各自有独立的 ItemAnimatable，避免跨线程并发 tick 同一状态机崩溃。
+     * 按 Level 缓存 DualItemAnimatable（第一人称）和第三人称实例。
+     * 第一人称 context → 返回 DualItemAnimatable（自身持有 fp 的 controller）
+     * 第三人称 context → 返回 DualItemAnimatable.tpInstance
+     *
+     * capability provider 返回 DualItemAnimatable，AnimApplier tick 它时会同时 tick fp 和 tp。
      */
     @Override
     public ItemAnimatable getRenderInstance(ItemStack itemStack, Level level, ItemDisplayContext context) {
-        ItemAnimatable animatable = cachedAnimatables.get(level);
-        if (animatable == null) {
-            animatable = new ItemAnimatable(itemStack, level);
-            ResourceLocation modelLoc = ResourceLocation.fromNamespaceAndPath(
-                    CatoxidesBattleRebuildConstants.MODID, "swords");
-            animatable.getModelController().setModel(new ModelIndex("item", modelLoc));
-            cachedAnimatables.put(level, animatable);
+        Map<ItemDisplayContext, ItemAnimatable> levelCache = cachedAnimatables.computeIfAbsent(
+                level, k -> new ConcurrentHashMap<>());
+
+        // 确保 DualItemAnimatable（fp）和 tp 实例都已创建
+        DualItemAnimatable dual = (DualItemAnimatable) levelCache.get(ItemDisplayContext.FIRST_PERSON_RIGHT_HAND);
+        if (dual == null) {
+            dual = new DualItemAnimatable(itemStack, level);
+            ModelIndex fpModelIndex = getModelIndex(itemStack, level, ItemDisplayContext.FIRST_PERSON_RIGHT_HAND);
+            dual.getModelController().setModel(fpModelIndex);
+            levelCache.put(ItemDisplayContext.FIRST_PERSON_RIGHT_HAND, dual);
+
+            // 创建 tp 实例
+            ItemAnimatable tp = new ItemAnimatable(itemStack, level);
+            ModelIndex tpModelIndex = getModelIndex(itemStack, level, ItemDisplayContext.THIRD_PERSON_RIGHT_HAND);
+            tp.getModelController().setModel(tpModelIndex);
+            dual.setTpInstance(tp);
+            levelCache.put(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, tp);
         }
-        return animatable;
+
+        if (isFirstPerson(context)) {
+            return dual;
+        } else {
+            return dual.getTpInstance();
+        }
     }
 
     /**
      * 获取物品的模型索引
-     * 指定自定义模型的资源位置
+     * 第一人称使用 swords_fp，第三人称使用 swords_tp
      */
     @Override
     public ModelIndex getModelIndex(ItemStack itemStack, Level level, ItemDisplayContext context) {
-        // 从 spark_models/item/catoxidesbattlerebuild/swords.json 加载模型
-        // swords 模型有完整的状态机和动画配置
+        String modelPath = isFirstPerson(context) ? "swords_fp" : "swords_tp";
         ResourceLocation modelLoc = ResourceLocation.fromNamespaceAndPath(
-                CatoxidesBattleRebuildConstants.MODID,
-            "swords"
-        );
+                CatoxidesBattleRebuildConstants.MODID, modelPath);
         return new ModelIndex("item", modelLoc);
     }
-
-    // createItemAnimatable 使用默认实现
-    // 默认实现会调用 getModelIndex() 并将动画体存储到数据组件
-    // 碰撞检测逻辑在服务端单独处理，不依赖渲染用的动画体
 
     /**
      * 是否在特定场景使用 2D 模型
@@ -161,6 +181,7 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
 
     /**
      * 获取渲染偏移
+     * 位置信息以第三人称动画为准，所有 context 返回相同参数
      */
     @Override
     public Vector3f getRenderOffset(ItemStack itemStack, Level level, ItemDisplayContext displayContext) {
@@ -169,8 +190,7 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
 
     /**
      * 获取渲染旋转
-     * 注意：JOML 的 rotateZYX 使用弧度，不是角度
-     * 动画本身已处理骨骼旋转，这里返回零旋转
+     * 位置信息以第三人称动画为准，所有 context 返回相同参数
      */
     @Override
     public Vector3f getRenderRotation(ItemStack itemStack, Level level, ItemDisplayContext displayContext) {

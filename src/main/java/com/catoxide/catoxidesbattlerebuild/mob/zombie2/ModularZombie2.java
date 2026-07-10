@@ -23,6 +23,7 @@ import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 import java.util.HashMap;
@@ -61,8 +62,11 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
     public static final int STATE_HIT_BACK = 6;
     public static final int STATE_WINDING = 7;
     
-    // Server-side bone position cache for hit detection
+    // Server-side bone cache for hit detection
+    // position: 骨骼 pivot 的世界坐标（用于快速距离判定）
+    // matrix:   骨骼 pivot 的世界变换矩阵（含旋转，用于 OBB 构造）
     private final Map<String, Vector3f> serverBonePositions = new HashMap<>();
+    private final Map<String, Matrix4f> serverBoneMatrices = new HashMap<>();
     private long lastBoneUpdateTime = 0;
 
     public ModularZombie2(EntityType<? extends Zombie> entityType, Level level) {
@@ -71,7 +75,7 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
         this.modelController = new ModelController(this);
         // 设置贴图路径: assets/catoxidesbattlerebuild/textures/entity/modular_zombie_2.png
         this.modelController.setTextureLocation(ResourceLocation.fromNamespaceAndPath("catoxidesbattlerebuild", "textures/entity/modular_zombie_2.png"));
-        LogManager.aiDebug(String.valueOf(getId()), "ModularZombie2 initialized with Spark-Core");
+        LogManager.zombie2Init(getId());
     }
 
     // ========== IEntityAnimatable Implementation ==========
@@ -106,17 +110,17 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
 
     @Override
     public void onBoneUpdate(BoneUpdateEvent event) {
-        // Update server-side bone positions for hit detection
+        // Update server-side bone cache for hit detection
+        // - position: 用于快速距离筛选
+        // - matrix:    用于 OBB 构造（含旋转），存的是 pivot 的世界变换矩阵，
+        //              其 translation 即 pivot 世界坐标，rotation 即骨骼朝向
         if (!level().isClientSide()) {
             String boneName = event.getBonePose().getName();
             Vector3f worldPos = event.getBonePose().getWorldBonePivot(Vec3.ZERO, 1.0f);
+            Matrix4f worldMat = event.getBonePose().getWorldBonePivotMatrix(1.0f);
             serverBonePositions.put(boneName, worldPos);
+            serverBoneMatrices.put(boneName, worldMat);
             lastBoneUpdateTime = level().getGameTime();
-            // Throttle logging to every 20 ticks to avoid spam
-            if (level().getGameTime() % 20 == 0) {
-                LogManager.serverDebug("BoneUpdate", "Bone %s pos: (%.2f, %.2f, %.2f)",
-                    boneName, worldPos.x(), worldPos.y(), worldPos.z());
-            }
         }
     }
 
@@ -140,6 +144,25 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
     }
 
     /**
+     * 获取服务端骨骼世界变换矩阵（含旋转）
+     * <p>矩阵的 translation 部分即骨骼 pivot 的世界坐标，rotation 部分即骨骼朝向。
+     * 用于构造骨骼级 OBB 受击盒。
+     * @param boneName 骨骼名称
+     * @return 骨骼的世界变换矩阵（pivot 空间），未找到返回 null
+     */
+    public Matrix4f getServerBoneMatrix(String boneName) {
+        return serverBoneMatrices.get(boneName);
+    }
+
+    /**
+     * 获取所有服务端骨骼世界变换矩阵
+     * @return 骨骼名称到世界变换矩阵（pivot 空间）的映射
+     */
+    public Map<String, Matrix4f> getAllServerBoneMatrices() {
+        return new HashMap<>(serverBoneMatrices);
+    }
+
+    /**
      * 检查骨骼位置数据是否最新（最近5tick内更新）
      */
     public boolean isBoneDataUpToDate() {
@@ -155,7 +178,7 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
             serverBonePositions.clear();
             serverBonePositions.putAll(positions);
             lastBoneUpdateTime = level().getGameTime();
-            LogManager.clientDebug("BoneSync", "Updated client bone positions for entity {}", getId());
+            LogManager.boneSyncClient(getId(), positions.size());
         }
     }
 
@@ -363,6 +386,12 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
     private long lastStateChangeTick = 0;
     private static final long MIN_STATE_HOLD_TICKS = 10;
 
+    // 游荡动画滞回：游荡 AI 移动/停止周期约 1-2 秒，会和 walking 动画 length=2s 冲突，
+    // 导致动画频繁从 0.0 帧重启，永远播不到迈步时刻（0.5s/1.5s），看起来两腿同步。
+    // 进入 WALKING 后必须持续静止 N tick 才切回 IDLE，避免短暂停顿重置动画。
+    private long lastMovingTick = 0;
+    private static final long WALKING_HOLD_TICKS = 40; // 2 秒，覆盖一个完整步态周期
+
     // 零姿态检测：playAnimation 在物理线程异步执行，需要给宽限期避免误判
     private long lastAnimRequestTick = 0;
     private static final long ZERO_POSE_GRACE_TICKS = 10;
@@ -390,7 +419,7 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
             setAnimState(newState);
             lastStateChangeTick = this.level().getGameTime();
             playAnimationForState(newState);
-            LogManager.serverInfo("Zombie2Debug", "Entity " + getId() + " State changed: " + getStateAnimationName(currentState) + " -> " + getStateAnimationName(newState));
+            LogManager.zombie2StateChanged(getId(), getStateAnimationName(currentState), getStateAnimationName(newState));
         }
     }
     
@@ -402,7 +431,7 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
         if (currentState != lastClientAnimState) {
             lastClientAnimState = currentState;
             playAnimationForState(currentState);
-            LogManager.clientInfo("Zombie2Debug", "Entity " + getId() + " Client animation sync: " + getStateAnimationName(currentState));
+            LogManager.zombie2ClientSync(getId(), getStateAnimationName(currentState));
         }
     }
 
@@ -414,7 +443,7 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
     private void recoverFromZeroPose() {
         int currentState = getAnimState();
         String animName = getStateAnimationName(currentState);
-        LogManager.serverInfo("Zombie2Debug", "Entity " + getId() + " Zero pose detected! Recovering with animation: " + animName);
+        LogManager.zombie2ZeroPoseRecover(this.level().isClientSide, getId(), animName);
         playAnimationForState(currentState);
     }
     
@@ -424,20 +453,9 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
         boolean isMoving = this.moveControl.hasWanted() || !this.getNavigation().isDone();
         LivingEntity target = this.getTarget();
 
-        if (level().getGameTime() % 20 == 0) {
-            LogManager.serverInfo("Zombie2Debug",
-                "Entity " + getId() +
-                " - isMoving: " + isMoving +
-                ", moveControl.hasWanted: " + this.moveControl.hasWanted() +
-                ", navDone: " + this.getNavigation().isDone() +
-                ", target: " + (target != null) +
-                ", swinging: " + this.swinging +
-                ", isWindingUp: " + isWindingUp() +
-                ", isAlerting: " + isAlerting() +
-                ", isAlertCompleted: " + isAlertCompleted() +
-                ", dx: " + this.getDeltaMovement().x +
-                ", dz: " + this.getDeltaMovement().z +
-                ", state: " + getAnimState());
+        // 更新 lastMovingTick：用于 WALKING→IDLE 滞回
+        if (isMoving) {
+            lastMovingTick = this.level().getGameTime();
         }
 
         // Priority 1: Attack (swing animation)
@@ -460,6 +478,15 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
         if (isAlert) {
             return isMoving ? STATE_RUNNING : STATE_ALERT;
         } else {
+            // 游荡滞回：如果当前是 WALKING，即使短暂静止也保持 WALKING，
+            // 避免游荡 AI 频繁切换 IDLE↔WALKING 导致动画过渡混合期
+            // 把 IDLE 的对称腿部数据混进 WALKING，造成两腿同步。
+            if (!isMoving && getAnimState() == STATE_WALKING) {
+                long idleSince = this.level().getGameTime() - lastMovingTick;
+                if (idleSince < WALKING_HOLD_TICKS) {
+                    return STATE_WALKING; // 保持 walking，让动画完整播放
+                }
+            }
             return isMoving ? STATE_WALKING : STATE_IDLE;
         }
     }
@@ -473,32 +500,28 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
     private void playAnimationForState(int state) {
         String animName = getStateAnimationName(state);
         if (animName != null) {
-            // 记录动画请求时间，用于零姿态检测的宽限期
             lastAnimRequestTick = this.level().getGameTime();
             try {
-                LogManager.serverInfo("Zombie2Debug", "Entity " + getId() + " Attempting to play animation: " + animName);
-                
-                cn.solarmoon.spark_core.animation.anim.AnimInstance anim = 
+                cn.solarmoon.spark_core.animation.anim.AnimInstance anim =
                     cn.solarmoon.spark_core.animation.anim.AnimInstanceBuilderKt.animInstance(
-                        this, 
-                        animName, 
-                        true, 
+                        this,
+                        animName,
+                        true,
                         (animInstance) -> {
-                            animInstance.setInTransitionTime(0.15f);
-                            animInstance.setOutTransitionTime(0.15f);
+                            animInstance.setInTransitionTime(0.05f);
+                            animInstance.setOutTransitionTime(0.05f);
                             return null;
                         }
                     );
-                
+
                 if (anim != null) {
                     anim.independentEnter();
-                    LogManager.serverInfo("Zombie2Debug", "Entity " + getId() + " Successfully playing animation: " + animName + ", state: " + anim.getState());
+                    LogManager.zombie2AnimStarted(getId(), animName, String.valueOf(anim.getState()));
                 } else {
-                    LogManager.serverInfo("Zombie2Debug", "Entity " + getId() + " FAILED to create AnimInstance for: " + animName);
+                    LogManager.zombie2AnimFailed(getId(), animName);
                 }
             } catch (Exception e) {
-                LogManager.serverInfo("Zombie2Debug", "Entity " + getId() + " Exception playing animation " + animName + ": " + e.getMessage());
-                e.printStackTrace();
+                LogManager.zombie2AnimError(getId(), animName, e.getMessage(), e);
             }
         }
     }

@@ -436,4 +436,58 @@ public class LogManager {
     public static void clearRateLimitCache() {
         lastLogTime.clear();
     }
+
+    // ========== ModularZombie2 专用日志 ==========
+
+    private static final String TAG_ZOMBIE2 = "Zombie2";
+    private static final String TAG_BONE = "BoneSync";
+
+    /** 实体初始化（保留 info） */
+    public static void zombie2Init(int entityId) {
+        serverInfo(TAG_ZOMBIE2, "Entity {} initialized with Spark-Core", entityId);
+    }
+
+    /** 动画状态切换（降为 debug） */
+    public static void zombie2StateChanged(int entityId, String from, String to) {
+        serverDebug(TAG_ZOMBIE2, "Entity {} State changed: {} -> {}", entityId, from, to);
+    }
+
+    /** 客户端动画同步（降为 debug） */
+    public static void zombie2ClientSync(int entityId, String animName) {
+        clientDebug(TAG_ZOMBIE2, "Entity {} Client animation sync: {}", entityId, animName);
+    }
+
+    /** 动画播放成功（降为 debug） */
+    public static void zombie2AnimStarted(int entityId, String animName, String animState) {
+        serverDebug(TAG_ZOMBIE2, "Entity {} Playing animation: {} (state: {})", entityId, animName, animState);
+    }
+
+    /** 动画创建失败（保留 error） */
+    public static void zombie2AnimFailed(int entityId, String animName) {
+        serverError(TAG_ZOMBIE2, String.format("Entity %d FAILED to create AnimInstance for: %s", entityId, animName));
+    }
+
+    /** 动画播放异常（保留 error） */
+    public static void zombie2AnimError(int entityId, String animName, String errorMsg, Throwable t) {
+        serverError(TAG_ZOMBIE2, String.format("Entity %d Exception playing animation %s: %s", entityId, animName, errorMsg), t);
+    }
+
+    /** 零姿态恢复（降为 debug） */
+    public static void zombie2ZeroPoseRecover(boolean clientSide, int entityId, String animName) {
+        if (clientSide) {
+            clientDebug(TAG_ZOMBIE2, "Entity {} [CLIENT] Zero pose detected, recovering: {}", entityId, animName);
+        } else {
+            serverDebug(TAG_ZOMBIE2, "Entity {} [SERVER] Zero pose detected, recovering: {}", entityId, animName);
+        }
+    }
+
+    /** 客户端骨骼数据同步（降为 debug） */
+    public static void boneSyncClient(int entityId, int boneCount) {
+        clientDebug(TAG_BONE, "Entity {} synced {} bones", entityId, boneCount);
+    }
+
+    /** 骨骼调试渲染错误（保留 warn） */
+    public static void boneDebugWarn(String format, Object... args) {
+        clientWarn(TAG_BONE, format, args);
+    }
 }

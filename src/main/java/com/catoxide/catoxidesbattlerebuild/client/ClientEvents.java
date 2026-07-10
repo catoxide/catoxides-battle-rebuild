@@ -46,7 +46,12 @@ public class ClientEvents {
 
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
-        // HitboxDebugRenderer 功能已归档到 Deprecated&References
-        // 如需调试功能，请参考 Deprecated&References 目录
+        // 用 AFTER_PARTICLES：在所有实体/粒子渲染完之后，调试框不会被遮挡
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;
+        com.catoxide.catoxidesbattlerebuild.client.renderer.ServerBoneDebugRenderer.render(
+                event.getPoseStack(),
+                event.getCamera().getPosition(),
+                event.getPartialTick().getGameTimeDeltaPartialTick(false)
+        );
     }
 }
