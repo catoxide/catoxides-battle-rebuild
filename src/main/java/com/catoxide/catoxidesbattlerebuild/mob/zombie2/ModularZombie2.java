@@ -59,6 +59,7 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
     public static final int STATE_ALERT = 4;
     public static final int STATE_HIT_FRONT = 5;
     public static final int STATE_HIT_BACK = 6;
+    public static final int STATE_WINDING = 7;
     
     // Server-side bone position cache for hit detection
     private final Map<String, Vector3f> serverBonePositions = new HashMap<>();
@@ -111,7 +112,11 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
             Vector3f worldPos = event.getBonePose().getWorldBonePivot(Vec3.ZERO, 1.0f);
             serverBonePositions.put(boneName, worldPos);
             lastBoneUpdateTime = level().getGameTime();
-            LogManager.serverDebug("BoneUpdate", "Updated bone {} position: {}", boneName, worldPos);
+            // Throttle logging to every 20 ticks to avoid spam
+            if (level().getGameTime() % 20 == 0) {
+                LogManager.serverDebug("BoneUpdate", "Bone %s pos: (%.2f, %.2f, %.2f)",
+                    boneName, worldPos.x(), worldPos.y(), worldPos.z());
+            }
         }
     }
 
@@ -311,17 +316,35 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
 
         if (this.isDeadOrDying()) return;
 
+        // 禁用原版冲刺行为，后续再考虑引入自定义冲刺
+        if (this.isSprinting()) {
+            this.setSprinting(false);
+        }
+
         if (isHit()) {
             hitTime--;
             if (hitTime <= 0) {
                 this.entityData.set(DATA_IS_HIT, false);
-                setAnimState(STATE_IDLE);
             }
         }
 
         if (!this.level().isClientSide) {
             updateTargetState();
             updateAnimationState();
+            // 零姿态检测：如果没有动画在播放且已初始化，则恢复
+            // 注意：playAnimation 在物理线程异步执行，需要给宽限期避免误判
+            if (serverInitialAnimPlayed && !this.animController.isPlayingAnim()
+                    && this.level().getGameTime() - lastAnimRequestTick > ZERO_POSE_GRACE_TICKS) {
+                recoverFromZeroPose();
+            }
+        } else {
+            // 客户端：根据同步的状态播放动画
+            syncClientAnimation();
+            // 客户端也检测零姿态
+            if (lastClientAnimState != -1 && !this.animController.isPlayingAnim()
+                    && this.level().getGameTime() - lastAnimRequestTick > ZERO_POSE_GRACE_TICKS) {
+                recoverFromZeroPose();
+            }
         }
 
         if (isAlerting() && !isAlertCompleted()) {
@@ -331,84 +354,151 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
             }
         }
 
-        // Spark-Core animation tick
-        animController.tick();
-        if (!level().isClientSide()) {
-            animController.physTick();
-        }
+        // Note: animController.tick() and animController.physTick() are called
+        // automatically by Spark-Core's AnimApplier via EntityTickEvent.Post
+        // and PhysicsEntityTickEvent. Do NOT call them manually here.
     }
+
+    private boolean serverInitialAnimPlayed = false;
+    private long lastStateChangeTick = 0;
+    private static final long MIN_STATE_HOLD_TICKS = 10;
+
+    // 零姿态检测：playAnimation 在物理线程异步执行，需要给宽限期避免误判
+    private long lastAnimRequestTick = 0;
+    private static final long ZERO_POSE_GRACE_TICKS = 10;
 
     private void updateAnimationState() {
         int currentState = getAnimState();
         
-        // Skip state updates during hit animation
-        if (currentState == STATE_HIT_FRONT || currentState == STATE_HIT_BACK) {
+        // Skip state updates during hit animation (only while isHit is true)
+        if (isHit() && (currentState == STATE_HIT_FRONT || currentState == STATE_HIT_BACK)) {
+            return;
+        }
+
+        // Play initial idle animation on server side once
+        if (!serverInitialAnimPlayed) {
+            serverInitialAnimPlayed = true;
+            lastStateChangeTick = this.level().getGameTime();
+            playAnimationForState(STATE_IDLE);
             return;
         }
         
-        LivingEntity target = this.getTarget();
-        int newState = STATE_IDLE;
+        int newState = determineAnimationState();
         
-        if (target != null && target.isAlive()) {
-            double distance = this.distanceTo(target);
-            double speed = this.getAttributeValue(Attributes.MOVEMENT_SPEED);
-            
-            if (this.swinging || isWindingUp()) {
-                newState = STATE_ATTACK;
-            } else if (speed > 0.15 || this.isSprinting()) {
-                newState = STATE_RUNNING;
-            } else if (distance < 5.0) {
-                newState = STATE_ALERT;
-            } else if (!this.getNavigation().isDone()) {
-                newState = STATE_WALKING;
-            } else {
-                newState = STATE_IDLE;
-            }
-        } else {
-            if (!this.getNavigation().isDone()) {
-                newState = STATE_WALKING;
-            } else {
-                newState = STATE_IDLE;
-            }
-        }
-        
-        // 只有状态改变时才播放新动画
-        if (currentState != newState) {
+        // 只有状态改变时且超过最小保持时间才播放新动画
+        if (currentState != newState && (this.level().getGameTime() - lastStateChangeTick >= MIN_STATE_HOLD_TICKS)) {
             setAnimState(newState);
+            lastStateChangeTick = this.level().getGameTime();
             playAnimationForState(newState);
+            LogManager.serverInfo("Zombie2Debug", "Entity " + getId() + " State changed: " + getStateAnimationName(currentState) + " -> " + getStateAnimationName(newState));
+        }
+    }
+    
+    private int lastClientAnimState = -1;
+
+    private void syncClientAnimation() {
+        int currentState = getAnimState();
+
+        if (currentState != lastClientAnimState) {
+            lastClientAnimState = currentState;
+            playAnimationForState(currentState);
+            LogManager.clientInfo("Zombie2Debug", "Entity " + getId() + " Client animation sync: " + getStateAnimationName(currentState));
+        }
+    }
+
+    /**
+     * 零姿态恢复：当检测到没有动画在播放时，立即重新请求当前状态的动画
+     * 这可以处理因动画冲突、状态机异步处理等原因导致的零姿态问题
+     * 注意：由于 playAnimation 在物理线程异步执行，恢复后需要等待宽限期再次检测
+     */
+    private void recoverFromZeroPose() {
+        int currentState = getAnimState();
+        String animName = getStateAnimationName(currentState);
+        LogManager.serverInfo("Zombie2Debug", "Entity " + getId() + " Zero pose detected! Recovering with animation: " + animName);
+        playAnimationForState(currentState);
+    }
+    
+    private int determineAnimationState() {
+        // 判断移动：AI 想要移动（moveControl 有目标）即为移动状态
+        // 这样即使速度短暂为 0（被方块阻挡、路径计算）也判定为移动
+        boolean isMoving = this.moveControl.hasWanted() || !this.getNavigation().isDone();
+        LivingEntity target = this.getTarget();
+
+        if (level().getGameTime() % 20 == 0) {
+            LogManager.serverInfo("Zombie2Debug",
+                "Entity " + getId() +
+                " - isMoving: " + isMoving +
+                ", moveControl.hasWanted: " + this.moveControl.hasWanted() +
+                ", navDone: " + this.getNavigation().isDone() +
+                ", target: " + (target != null) +
+                ", swinging: " + this.swinging +
+                ", isWindingUp: " + isWindingUp() +
+                ", isAlerting: " + isAlerting() +
+                ", isAlertCompleted: " + isAlertCompleted() +
+                ", dx: " + this.getDeltaMovement().x +
+                ", dz: " + this.getDeltaMovement().z +
+                ", state: " + getAnimState());
+        }
+
+        // Priority 1: Attack (swing animation)
+        if (this.swinging) {
+            return STATE_ATTACK;
+        }
+
+        // Priority 2: Winding up (pre-attack wind-up)
+        if (isWindingUp()) {
+            return STATE_WINDING;
+        }
+
+        // Priority 3: Alert transition animation (entering alert state)
+        if (isAlerting() && !isAlertCompleted()) {
+            return STATE_ALERT;
+        }
+
+        // Priority 4: Four basic states based on alert × moving
+        boolean isAlert = hasTarget() || isAlertCompleted();
+        if (isAlert) {
+            return isMoving ? STATE_RUNNING : STATE_ALERT;
+        } else {
+            return isMoving ? STATE_WALKING : STATE_IDLE;
         }
     }
     
     /**
      * 根据状态播放对应的动画
+     * 使用 AnimInstance.independentEnter() 来正确启动动画
+     * - independentEnter() 会先停止当前组的动画，然后调用 enter()
+     * - enter() 会将动画添加到 AnimController 并开始播放流程
      */
     private void playAnimationForState(int state) {
-        // 先停止当前所有动画
-        animController.stopAllAnimation();
-        
-        // 根据状态播放新动画
         String animName = getStateAnimationName(state);
         if (animName != null) {
+            // 记录动画请求时间，用于零姿态检测的宽限期
+            lastAnimRequestTick = this.level().getGameTime();
             try {
-                // 使用星火核心的 animInstance 函数创建动画实例
+                LogManager.serverInfo("Zombie2Debug", "Entity " + getId() + " Attempting to play animation: " + animName);
+                
                 cn.solarmoon.spark_core.animation.anim.AnimInstance anim = 
                     cn.solarmoon.spark_core.animation.anim.AnimInstanceBuilderKt.animInstance(
                         this, 
                         animName, 
                         true, 
                         (animInstance) -> {
-                            // 设置混合过渡时间
-                            animInstance.setInTransitionTime(0.2f);
-                            return null; // 返回 null 以匹配 Kotlin 的 Unit 返回类型
+                            animInstance.setInTransitionTime(0.15f);
+                            animInstance.setOutTransitionTime(0.15f);
+                            return null;
                         }
                     );
                 
                 if (anim != null) {
-                    animController.playAnimation(anim);
-                    LogManager.aiDebug(String.valueOf(getId()), "Playing animation: " + animName);
+                    anim.independentEnter();
+                    LogManager.serverInfo("Zombie2Debug", "Entity " + getId() + " Successfully playing animation: " + animName + ", state: " + anim.getState());
+                } else {
+                    LogManager.serverInfo("Zombie2Debug", "Entity " + getId() + " FAILED to create AnimInstance for: " + animName);
                 }
             } catch (Exception e) {
-                LogManager.aiDebug(String.valueOf(getId()), "Failed to play animation: " + e.getMessage());
+                LogManager.serverInfo("Zombie2Debug", "Entity " + getId() + " Exception playing animation " + animName + ": " + e.getMessage());
+                e.printStackTrace();
             }
         }
     }
@@ -425,6 +515,7 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
             case STATE_ALERT: return "alert";
             case STATE_HIT_FRONT: return "hit_front";
             case STATE_HIT_BACK: return "hit_back";
+            case STATE_WINDING: return "aggressive";
             default: return "still";
         }
     }
@@ -440,6 +531,7 @@ public class ModularZombie2 extends Zombie implements IEntityAnimatable<ModularZ
             case STATE_ALERT: stateName = "alert"; break;
             case STATE_HIT_FRONT: stateName = "hit_front"; break;
             case STATE_HIT_BACK: stateName = "hit_back"; break;
+            case STATE_WINDING: stateName = "winding"; break;
             default: stateName = "unknown"; break;
         }
         return String.format("State: %s, Target: %s, Bones: %d", 

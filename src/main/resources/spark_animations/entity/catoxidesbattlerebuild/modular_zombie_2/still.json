@@ -1,6 +1,6 @@
 {
   "animations": {
-    "idle": {
+    "still": {
       "loop": "loop",
       "animation_length": 5.0,
       "bones": {

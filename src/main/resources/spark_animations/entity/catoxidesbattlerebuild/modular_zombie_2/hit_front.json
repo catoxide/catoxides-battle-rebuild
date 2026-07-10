@@ -1,7 +1,7 @@
 {
   "animations": {
     "hit_front": {
-      "loop": "once",
+      "loop": "hold_on_last_frame",
       "animation_length": 1.0,
       "bones": {
         "body": {
