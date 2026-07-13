@@ -1,0 +1,166 @@
+package com.catoxide.catoxidesbattlerebuild.core.contentpack;
+
+import com.catoxide.catoxidesbattlerebuild.core.sound.MobSoundProfile;
+import com.catoxide.catoxidesbattlerebuild.util.LogManager;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredRegister;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * ContentPack 注册上下文
+ * <p>提供 ContentPack 在 {@link ContentPack#register} 阶段所需的注册器访问。
+ * 持有主 mod 的 DeferredRegister 引用，ContentPack 通过此上下文注册实体、声音等内容。
+ */
+public final class ContentPackContext {
+
+    private final String modId;
+    private final DeferredRegister<SoundEvent> soundRegister;
+    private final DeferredRegister<EntityType<?>> entityRegister;
+
+    /**
+     * 收集在此 context 下注册的所有实体 factory，供外部在 AttributeCreationEvent 中注册属性。
+     */
+    final List<RegisteredEntity<?>> registeredEntities = new ArrayList<>();
+
+    public ContentPackContext(String modId,
+                              DeferredRegister<SoundEvent> soundRegister,
+                              DeferredRegister<EntityType<?>> entityRegister) {
+        this.modId = modId;
+        this.soundRegister = soundRegister;
+        this.entityRegister = entityRegister;
+        LogManager.serverInfo("ContentPackContext", "Created for modId: %s", modId);
+    }
+
+    public String getModId() {
+        return modId;
+    }
+
+    /**
+     * 创建模块专属的 ResourceLocation
+     */
+    public ResourceLocation id(String path) {
+        return ResourceLocation.fromNamespaceAndPath(modId, path);
+    }
+
+    // ==================== EntityType 注册 ====================
+
+    /**
+     * 注册一个 EntityType（生物）
+     * <p>调用此方法后，返回的 DeferredHolder 可在需要时获取 EntityType 实例。
+     * 同时会自动记录到 registeredEntities 列表中，便于后续注册 AttributeSupplier。
+     *
+     * @param entityPath 实体注册名（如 "modular_zombie_3"）
+     * @param builder    EntityType.Builder
+     * @param <T>        实体类型（必须是 AnimatedMob 子类）
+     * @return DeferredHolder
+     */
+    @SuppressWarnings("unchecked")
+    public <T extends LivingEntity> DeferredHolder<EntityType<?>, EntityType<T>> registerEntity(
+            String entityPath,
+            EntityType.Builder<T> builder) {
+        return registerEntity(entityPath, builder, null);
+    }
+
+    /**
+     * 注册一个 EntityType（生物）并直接绑定属性
+     * <p>这是推荐方式：ContentPack 在 register() 时提供 Supplier<AttributeSupplier.Builder>，
+     * 由主项目在 EntityAttributeCreationEvent 中统一注册。
+     * 使用 Supplier 是因为 NeoForge 自定义属性（如 swim_speed）在构造函数中尚未注册。
+     *
+     * @param entityPath 实体注册名
+     * @param builder    EntityType.Builder
+     * @param attributeSupplierFactory 属性构造器工厂（可为 null，后续手动注册）
+     * @param <T>        实体类型
+     * @return DeferredHolder
+     */
+    @SuppressWarnings("unchecked")
+    public <T extends LivingEntity> DeferredHolder<EntityType<?>, EntityType<T>> registerEntity(
+            String entityPath,
+            EntityType.Builder<T> builder,
+            java.util.function.Supplier<net.minecraft.world.entity.ai.attributes.AttributeSupplier.Builder> attributeSupplierFactory) {
+        DeferredHolder<EntityType<?>, EntityType<T>> holder =
+                (DeferredHolder<EntityType<?>, EntityType<T>>) (Object) entityRegister.register(
+                        entityPath, () -> builder.build(entityPath));
+        registeredEntities.add(new RegisteredEntity<>(entityPath, holder, builder, attributeSupplierFactory));
+        LogManager.serverInfo("ContentPackContext", "Registered entity: %s (%s)", entityPath, modId);
+        return holder;
+    }
+
+    // ==================== SoundEvent 注册 ====================
+
+    /**
+     * 为本 ContentPack 注册一个自定义 SoundEvent
+     * <p>对应的 .ogg 资源文件应放在
+     * {@code assets/<modId>/sounds/<mob_id>/<event_name>.ogg}。
+     *
+     * @param soundId 声音事件 ResourceLocation
+     * @return SoundEvent DeferredHolder
+     */
+    public DeferredHolder<SoundEvent, SoundEvent> registerSound(ResourceLocation soundId) {
+        return soundRegister.register(soundId.getPath(),
+                () -> SoundEvent.createVariableRangeEvent(soundId));
+    }
+
+    /**
+     * 快捷方法：自动使用本 pack 的 modId 作为命名空间
+     */
+    public DeferredHolder<SoundEvent, SoundEvent> registerSound(String path) {
+        return registerSound(id(path));
+    }
+
+    // ==================== MobSoundProfile 注册 ====================
+
+    /**
+     * 为指定 mob 注册完整的声音配置
+     *
+     * @param mobId   生物 ID（如 "zombie3"）
+     * @param profile 声音配置
+     */
+    public void registerMobSoundProfile(String mobId, MobSoundProfile profile) {
+        LogManager.serverInfo("ContentPackContext", "Registered MobSoundProfile for '%s': ambient=%s, hurt=%s, death=%s",
+                mobId, profile.ambient(), profile.hurt(), profile.death());
+        // TODO: 存入全局 MobSoundRegistry，供 AnimatedMob 子类在运行时查询
+    }
+
+    /**
+     * 为已注册的实体注册 AttributeSupplier
+     * <p>在 EntityAttributeCreationEvent 中调用。ContentPack 在 registerEntity() 时提供的
+     * Supplier 在这里被调用来延迟创建 AttributeSupplier.Builder（此时 NeoForge 自定义属性已注册）。
+     */
+    public void registerEntityAttributes(net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent event) {
+        for (RegisteredEntity<?> entity : registeredEntities) {
+            if (entity.attributeSupplierFactory() != null) {
+                try {
+                    event.put(entity.holder().get(), entity.attributeSupplierFactory().get().build());
+                    LogManager.serverInfo("ContentPackContext", "Registered attributes for entity: %s", entity.entityPath());
+                } catch (Exception e) {
+                    LogManager.serverError("ContentPackContext", "Failed to register attributes for entity %s: %s",
+                            entity.entityPath(), e.getMessage(), e);
+                }
+            }
+        }
+    }
+
+    /**
+     * 获取在此 context 下注册的所有实体信息
+     */
+    public List<RegisteredEntity<?>> getRegisteredEntities() {
+        return registeredEntities;
+    }
+
+    /**
+     * 实体注册信息包装
+     */
+    public record RegisteredEntity<T extends LivingEntity>(
+            String entityPath,
+            DeferredHolder<EntityType<?>, EntityType<T>> holder,
+            EntityType.Builder<T> builder,
+            java.util.function.Supplier<net.minecraft.world.entity.ai.attributes.AttributeSupplier.Builder> attributeSupplierFactory
+    ) {}
+}

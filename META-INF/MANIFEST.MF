@@ -1,0 +1,8 @@
+Manifest-Version: 1.0
+Module-Name: modular-zombie-3
+Module-Version: 1.0.0
+Module-Requires: catoxidesbattlerebuild>=0.1.0
+Module-Type: contentpack
+Module-Entry: example.contentpack.zombie3.ModularZombie3Pack
+Created-By: 21.0.7 (Microsoft)
+

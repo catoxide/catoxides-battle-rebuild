@@ -26,4 +26,5 @@ public class ModEntities {
                     () -> EntityType.Builder.<ModularZombie2>of(ModularZombie2::new, MobCategory.MONSTER)
                             .sized(0.6f, 1.95f)
                             .build("modular_zombie_2"));
+    // Note: ModularZombie2 now extends AnimatedMob (PathfinderMob), no longer Zombie
 }

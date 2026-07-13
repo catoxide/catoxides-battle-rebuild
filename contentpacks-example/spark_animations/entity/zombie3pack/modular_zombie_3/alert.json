@@ -1,0 +1,50 @@
+﻿{
+  "animations": {
+    "alert": {
+      "loop": true,
+      "animation_length": 0.75,
+      "bones": {
+        "body": {
+          "rotation": {
+            "0.0": { "post": [17.5, 0, 0], "lerp_mode": "linear" },
+            "0.75": { "post": [22.5, 0, 0], "lerp_mode": "linear" }
+          },
+          "position": {
+            "0.0": { "post": [0, -0.75, 0], "lerp_mode": "linear" },
+            "0.75": { "post": [0, -0.75, 0], "lerp_mode": "linear" }
+          }
+        },
+        "left_arm": {
+          "rotation": {
+            "0.0": { "post": [-22.5, 0, 0], "lerp_mode": "linear" },
+            "0.5": { "post": [-115, 0, 0], "lerp_mode": "linear" }
+          }
+        },
+        "right_arm": {
+          "rotation": {
+            "0.0": { "post": [-22.5, 0, 0], "lerp_mode": "linear" },
+            "0.5": { "post": [-112.5, 0, 0], "lerp_mode": "linear" }
+          }
+        },
+        "left_leg": {
+          "rotation": {
+            "0.0": { "post": [-17.41615, -1.29876, -7.38733], "lerp_mode": "linear" },
+            "0.75": { "post": [-22.41615, -1.29876, -7.38733], "lerp_mode": "linear" }
+          }
+        },
+        "right_leg": {
+          "rotation": {
+            "0.0": { "post": [-17.41615, 1.29876, 7.38733], "lerp_mode": "linear" },
+            "0.75": { "post": [-22.41615, 1.29876, 7.38733], "lerp_mode": "linear" }
+          }
+        },
+        "head": {
+          "rotation": {
+            "0.0": { "post": [-4.9944, 0.22263, 2.48942], "lerp_mode": "linear" },
+            "0.25": { "post": [-14.9944, 0.22263, 2.48942], "lerp_mode": "linear" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -7,11 +7,14 @@ import com.catoxide.catoxidesbattlerebuild.client.models.ModelDataManager;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.IronSwordRenderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombie2Renderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombieRenderer;
+import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackLoader;
+import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackRegistry;
 import com.catoxide.catoxidesbattlerebuild.mob.zombie1.ModularZombie;
 import com.catoxide.catoxidesbattlerebuild.mob.zombie2.ModularZombie2;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import com.catoxide.catoxidesbattlerebuild.registry.ModWeapons;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
+import example.contentpack.zombie3.ModularZombie3Pack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -29,6 +32,13 @@ public class ClientInitializer {
         ModelDataManager.getInstance();
         LogManager.clientStartup("ClientInitializer", "Initializing EntityBoneManager...");
         EntityBoneManager.getInstance();
+
+        event.enqueueWork(() -> {
+            LogManager.clientStartup("ClientInitializer", "Loading pending Spark-Core packages...");
+            ContentPackLoader.loadPendingSparkPackages(true);
+            LogManager.clientStartup("ClientInitializer", "Spark-Core packages loaded");
+        });
+
         LogManager.clientStartup("ClientInitializer", "Client setup complete");
     }
 
@@ -40,6 +50,14 @@ public class ClientInitializer {
         LogManager.clientStartup("ClientInitializer", "Registering ModularZombie2Renderer...");
         event.registerEntityRenderer(ModEntities.MODULAR_ZOMBIE_2.get(), ModularZombie2Renderer::new);
         LogManager.clientStartup("ClientInitializer", "ModularZombie2Renderer registered");
+
+        for (ContentPackRegistry.LoadedPack loaded : ContentPackRegistry.getAllPacks()) {
+            if (loaded.pack() instanceof ModularZombie3Pack pack) {
+                LogManager.clientStartup("ClientInitializer", "Registering ModularZombie3Renderer from ContentPack '" + loaded.id() + "'...");
+                event.registerEntityRenderer(pack.getModularZombie3().get(), example.contentpack.zombie3.ModularZombie3Renderer::new);
+                LogManager.clientStartup("ClientInitializer", "ModularZombie3Renderer registered");
+            }
+        }
     }
 
     @SubscribeEvent

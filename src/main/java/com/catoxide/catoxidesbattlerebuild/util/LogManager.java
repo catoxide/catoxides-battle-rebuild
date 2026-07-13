@@ -54,6 +54,7 @@ public class LogManager {
         MOB("Mob", true),
         AI("AI", true),
         COMBAT("Combat", true),
+        CONTENTPACK("ContentPack", true),
         ALL("All", true);
 
         private final String name;
@@ -212,6 +213,12 @@ public class LogManager {
         log(LogLevel.INFO, LogSource.SERVER, tag, String.format(format, args));
     }
 
+    /** 支持 {} 风格的格式化日志（slf4j 风格） */
+    public static void serverInfoF(String tag, String format, Object... args) {
+        String message = String.format(format.replace("{}", "%s"), args);
+        log(LogLevel.INFO, LogSource.SERVER, tag, message);
+    }
+
     public static void serverWarn(String tag, String message) {
         log(LogLevel.WARN, LogSource.SERVER, tag, message);
     }
@@ -222,6 +229,10 @@ public class LogManager {
 
     public static void serverError(String tag, String message) {
         log(LogLevel.ERROR, LogSource.SERVER, tag, message);
+    }
+
+    public static void serverError(String tag, String format, Object... args) {
+        log(LogLevel.ERROR, LogSource.SERVER, tag, String.format(format, args));
     }
 
     public static void serverError(String tag, String message, Throwable t) {
@@ -444,22 +455,22 @@ public class LogManager {
 
     /** 实体初始化（保留 info） */
     public static void zombie2Init(int entityId) {
-        serverInfo(TAG_ZOMBIE2, "Entity {} initialized with Spark-Core", entityId);
+        serverInfo(TAG_ZOMBIE2, "Entity %d initialized with Spark-Core", entityId);
     }
 
     /** 动画状态切换（降为 debug） */
     public static void zombie2StateChanged(int entityId, String from, String to) {
-        serverDebug(TAG_ZOMBIE2, "Entity {} State changed: {} -> {}", entityId, from, to);
+        serverDebug(TAG_ZOMBIE2, "Entity %d State changed: %s -> %s", entityId, from, to);
     }
 
     /** 客户端动画同步（降为 debug） */
     public static void zombie2ClientSync(int entityId, String animName) {
-        clientDebug(TAG_ZOMBIE2, "Entity {} Client animation sync: {}", entityId, animName);
+        clientDebug(TAG_ZOMBIE2, "Entity %d Client animation sync: %s", entityId, animName);
     }
 
     /** 动画播放成功（降为 debug） */
     public static void zombie2AnimStarted(int entityId, String animName, String animState) {
-        serverDebug(TAG_ZOMBIE2, "Entity {} Playing animation: {} (state: {})", entityId, animName, animState);
+        serverDebug(TAG_ZOMBIE2, "Entity %d Playing animation: %s (state: %s)", entityId, animName, animState);
     }
 
     /** 动画创建失败（保留 error） */
@@ -475,19 +486,88 @@ public class LogManager {
     /** 零姿态恢复（降为 debug） */
     public static void zombie2ZeroPoseRecover(boolean clientSide, int entityId, String animName) {
         if (clientSide) {
-            clientDebug(TAG_ZOMBIE2, "Entity {} [CLIENT] Zero pose detected, recovering: {}", entityId, animName);
+            clientDebug(TAG_ZOMBIE2, "Entity %d [CLIENT] Zero pose detected, recovering: %s", entityId, animName);
         } else {
-            serverDebug(TAG_ZOMBIE2, "Entity {} [SERVER] Zero pose detected, recovering: {}", entityId, animName);
+            serverDebug(TAG_ZOMBIE2, "Entity %d [SERVER] Zero pose detected, recovering: %s", entityId, animName);
         }
     }
 
     /** 客户端骨骼数据同步（降为 debug） */
     public static void boneSyncClient(int entityId, int boneCount) {
-        clientDebug(TAG_BONE, "Entity {} synced {} bones", entityId, boneCount);
+        clientDebug(TAG_BONE, "Entity %d synced %d bones", entityId, boneCount);
     }
 
     /** 骨骼调试渲染错误（保留 warn） */
     public static void boneDebugWarn(String format, Object... args) {
         clientWarn(TAG_BONE, format, args);
+    }
+
+    // ========== ContentPack 专用日志 ==========
+
+    private static final String TAG_PACK = "ContentPack";
+
+    /** 扫描目录 */
+    public static void contentPackScanDir(String dirPath, int jarCount) {
+        serverInfo(TAG_PACK, "Scanning %d .jar file(s) in %s", jarCount, dirPath);
+    }
+
+    /** 发现 ContentPack 候选 */
+    public static void contentPackDiscovered(String name, String version) {
+        serverInfo(TAG_PACK, "Found ContentPack: %s v%s", name, version);
+    }
+
+    /** 兼容性验证失败 */
+    public static void contentPackCompatFail(String name, String reason) {
+        serverWarn(TAG_PACK, "ContentPack '%s' compatibility issue: %s", name, reason);
+    }
+
+    /** 兼容性验证通过 */
+    public static void contentPackCompatPass(String name, String version) {
+        serverInfo(TAG_PACK, "  ✓ '%s' v%s passes compatibility check", name, version);
+    }
+
+    /** 开始加载 */
+    public static void contentPackLoading(String name, String version) {
+        serverInfo(TAG_PACK, "Loading ContentPack: '%s' v%s", name, version);
+    }
+
+    /** 加载成功 */
+    public static void contentPackLoaded(String id) {
+        serverInfo(TAG_PACK, "  ✓ Successfully loaded ContentPack '%s'", id);
+    }
+
+    /** 加载失败 */
+    public static void contentPackLoadFail(String name, String reason) {
+        serverError(TAG_PACK, "Failed to load ContentPack '%s': %s", name, reason);
+    }
+
+    /** 加载失败（带异常） */
+    public static void contentPackLoadFail(String name, String reason, Throwable t) {
+        serverError(TAG_PACK, String.format("Failed to load ContentPack '%s': %s", name, reason), t);
+    }
+
+    /** 注册执行 */
+    public static void contentPackRegistering(String id) {
+        serverInfo(TAG_PACK, "  Registering: '%s'", id);
+    }
+
+    /** 加载总结 */
+    public static void contentPackLoadSummary(int loaded, int failed, int skipped, int totalRegistry) {
+        serverInfo(TAG_PACK, "=== ContentPack Load Summary ===");
+        serverInfo(TAG_PACK, "Loaded: %d, Failed: %d, Skipped: %d", loaded, failed, skipped);
+        serverInfo(TAG_PACK, "Total in registry: %d", totalRegistry);
+    }
+
+    /** Spark 资源扫描结果 */
+    public static void contentPackSparkResources(String packId, int models, int animations, int assets) {
+        serverDebug(TAG_PACK, "ContentPack '%s' resources: %d model(s), %d animation(s), %d asset(s)",
+                packId, models, animations, assets);
+    }
+
+    /** ContentPack 模块受控的 debug 日志 */
+    public static void contentPackDebug(String tag, String format, Object... args) {
+        if (isModuleEnabled(DevModule.CONTENTPACK)) {
+            serverDebug(tag, format, args);
+        }
     }
 }

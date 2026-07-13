@@ -1,0 +1,384 @@
+package com.catoxide.catoxidesbattlerebuild.core.anim;
+
+import cn.solarmoon.spark_core.animation.IEntityAnimatable;
+import cn.solarmoon.spark_core.animation.anim.AnimController;
+import cn.solarmoon.spark_core.animation.anim.AnimInstance;
+import cn.solarmoon.spark_core.animation.anim.AnimInstanceBuilderKt;
+import cn.solarmoon.spark_core.animation.model.ModelController;
+import cn.solarmoon.spark_core.animation.model.ModelIndex;
+import cn.solarmoon.spark_core.event.BoneUpdateEvent;
+import com.catoxide.catoxidesbattlerebuild.util.LogManager;
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
+
+import java.util.Map;
+
+/**
+ * AnimatedMob 基类：Spark-Core 动画生物的通用基类
+ * <p>封装 Spark-Core 集成、骨骼数据管理、动画状态机骨架、零姿态恢复、客户端同步等公共逻辑。
+ *
+ * <h3>子类职责</h3>
+ * <ul>
+ *   <li>实现 {@link #determineAnimationState()} 提供状态判定逻辑</li>
+ *   <li>实现 {@link #getStateAnimationName(int)} 提供状态→动画名映射</li>
+ *   <li>实现 {@link #getDefaultModelIndex()} 提供模型索引</li>
+ *   <li>实现 {@link #getTextureLocation()} 提供贴图路径</li>
+ *   <li>在 {@link Mob#registerGoals()} 注册 AI Goal</li>
+ *   <li>定义状态枚举常量</li>
+ * </ul>
+ *
+ * <h3>动画状态机</h3>
+ * <ul>
+ *   <li>服务端：tick 中调用 {@link #updateAnimationState()}，比较当前状态和新状态</li>
+ *   <li>客户端：tick 中调用 {@link #syncClientAnimation()}，根据同步的状态播放动画</li>
+ *   <li>零姿态恢复：自动检测无动画播放状态，调用 {@link #recoverFromZeroPose()}</li>
+ * </ul>
+ */
+public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMob implements IEntityAnimatable<T> {
+
+    // Spark-Core 动画系统
+    protected final AnimController animController;
+    protected final ModelController modelController;
+
+    // 骨骼数据管理（服务端+客户端共用）
+    protected final BoneDataManager boneData = new BoneDataManager();
+
+    // 动画状态机
+    protected static final long MIN_STATE_HOLD_TICKS = 10;
+    protected static final long ZERO_POSE_GRACE_TICKS = 10;
+
+    protected boolean serverInitialAnimPlayed = false;
+    protected long lastStateChangeTick = 0;
+    protected long lastAnimRequestTick = 0;
+    protected int lastClientAnimState = -1;
+
+    // 动画过渡时间（子类可覆盖）
+    protected float inTransitionTime = 0.05f;
+    protected float outTransitionTime = 0.05f;
+
+    protected AnimatedMob(EntityType<? extends PathfinderMob> type, Level level) {
+        super(type, level);
+        this.animController = new AnimController(this);
+        this.modelController = new ModelController(this);
+        ResourceLocation tex = getTextureLocation();
+        if (tex != null) {
+            this.modelController.setTextureLocation(tex);
+        }
+    }
+
+    // ========== 子类必须实现 ==========
+
+    /**
+     * 返回状态→动画名映射
+     * @param state 状态 ID
+     * @return 动画名（对应 animation.json 中的 name），null 表示无动画
+     */
+    public abstract String getStateAnimationName(int state);
+
+    /**
+     * 判定当前应该处于哪个状态
+     * @return 状态 ID
+     */
+    protected abstract int determineAnimationState();
+
+    /**
+     * 获取当前动画状态 ID
+     */
+    public abstract int getAnimState();
+
+    /**
+     * 设置当前动画状态 ID
+     */
+    public abstract void setAnimState(int state);
+
+    /**
+     * 获取模型索引（geo.json 路径）
+     */
+    @Override
+    public abstract ModelIndex getDefaultModelIndex();
+
+    /**
+     * 获取贴图路径
+     */
+    public abstract ResourceLocation getTextureLocation();
+
+    // ========== IEntityAnimatable ==========
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public T getAnimatable() {
+        return (T) this;
+    }
+
+    @Override
+    public AnimController getAnimController() {
+        return animController;
+    }
+
+    @Override
+    public ModelController getModelController() {
+        return modelController;
+    }
+
+    @Override
+    public Level getAnimLevel() {
+        return this.level();
+    }
+
+    @Override
+    public void onBoneUpdate(BoneUpdateEvent event) {
+        if (!level().isClientSide()) {
+            boneData.onBoneUpdate(event, level().getGameTime());
+        }
+    }
+
+    // ========== Bone Data API ==========
+
+    public Vector3f getServerBonePosition(String boneName) {
+        return boneData.getPosition(boneName);
+    }
+
+    public Matrix4f getServerBoneMatrix(String boneName) {
+        return boneData.getMatrix(boneName);
+    }
+
+    public Map<String, Vector3f> getAllServerBonePositions() {
+        return boneData.getPositions();
+    }
+
+    public Map<String, Matrix4f> getAllServerBoneMatrices() {
+        return boneData.getMatrices();
+    }
+
+    /**
+     * 客户端调用：从同步数据更新骨骼位置
+     */
+    public void updateClientBonePositions(Map<String, Vector3f> positions) {
+        if (level().isClientSide()) {
+            boneData.updateFromClient(positions, level().getGameTime());
+            LogManager.boneSyncClient(getId(), positions.size());
+        }
+    }
+
+    /**
+     * 客户端调用：从 BonePose 矩阵直接更新（用于调试渲染）
+     */
+    public void updateClientBoneMatrix(String boneName, Matrix4f mat) {
+        if (level().isClientSide()) {
+            boneData.updateMatrixFromClient(boneName, mat);
+        }
+    }
+
+    // ========== Animation State Machine ==========
+
+    /**
+     * 服务端：更新动画状态
+     * <p>比较当前状态和新状态，如果不同且超过最小保持时间，则切换并播放新动画。
+     */
+    protected void updateAnimationState() {
+        int currentState = getAnimState();
+
+        // 子类 hook：受击中等状态可跳过更新
+        if (!shouldUpdateState(currentState)) return;
+
+        // 首次播放 idle
+        if (!serverInitialAnimPlayed) {
+            serverInitialAnimPlayed = true;
+            lastStateChangeTick = this.level().getGameTime();
+            playAnimationForState(currentState);
+            return;
+        }
+
+        int newState = determineAnimationState();
+
+        if (currentState != newState &&
+                (this.level().getGameTime() - lastStateChangeTick >= MIN_STATE_HOLD_TICKS)) {
+            String fromName = getStateAnimationName(currentState);
+            String toName = getStateAnimationName(newState);
+            setAnimState(newState);
+            lastStateChangeTick = this.level().getGameTime();
+            playAnimationForState(newState);
+            LogManager.zombie2StateChanged(getId(), fromName, toName);
+        } else if (currentState != newState && this.level().getGameTime() % 20 == 0) {
+            // 状态不同但被 MIN_STATE_HOLD_TICKS 阻止
+            long ticksSinceChange = this.level().getGameTime() - lastStateChangeTick;
+            LogManager.serverDebug("AnimDiag",
+                "Entity %d wants %s(%d)->%s(%d) but blocked | swinging=%s | ticksSinceChange=%d < holdTicks=%d",
+                getId(), getStateAnimationName(currentState), currentState,
+                getStateAnimationName(newState), newState,
+                String.valueOf(this.swinging), ticksSinceChange, MIN_STATE_HOLD_TICKS);
+        } else if (currentState == newState && this.level().getGameTime() % 20 == 0) {
+            // 诊断日志：每秒记录一次状态未改变的原因
+            long ticksSinceChange = this.level().getGameTime() - lastStateChangeTick;
+            LogManager.serverDebug("AnimDiag",
+                "Entity %d stuck in %s (state=%d) | swinging=%s | ticksSinceChange=%d | holdTicks=%d",
+                getId(), getStateAnimationName(currentState), currentState,
+                String.valueOf(this.swinging), ticksSinceChange, MIN_STATE_HOLD_TICKS);
+        }
+    }
+
+    /**
+     * 客户端：根据同步的状态播放动画
+     */
+    protected void syncClientAnimation() {
+        int currentState = getAnimState();
+        if (currentState != lastClientAnimState) {
+            lastClientAnimState = currentState;
+            playAnimationForState(currentState);
+            LogManager.zombie2ClientSync(getId(), getStateAnimationName(currentState));
+        }
+    }
+
+    /**
+     * 零姿态恢复：当检测到没有动画在播放时，立即重新请求当前状态的动画
+     * <p>这可以处理因动画冲突、状态机异步处理等原因导致的零姿态问题
+     */
+    protected void recoverFromZeroPose() {
+        int currentState = getAnimState();
+        String animName = getStateAnimationName(currentState);
+        LogManager.zombie2ZeroPoseRecover(this.level().isClientSide, getId(), animName);
+        playAnimationForState(currentState);
+    }
+
+    /**
+     * 播放指定状态对应的动画
+     * <p>使用 AnimInstanceBuilderKt.animInstance() 构造动画实例，
+     * 设置过渡时间，然后调用 independentEnter() 启动动画。
+     */
+    protected void playAnimationForState(int state) {
+        String animName = getStateAnimationName(state);
+        if (animName == null) return;
+
+        lastAnimRequestTick = this.level().getGameTime();
+        try {
+            AnimInstance anim = AnimInstanceBuilderKt.animInstance(
+                    this,
+                    animName,
+                    true,
+                    (animInstance) -> {
+                        animInstance.setInTransitionTime(inTransitionTime);
+                        animInstance.setOutTransitionTime(outTransitionTime);
+                        return null;
+                    }
+            );
+
+            if (anim != null) {
+                anim.independentEnter();
+                LogManager.zombie2AnimStarted(getId(), animName, String.valueOf(anim.getState()));
+            } else {
+                LogManager.zombie2AnimFailed(getId(), animName);
+            }
+        } catch (Exception e) {
+            LogManager.zombie2AnimError(getId(), animName, e.getMessage(), e);
+        }
+    }
+
+    /**
+     * tick 中调用：检测零姿态并恢复
+     */
+    protected void checkZeroPose() {
+        if (serverInitialAnimPlayed || lastClientAnimState != -1) {
+            if (!this.animController.isPlayingAnim()
+                    && this.level().getGameTime() - lastAnimRequestTick > ZERO_POSE_GRACE_TICKS) {
+                recoverFromZeroPose();
+            }
+        }
+    }
+
+    /**
+     * 子类 hook：是否应该跳过状态更新（如受击中不允许切状态）
+     * @param currentState 当前状态
+     * @return true 允许更新，false 跳过本次更新
+     */
+    protected boolean shouldUpdateState(int currentState) {
+        return true;
+    }
+
+    /**
+     * tick 中调用：处理动画状态机更新
+     * <p>子类在 {@link Mob#tick()} 中调用此方法，避免重复编写动画 tick 逻辑。
+     */
+    protected void tickAnimation() {
+        if (!this.level().isClientSide) {
+            updateAnimationState();
+            checkZeroPose();
+        } else {
+            syncClientAnimation();
+            checkZeroPose();
+        }
+    }
+
+    // ========== Sound Hooks ==========
+    //
+    // 默认所有 override 返回 null（无声音）。Mob.playAmbientSound() / LivingEntity
+    // 在 aiStep/tick 中自动调用这些方法，null 时会跳过播放。
+    //
+    // 子类按需 override 即可：
+    //   - 短期：返回 vanilla SoundEvents（如 SoundEvents.ZOMBIE_AMBIENT）
+    //   - 长远：返回 ModSounds.SOME_SOUND.get()（自定义 SoundEvent，由 ModSounds
+    //     或 ContentPack 的 MobSoundLoader 自动从 .ogg 资源注册）
+
+    @Override
+    protected SoundEvent getAmbientSound() {
+        return null;
+    }
+
+    @Override
+    protected SoundEvent getHurtSound(DamageSource damageSource) {
+        return null;
+    }
+
+    @Override
+    protected SoundEvent getDeathSound() {
+        return null;
+    }
+
+    /**
+     * 行走声音（非 vanilla Mob 默认方法，模仿 Zombie 模式）
+     * <p>由 {@link #playStepSound(BlockPos, BlockState)} 调用。
+     * 子类可 override 返回声音事件（如 SoundEvents.ZOMBIE_STEP）。
+     */
+    public SoundEvent getStepSound() {
+        return null;
+    }
+
+    /**
+     * 行走时播放脚步声
+     * <p>vanilla hook：Entity 在 move 到新方块时调用。默认从 {@link #getStepSound()}
+     * 取声音事件，未配置则跳过。
+     */
+    @Override
+    protected void playStepSound(BlockPos pos, BlockState state) {
+        SoundEvent event = getStepSound();
+        if (event != null && !this.isSilent()) {
+            this.playSound(event, 0.15F, 1.0F);
+        }
+    }
+
+    /**
+     * 攻击挥击音效（非 vanilla hook）
+     * <p>由 {@link #playSwingSound()} 触发，子类可在 attack goal / mixin 中调用。
+     * TODO: 后续在 attack mixin 中 hook vanilla swing 时调用此方法
+     */
+    public SoundEvent getSwingSound() {
+        return null;
+    }
+
+    /**
+     * 播放挥击音效（攻击时调用）
+     */
+    public void playSwingSound() {
+        SoundEvent event = getSwingSound();
+        if (event != null && !this.isSilent()) {
+            this.playSound(event, this.getSoundVolume(), this.getVoicePitch());
+        }
+    }
+}
