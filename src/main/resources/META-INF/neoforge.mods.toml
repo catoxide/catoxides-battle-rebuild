@@ -10,6 +10,9 @@ authors="Catoxide,FAS_Hood"
 description='''Example mod description.
 Newline characters can be used and will be replaced properly.'''
 
+[[mixins]]
+config="catoxidesbattlerebuild.mixins.json"
+
 [[dependencies.catoxidesbattlerebuild]]
 modId="neoforge"
 type="required"

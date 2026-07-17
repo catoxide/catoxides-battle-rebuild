@@ -3,9 +3,10 @@
   "minVersion": "0.8",
   "package": "com.catoxide.catoxidesbattlerebuild.mixin",
   "compatibilityLevel": "JAVA_21",
-  "refmap": "catoxidesbattlerebuild.refmap.json",
   "mixins": [
-    "PlayerAttackMixin"
+    "PlayerAttackMixin",
+    "ArrowHitMixin",
+    "LivingEntityHurtMixin"
   ],
   "client": [
   ],

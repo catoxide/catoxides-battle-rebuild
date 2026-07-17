@@ -33,15 +33,22 @@ public class BodyPartConfig {
         private final String boneName;
         private final float transmissionCoeff;
         private final float armorValue;
+        private final float antiPiercing;
         private final String collisionTag;
         private final List<String> specialEffects;
         private final String hitSound;
 
         public BodyUnitConfig(String boneName, float transmissionCoeff, float armorValue,
                               String collisionTag, List<String> specialEffects, String hitSound) {
+            this(boneName, transmissionCoeff, armorValue, 0f, collisionTag, specialEffects, hitSound);
+        }
+
+        public BodyUnitConfig(String boneName, float transmissionCoeff, float armorValue,
+                              float antiPiercing, String collisionTag, List<String> specialEffects, String hitSound) {
             this.boneName = boneName;
             this.transmissionCoeff = transmissionCoeff;
             this.armorValue = armorValue;
+            this.antiPiercing = antiPiercing;
             this.collisionTag = collisionTag;
             this.specialEffects = specialEffects;
             this.hitSound = hitSound;
@@ -50,6 +57,7 @@ public class BodyPartConfig {
         public String boneName() { return boneName; }
         public float transmissionCoeff() { return transmissionCoeff; }
         public float armorValue() { return armorValue; }
+        public float antiPiercing() { return antiPiercing; }
         public String collisionTag() { return collisionTag; }
         public List<String> specialEffects() { return specialEffects; }
         public String hitSound() { return hitSound; }

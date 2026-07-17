@@ -105,6 +105,20 @@ runs {
     }
 }
 
+// Copy ContentPack JARs to each run configuration's contentpacks directory before launch
+// This ensures the correct manifest (with Module-Type: contentpack) is preserved
+['client', 'server', 'gameTestServer', 'data'].each { runName ->
+    tasks.register("copyContentPacksTo${runName.capitalize()}", Copy) {
+        from 'contentpacks'
+        into "run/${runName}/contentpacks"
+        include '*.jar'
+    }
+    def runTask = tasks.findByName("run${runName.capitalize()}")
+    if (runTask != null) {
+        runTask.dependsOn "copyContentPacksTo${runName.capitalize()}"
+    }
+}
+
 // Sets up a dependency configuration called 'localRuntime'.
 // This configuration should be used instead of 'runtimeOnly' to declare
 // a dependency that will be present for runtime testing but that is

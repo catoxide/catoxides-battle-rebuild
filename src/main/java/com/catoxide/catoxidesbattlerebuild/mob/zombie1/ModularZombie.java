@@ -1,6 +1,13 @@
 package com.catoxide.catoxidesbattlerebuild.mob.zombie1;
 
+import com.catoxide.catoxidesbattlerebuild.core.combat.EntityBoneHealthConfig;
+import com.catoxide.catoxidesbattlerebuild.core.combat.HealthConfig;
+import com.catoxide.catoxidesbattlerebuild.core.combat.HealthConfigManager;
+import com.catoxide.catoxidesbattlerebuild.server.bodypart.BodyPartConfig;
+import com.catoxide.catoxidesbattlerebuild.server.bodypart.EntityBoneSystem;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
+
+import java.util.List;
 
 import cn.solarmoon.spark_core.animation.IEntityAnimatable;
 import cn.solarmoon.spark_core.animation.anim.AnimController;
@@ -54,6 +61,8 @@ public class ModularZombie extends Zombie implements GeoEntity, IEntityAnimatabl
         super(entityType, level);
         this.aiManager = new AIManager(this);
         this.animationController = new ZombieAnimationController(this);
+        // Initialize bone system on server-side spawn
+        this.initializeBoneSystem();
     }
 
     // ========== Spark-Core IEntityAnimatable implementation ==========
@@ -346,5 +355,50 @@ public class ModularZombie extends Zombie implements GeoEntity, IEntityAnimatabl
 
     public String getCurrentStateInfo() {
         return animationController.getAnimationStateInfo();
+    }
+
+    // ========== EntityBoneSystem Integration ==========
+
+    private void initializeBoneSystem() {
+        if (this.level() == null || this.level().isClientSide) {
+            return;
+        }
+
+        net.minecraft.server.packs.resources.ResourceManager rm = this.level().getServer().getResourceManager();
+
+        // Try loading via EntityBoneHealthConfig (asset path: assets/<modid>/health_config/<entity>.json)
+        String entityId = EntityType.getKey(this.getType()).toString();
+        List<BodyPartConfig> configs = EntityBoneHealthConfig.load(rm, "catoxidesbattlerebuild", entityId.replace("catoxidesbattlerebuild:", ""));
+
+        if (configs == null || configs.isEmpty()) {
+            // Fallback: try loading via HealthConfig (legacy path)
+            ResourceLocation loc = ResourceLocation.fromNamespaceAndPath("catoxidesbattlerebuild", "health_config/" + entityId.replace("catoxidesbattlerebuild:", "") + ".json");
+            HealthConfig hc = HealthConfig.load(rm, loc);
+            if (hc != null) {
+                configs = hc.parts();
+                HealthConfigManager.getInstance().register(hc);
+            }
+        }
+
+        if (configs != null && !configs.isEmpty()) {
+            EntityBoneSystem.getInstance().initEntity(this.getId(), configs);
+            LogManager.serverInfo("ModularZombie",
+                    "Bone system initialized for entityId={}, entityKey={}", this.getId(), entityId);
+        } else {
+            LogManager.serverWarn("ModularZombie",
+                    "No health config found for entityKey={}, entityId={}", entityId, this.getId());
+        }
+    }
+
+    @Override
+    public void kill() {
+        super.kill();
+        if (!this.level().isClientSide) {
+            String entityId = EntityType.getKey(this.getType()).toString();
+            EntityBoneSystem.getInstance().removeEntity(this.getId());
+            HealthConfigManager.getInstance().unregister(entityId);
+            LogManager.serverDebug("ModularZombie",
+                    "Bone system cleaned up for entityId={}, entityKey={}", this.getId(), entityId);
+        }
     }
 }

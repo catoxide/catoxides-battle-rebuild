@@ -7,6 +7,9 @@ import cn.solarmoon.spark_core.animation.anim.AnimInstanceBuilderKt;
 import cn.solarmoon.spark_core.animation.model.ModelController;
 import cn.solarmoon.spark_core.animation.model.ModelIndex;
 import cn.solarmoon.spark_core.event.BoneUpdateEvent;
+import com.catoxide.catoxidesbattlerebuild.core.combat.EntityBoneHealthConfig;
+import com.catoxide.catoxidesbattlerebuild.server.bodypart.BodyPartConfig;
+import com.catoxide.catoxidesbattlerebuild.server.bodypart.EntityBoneSystem;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
@@ -19,6 +22,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -71,6 +75,51 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
         ResourceLocation tex = getTextureLocation();
         if (tex != null) {
             this.modelController.setTextureLocation(tex);
+        }
+        // Initialize bone system on server-side spawn
+        this.initializeBoneSystem();
+    }
+
+    // ========== EntityBoneSystem Integration ==========
+
+    /**
+     * 初始化实体骨骼系统（服务端）
+     * <p>从 health_config JSON 文件加载部位配置，注册到 EntityBoneSystem。
+     * 如果找不到配置文件，静默跳过。
+     */
+    private void initializeBoneSystem() {
+        if (this.level() == null || this.level().isClientSide()) {
+            return;
+        }
+
+        net.minecraft.server.packs.resources.ResourceManager rm = this.level().getServer().getResourceManager();
+
+        // Get entity type key (e.g., "zombie3pack:modular_zombie_3" or "catoxidesbattlerebuild:modular_zombie_2")
+        String entityKey = EntityType.getKey(this.getType()).toString();
+        String namespace = entityKey.substring(0, entityKey.indexOf(':'));
+        String entityName = entityKey.substring(entityKey.indexOf(':') + 1);
+
+        // Try loading from the entity's own namespace first
+        List<BodyPartConfig> configs = EntityBoneHealthConfig.load(rm, namespace, entityName);
+
+        // Fallback: try catoxidesbattlerebuild namespace
+        if (configs == null || configs.isEmpty()) {
+            configs = EntityBoneHealthConfig.load(rm, "catoxidesbattlerebuild", entityName);
+        }
+
+        // Ultimate fallback: try "modular_zombie" as generic config
+        if (configs == null || configs.isEmpty()) {
+            configs = EntityBoneHealthConfig.load(rm, "catoxidesbattlerebuild", "modular_zombie");
+        }
+
+        if (configs != null && !configs.isEmpty()) {
+            EntityBoneSystem.getInstance().initEntity(this.getId(), configs);
+            LogManager.serverInfo("AnimatedMob",
+                    "Bone system initialized for entityId=%d, entityKey=%s, configParts=%d",
+                    this.getId(), entityKey, configs.size());
+        } else {
+            LogManager.serverDebug("AnimatedMob",
+                    "No health config found for entityKey=%s", entityKey);
         }
     }
 

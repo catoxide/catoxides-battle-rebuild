@@ -3,6 +3,8 @@ package com.catoxide.catoxidesbattlerebuild.server.bodypart;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.catoxide.catoxidesbattlerebuild.util.LogManager;
+
 public class BodyPart {
     private final String partName;
     private float moduleHealth;
@@ -24,7 +26,10 @@ public class BodyPart {
     }
 
     public float applyDamage(float damage) {
+        float before = moduleHealth;
         moduleHealth = Math.max(0, moduleHealth - damage);
+        LogManager.serverInfo("TEST-BodyPart", "  [{}] applyDamage: {} → {} (damage={}, transmissionToBase={})",
+            partName, before, moduleHealth, damage, transmissionToBase);
         return damage * transmissionToBase;
     }
 

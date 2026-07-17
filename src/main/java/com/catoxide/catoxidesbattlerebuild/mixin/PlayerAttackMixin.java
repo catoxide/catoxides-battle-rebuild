@@ -9,13 +9,13 @@ import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Player.class)
 public abstract class PlayerAttackMixin {
 
-    @Inject(method = "attack", at = @At("HEAD"), cancellable = true)
-    private void onAttack(Entity target, CallbackInfoReturnable<Boolean> cir) {
+    @Inject(method = "attack", at = @At("HEAD"))
+    private void onAttack(Entity target, CallbackInfo ci) {
         if (!(target instanceof LivingEntity livingTarget)) {
             return;
         }
@@ -24,8 +24,6 @@ public abstract class PlayerAttackMixin {
         ItemStack heldItem = player.getMainHandItem();
 
         if (heldItem.getItem() instanceof IronSwordWeapon) {
-            cir.cancel();
-            
             // 使用玩家攻击距离（约4.5格）
             double playerReach = 4.5;
             

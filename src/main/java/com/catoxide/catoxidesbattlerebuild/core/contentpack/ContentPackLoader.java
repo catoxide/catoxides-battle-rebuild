@@ -10,6 +10,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -120,6 +121,26 @@ public final class ContentPackLoader {
         for (File jar : jars) {
             ContentPackManifest manifest = ContentPackManifest.fromJar(jar);
             if (manifest == null) {
+                // Diagnostic: check if JAR has a manifest at all, and if it has required attributes
+                try (JarFile testJar = new JarFile(jar)) {
+                    java.util.jar.Manifest jManifest = testJar.getManifest();
+                    if (jManifest == null) {
+                        LogManager.serverWarn(TAG, "  ✗ '%s' has NO MANIFEST.MF - skipping", jar.getName());
+                    } else {
+                        String mType = jManifest.getMainAttributes().getValue("Module-Type");
+                        String mName = jManifest.getMainAttributes().getValue("Module-Name");
+                        String mEntry = jManifest.getMainAttributes().getValue("Module-Entry");
+                        LogManager.serverWarn(TAG, "  ✗ '%s' missing ContentPack manifest attributes - skipping", jar.getName());
+                        LogManager.serverWarn(TAG, "    Module-Type: %s (expected: contentpack)", mType);
+                        LogManager.serverWarn(TAG, "    Module-Name: %s", mName);
+                        LogManager.serverWarn(TAG, "    Module-Entry: %s", mEntry);
+                        LogManager.serverWarn(TAG, "    To fix: ensure the JAR's META-INF/MANIFEST.MF contains ContentPack metadata");
+                        LogManager.serverWarn(TAG, "    This often happens when IDE file sync strips the manifest during copy");
+                    }
+                } catch (IOException e) {
+                    LogManager.serverWarn(TAG, "  ✗ '%s' cannot be read as JAR: %s - skipping",
+                            jar.getName(), e.getMessage());
+                }
                 continue;
             }
 

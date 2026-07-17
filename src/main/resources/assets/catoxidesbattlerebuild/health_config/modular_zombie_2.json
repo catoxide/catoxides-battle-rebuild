@@ -1,0 +1,116 @@
+{
+  "entity_id": "catoxidesbattlerebuild:modular_zombie_2",
+  "parts": [
+    {
+      "partName": "head",
+      "maxModuleHealth": 10.0,
+      "isFatal": true,
+      "transmissionToBase": 1.5,
+      "units": [
+        {
+          "boneName": "head",
+          "transmissionCoeff": 1.0,
+          "armorValue": 2.0,
+          "antiPiercing": 3.0,
+          "collisionTag": "head",
+          "specialEffects": [],
+          "hitSound": "entity.zombie.hurt"
+        },
+        {
+          "boneName": "headwear",
+          "transmissionCoeff": 1.0,
+          "armorValue": 2.0,
+          "antiPiercing": 3.0,
+          "collisionTag": "head",
+          "specialEffects": [],
+          "hitSound": "entity.zombie.hurt"
+        }
+      ]
+    },
+    {
+      "partName": "body",
+      "maxModuleHealth": 25.0,
+      "isFatal": false,
+      "transmissionToBase": 1.0,
+      "units": [
+        {
+          "boneName": "body",
+          "transmissionCoeff": 1.0,
+          "armorValue": 5.0,
+          "antiPiercing": 5.0,
+          "collisionTag": "body",
+          "specialEffects": [],
+          "hitSound": "entity.zombie.hurt"
+        }
+      ]
+    },
+    {
+      "partName": "leftArm",
+      "maxModuleHealth": 8.0,
+      "isFatal": false,
+      "transmissionToBase": 0.5,
+      "units": [
+        {
+          "boneName": "left_arm",
+          "transmissionCoeff": 1.0,
+          "armorValue": 3.0,
+          "antiPiercing": 2.0,
+          "collisionTag": "arm",
+          "specialEffects": [],
+          "hitSound": "entity.zombie.hurt"
+        }
+      ]
+    },
+    {
+      "partName": "rightArm",
+      "maxModuleHealth": 8.0,
+      "isFatal": false,
+      "transmissionToBase": 0.5,
+      "units": [
+        {
+          "boneName": "right_arm",
+          "transmissionCoeff": 1.0,
+          "armorValue": 3.0,
+          "antiPiercing": 2.0,
+          "collisionTag": "arm",
+          "specialEffects": [],
+          "hitSound": "entity.zombie.hurt"
+        }
+      ]
+    },
+    {
+      "partName": "leftLeg",
+      "maxModuleHealth": 10.0,
+      "isFatal": false,
+      "transmissionToBase": 0.5,
+      "units": [
+        {
+          "boneName": "left_leg",
+          "transmissionCoeff": 1.0,
+          "armorValue": 4.0,
+          "antiPiercing": 2.0,
+          "collisionTag": "leg",
+          "specialEffects": [],
+          "hitSound": "entity.zombie.hurt"
+        }
+      ]
+    },
+    {
+      "partName": "rightLeg",
+      "maxModuleHealth": 10.0,
+      "isFatal": false,
+      "transmissionToBase": 0.5,
+      "units": [
+        {
+          "boneName": "right_leg",
+          "transmissionCoeff": 1.0,
+          "armorValue": 4.0,
+          "antiPiercing": 2.0,
+          "collisionTag": "leg",
+          "specialEffects": [],
+          "hitSound": "entity.zombie.hurt"
+        }
+      ]
+    }
+  ]
+}

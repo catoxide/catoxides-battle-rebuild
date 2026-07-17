@@ -92,6 +92,16 @@ public class EntityBoneSystem {
         return data != null ? data.getUnitByBone(boneName) : null;
     }
 
+    public List<BodyUnit> getDefaultBodyUnits(int entityId) {
+        EntityBoneData data = entityDataMap.get((long) entityId);
+        if (data == null) return new ArrayList<>();
+        List<BodyUnit> allUnits = new ArrayList<>();
+        for (BodyPart part : data.getParts()) {
+            allUnits.addAll(part.getUnits());
+        }
+        return allUnits;
+    }
+
     public void removeEntity(int entityId) {
         entityDataMap.remove((long) entityId);
         LogManager.serverDebug("EntityBoneSystem", "Removed entity data for entityId={}", entityId);
