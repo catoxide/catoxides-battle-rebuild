@@ -200,11 +200,12 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         // 必须无条件调用（客户端需要 syncClientAnimation 来播放动画）——与手写类（zombie3）一致
         tickAnimation();
         if (!this.level().isClientSide) {
-            // 挥动事件诊断：记录每次 swinging 从 false 变 true（攻击频率）
+            // 挥动事件诊断：记录每次 swinging 从 false 变 true（攻击频率 + 攻击源）
             if (this.swinging && !lastSwingFlag) {
                 LogManager.serverInfo("AnimDiag",
-                        "Entity %d NEW SWING tick=%d state=%d target=%s",
+                        "Entity %d NEW SWING tick=%d state=%d goals=%d target=%s",
                         getId(), this.level().getGameTime(), getAnimState(),
+                        this.goalSelector.getAvailableGoals().size(),
                         this.getTarget() != null ? this.getTarget().getName().getString() : "null");
             }
             lastSwingFlag = this.swinging;

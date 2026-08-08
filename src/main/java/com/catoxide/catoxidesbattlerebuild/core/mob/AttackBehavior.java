@@ -28,6 +28,8 @@ public class AttackBehavior implements IMobBehavior {
     @Override
     public void registerGoals(DataDrivenMob mob) {
         // 固定攻击间隔（JSON cooldown 控制），挥动动画完整播放后 swinging 正常重置
+        com.catoxide.catoxidesbattlerebuild.util.LogManager.serverInfo("AnimDiag",
+                "Registering attack goal: interval=%d speed=%.2f", cooldown, speedModifier);
         mob.goalSelector.addGoal(1, new FixedIntervalAttackGoal(mob, speedModifier, true, cooldown));
     }
 
