@@ -7,7 +7,9 @@
     "PlayerAttackMixin",
     "LivingEntityHurtMixin",
     "ItemStackMixin",
-    "EnchantmentHelperMixin"
+    "EnchantmentHelperMixin",
+    "AnvilMenuMixin",
+    "RepairItemRecipeMixin"
   ],
   "client": [
   ],
