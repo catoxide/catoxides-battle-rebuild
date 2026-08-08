@@ -40,6 +40,8 @@ public final class ChildFirstClassLoader extends URLClassLoader {
             "cn.solarmoon.spark_core.",
             "software.bernie.geckolib.",
             "thedarkcolour.",
+            // sable 物理库（由 NeoForge mod 加载器提供；contentpack 只能经主 mod 防腐层接口访问）
+            "dev.ryanhcode.sable.",
             "com.google.gson.",
             "com.google.common.",
             "org.slf4j.",
