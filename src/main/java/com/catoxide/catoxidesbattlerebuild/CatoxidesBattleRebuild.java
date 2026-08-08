@@ -25,9 +25,11 @@ public class CatoxidesBattleRebuild {
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, CatoxidesBattleRebuildConstants.MODID);
 
     private static ContentPackContext contentPackContext;
+    private net.neoforged.fml.ModContainer modContainer;
 
-    public CatoxidesBattleRebuild(IEventBus modEventBus) {
+    public CatoxidesBattleRebuild(IEventBus modEventBus, net.neoforged.fml.ModContainer modContainer) {
         LogManager.serverStartup("CatoxidesBattleRebuild", "Initializing mod...");
+        this.modContainer = modContainer;
 
         CatoxidesBattleRebuildConstants.init();
         ModNetworkHandler.init();
@@ -64,7 +66,8 @@ public class CatoxidesBattleRebuild {
                     CatoxidesBattleRebuildConstants.MODID,
                     ModSounds.SOUNDS,
                     ModEntities.ENTITIES,
-                    modEventBus
+                    modEventBus,
+                    modContainer
             );
             ContentPackLoader.executeAllRegistries(contentPackContext);
             ModEvents.setContentPackContext(contentPackContext);

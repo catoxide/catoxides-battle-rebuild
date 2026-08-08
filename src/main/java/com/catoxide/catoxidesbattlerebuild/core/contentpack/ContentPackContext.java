@@ -40,6 +40,7 @@ public final class ContentPackContext {
     private final DeferredRegister<SoundEvent> soundRegister;
     private final DeferredRegister<EntityType<?>> entityRegister;
     private final net.neoforged.bus.api.IEventBus modEventBus;
+    private final net.neoforged.fml.ModContainer modContainer;
 
     /** 按命名空间动态创建的实体注册表（DLC 独立 namespace 用） */
     private final Map<String, DeferredRegister<EntityType<?>>> entityRegistries = new HashMap<>();
@@ -55,12 +56,31 @@ public final class ContentPackContext {
     public ContentPackContext(String modId,
                               DeferredRegister<SoundEvent> soundRegister,
                               DeferredRegister<EntityType<?>> entityRegister,
-                              net.neoforged.bus.api.IEventBus modEventBus) {
+                              net.neoforged.bus.api.IEventBus modEventBus,
+                              net.neoforged.fml.ModContainer modContainer) {
         this.modId = modId;
         this.soundRegister = soundRegister;
         this.entityRegister = entityRegister;
         this.modEventBus = modEventBus;
+        this.modContainer = modContainer;
         LogManager.serverInfo("ContentPackContext", "Created for modId: %s", modId);
+    }
+
+    /**
+     * 注册 contentpack 的配置（ModConfigSpec → toml，游戏内可编辑 + /reload 生效）。
+     * <p>contentpack 不是 mod，无法直接注册配置——通过主 mod 的 ModContainer 注册。
+     * 文件名需唯一（如 {@code durability-pack-common.toml}）避免与其他包冲突。
+     *
+     * @param type     配置类型（COMMON/SERVER/CLIENT）
+     * @param spec     ModConfigSpec（contentpack 用 ModConfigSpec.Builder 构建）
+     * @param fileName 配置文件唯一名（不含扩展名，如 "durability-pack-common"）
+     */
+    public void registerConfig(net.neoforged.fml.config.ModConfig.Type type,
+                               net.neoforged.neoforge.common.ModConfigSpec spec,
+                               String fileName) {
+        modContainer.registerConfig(type, spec, fileName + ".toml");
+        LogManager.serverInfo("ContentPackContext", "Registered config '{}' (type {}) for contentpack",
+                fileName, type);
     }
 
     public String getModId() {

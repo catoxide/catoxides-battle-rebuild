@@ -27,11 +27,10 @@ public class DegradationHandler implements IDurabilityDegradationHandler {
     private static final String TAG = "DegradationHandler";
     private static final Random RANDOM = new Random();
 
-    /** 配置（静态简化版，后续可换 ModConfigSpec） */
-    private static final double MENDING_CHANCE = 0.2;
-    private static final double ANVIL_CHANCE = 0.2;
-    private static final double CRAFTING_CHANCE = 0.3;
-    private static final Set<String> EXEMPT_ITEMS = Set.of();
+    /** 配置（ModConfigSpec → toml，游戏内可改） */
+    private static final Set<String> EXEMPT_ITEMS() {
+        return Set.copyOf(DurabilityConfig.exemptItems);
+    }
 
     @Override
     public void processMendingDegradation(ItemStack stack, ServerLevel level, int repairAmount) {
@@ -39,8 +38,8 @@ public class DegradationHandler implements IDurabilityDegradationHandler {
             if (level == null || stack.isEmpty() || repairAmount <= 0) return;
             if (stack.getMaxDamage() <= 0) return;
             String itemId = getItemId(stack);
-            if (itemId == null || EXEMPT_ITEMS.contains(itemId)) return;
-            rollAndReduce(stack, repairAmount, MENDING_CHANCE, "Mending", itemId);
+            if (itemId == null || EXEMPT_ITEMS().contains(itemId)) return;
+            rollAndReduce(stack, repairAmount, DurabilityConfig.mendingChance, "Mending", itemId);
         } catch (Throwable t) {
             LogManager.serverError(TAG, "Mending degradation failed: {}", t.getMessage());
         }
@@ -51,11 +50,11 @@ public class DegradationHandler implements IDurabilityDegradationHandler {
         try {
             if (result == null || result.isEmpty() || left.isEmpty()) return;
             String itemId = getItemId(result);
-            if (itemId == null || EXEMPT_ITEMS.contains(itemId)) return;
+            if (itemId == null || EXEMPT_ITEMS().contains(itemId)) return;
             // 铁砧：按修复量比例（简化：修复 1 点即判定一次）
             int repaired = left.getDamageValue() - result.getDamageValue();
             if (repaired <= 0) return;
-            rollAndReduce(result, repaired, ANVIL_CHANCE, "Anvil", itemId);
+            rollAndReduce(result, repaired, DurabilityConfig.anvilChance, "Anvil", itemId);
         } catch (Throwable t) {
             LogManager.serverError(TAG, "Anvil degradation failed: {}", t.getMessage());
         }
@@ -66,10 +65,10 @@ public class DegradationHandler implements IDurabilityDegradationHandler {
         try {
             if (result == null || result.isEmpty() || damagedInput.isEmpty()) return;
             String itemId = getItemId(result);
-            if (itemId == null || EXEMPT_ITEMS.contains(itemId)) return;
+            if (itemId == null || EXEMPT_ITEMS().contains(itemId)) return;
             int repaired = damagedInput.getDamageValue() - result.getDamageValue();
             if (repaired <= 0) return;
-            rollAndReduce(result, repaired, CRAFTING_CHANCE, "Crafting", itemId);
+            rollAndReduce(result, repaired, DurabilityConfig.craftingChance, "Crafting", itemId);
         } catch (Throwable t) {
             LogManager.serverError(TAG, "Crafting degradation failed: {}", t.getMessage());
         }

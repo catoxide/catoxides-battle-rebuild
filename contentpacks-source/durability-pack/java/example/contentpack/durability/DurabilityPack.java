@@ -39,6 +39,12 @@ public class DurabilityPack implements ContentPack {
 
     @Override
     public void register(ContentPackContext context) {
+        // 注册配置（ModConfigSpec → toml，游戏内可编辑 + reload 生效）
+        context.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON,
+                DurabilityConfig.SPEC, "durability-pack-common");
+        context.getModEventBus().addListener(
+                (net.neoforged.fml.event.config.ModConfigEvent.Loading e) -> DurabilityConfig.load());
+
         // 通过 mod 总线注册 RegisterCapabilitiesEvent（mod 加载阶段）
         context.getModEventBus().addListener((RegisterCapabilitiesEvent event) -> {
             List<Item> damageable = new ArrayList<>();
