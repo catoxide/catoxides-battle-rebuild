@@ -30,6 +30,19 @@ repositories {
         name = 'NeoForged'
         url 'https://maven.neoforged.net/releases'
     }
+    // RyanHCode Maven — sable 物理库（官方仓库）
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = 'RyanHCode Maven'
+                url = 'https://maven.ryanhcode.dev/releases'
+            }
+        }
+        filter {
+            includeGroup('dev.ryanhcode.sable')
+            includeGroup('dev.ryanhcode.sable-companion')
+        }
+    }
     maven {
         name = 'KotlinForForge'
         url 'https://thedarkcolour.github.io/KotlinForForge/'
@@ -141,6 +154,14 @@ dependencies {
 
     // Spark-Core for bedrock model loading and server-side bone calculation
     implementation files("libs/spark-core.jar")
+
+    // sable 物理库（compileOnly：仅编译期可见，不打进产物。
+    // 运行时由 mods/ 里的 sable mod 经 ChildFirstClassLoader 黑名单 parent-only 提供）
+    compileOnly("dev.ryanhcode.sable:sable-neoforge-${minecraft_version}:${sable_version}") {
+        exclude group: 'foundry.veil'
+        exclude group: 'fuzs.forgeconfigapiport'
+        exclude group: 'com.simibubi.create'
+    }
 
     // GeckoLib for animations
     implementation "software.bernie.geckolib:geckolib-neoforge-1.21.1:${geckolib_version}"
