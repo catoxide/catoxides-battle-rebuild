@@ -225,13 +225,13 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
                         this.getTarget() != null ? this.getTarget().getName().getString() : "null");
             }
             lastSwingFlag = this.swinging;
-            // 诊断日志（每 20 tick）：swinging 状态 + ATTACK_SPEED + swing 时长
+            // 诊断日志（每 20 tick）：swinging 状态 + ATTACK_SPEED + swing 时长 + swingTime
             if (this.level().getGameTime() % 20 == 0) {
                 LogManager.serverInfo("AnimDiag",
-                        "Entity %d state=%d swinging=%s attackSpeed=%.2f swingDur=%d moving=%s",
-                        getId(), getAnimState(), this.swinging,
-                        this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_SPEED),
+                        "Entity %d state=%d swinging=%s swingTime=%d dur=%d speed=%.2f moving=%s",
+                        getId(), getAnimState(), this.swinging, this.swingTime,
                         this.getCurrentSwingDuration(),
+                        this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_SPEED),
                         this.moveControl.hasWanted() || !this.getNavigation().isDone());
             }
             // 受击状态计时
