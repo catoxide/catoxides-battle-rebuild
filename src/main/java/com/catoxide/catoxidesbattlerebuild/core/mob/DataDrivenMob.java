@@ -201,7 +201,7 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
             // 诊断日志（每 20 tick）：swinging 状态 + ATTACK_SPEED + swing 时长
             if (this.level().getGameTime() % 20 == 0) {
                 LogManager.serverInfo("AnimDiag",
-                        "Entity {} state={} swinging={} attackSpeed={} swingDur={} moving={}",
+                        "Entity %d state=%d swinging=%s attackSpeed=%.2f swingDur=%d moving=%s",
                         getId(), getAnimState(), this.swinging,
                         this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_SPEED),
                         this.getCurrentSwingDuration(),
