@@ -172,9 +172,10 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
      */
     @Override
     public ModelIndex getModelIndex(ItemStack itemStack, Level level, ItemDisplayContext context) {
-        String modelPath = isFirstPerson(context) ? "swords_fp" : "swords_tp";
+        // 模型文件: spark_models/item/catoxidesbattlerebuild/iron_sword.json
+        // (fp/tp 共用该模型; 如需独立资源后续加 swords_fp/swords_tp 模型文件)
         ResourceLocation modelLoc = ResourceLocation.fromNamespaceAndPath(
-                CatoxidesBattleRebuildConstants.MODID, modelPath);
+                CatoxidesBattleRebuildConstants.MODID, "iron_sword");
         return new ModelIndex("item", modelLoc);
     }
 
