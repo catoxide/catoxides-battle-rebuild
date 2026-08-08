@@ -1,9 +1,11 @@
 package com.catoxide.catoxidesbattlerebuild.registry;
 
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
+import com.catoxide.catoxidesbattlerebuild.core.projectile.CustomProjectileEntity;
 import com.catoxide.catoxidesbattlerebuild.mob.zombie1.ModularZombie;
 import com.catoxide.catoxidesbattlerebuild.mob.zombie2.ModularZombie2;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -26,5 +28,11 @@ public class ModEntities {
                     () -> EntityType.Builder.<ModularZombie2>of(ModularZombie2::new, MobCategory.MONSTER)
                             .sized(0.6f, 1.95f)
                             .build("modular_zombie_2"));
-    // Note: ModularZombie2 now extends AnimatedMob (PathfinderMob), no longer Zombie
+
+    // Custom lightweight projectile entity (no AABB, Spark-synced trajectory)
+    public static final DeferredHolder<EntityType<?>, EntityType<CustomProjectileEntity>> CUSTOM_PROJECTILE =
+            ENTITIES.register("custom_projectile",
+                    () -> EntityType.Builder.<CustomProjectileEntity>of(CustomProjectileEntity::new, MobCategory.MISC)
+                            .sized(0.05f, 0.05f)
+                            .build("custom_projectile"));
 }

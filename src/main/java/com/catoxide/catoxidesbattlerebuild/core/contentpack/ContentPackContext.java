@@ -1,6 +1,9 @@
 package com.catoxide.catoxidesbattlerebuild.core.contentpack;
 
 import com.catoxide.catoxidesbattlerebuild.core.sound.MobSoundProfile;
+import com.catoxide.catoxidesbattlerebuild.core.structure.blueprint.StructureBlueprint;
+import com.catoxide.catoxidesbattlerebuild.core.structure.blueprint.BlueprintParser;
+import com.catoxide.catoxidesbattlerebuild.core.structure.manager.StructureManager;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
@@ -9,6 +12,9 @@ import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -152,6 +158,66 @@ public final class ContentPackContext {
      */
     public List<RegisteredEntity<?>> getRegisteredEntities() {
         return registeredEntities;
+    }
+
+    // ==================== Structure 注册 ====================
+
+    /**
+     * 注册一个建筑结构
+     * <p>将建筑蓝图注册到 StructureManager，在 world 加载时自动生成。
+     *
+     * @param blueprint 建筑蓝图定义
+     */
+    public void registerStructure(StructureBlueprint blueprint) {
+        if (blueprint == null) {
+            LogManager.serverError("ContentPackContext", "Cannot register null structure");
+            return;
+        }
+        if (blueprint.structureId == null || blueprint.structureId.isBlank()) {
+            LogManager.serverError("ContentPackContext", "Cannot register structure with null/empty ID");
+            return;
+        }
+
+        // Set namespace if not set
+        if (blueprint.namespace == null || blueprint.namespace.isEmpty()) {
+            blueprint.namespace = modId;
+        }
+
+        StructureManager.registerStructure(blueprint);
+        LogManager.serverInfo("ContentPackContext", "Registered structure: %s (namespace: %s, pieces: %d)",
+            blueprint.structureId, blueprint.namespace, blueprint.pieces.size());
+    }
+
+    /**
+     * 从 ContentPack JAR 中的蓝图文件注册建筑
+     * <p>自动查找 structures/ 目录下的所有 blueprint.json 文件并注册。
+     *
+     * @param structuresDir ContentPack JAR 中的 structures 目录路径
+     */
+    public void registerStructuresFromDirectory(Path structuresDir) {
+        if (structuresDir == null || !Files.exists(structuresDir)) {
+            return;
+        }
+
+        try {
+            Files.walk(structuresDir).filter(Files::isRegularFile)
+                .filter(path -> path.toString().endsWith("blueprint.json"))
+                .forEach(path -> {
+                    try {
+                        StructureBlueprint blueprint = BlueprintParser.parseFile(path);
+                        if (blueprint.namespace == null || blueprint.namespace.isEmpty()) {
+                            blueprint.namespace = modId;
+                        }
+                        StructureManager.registerStructure(blueprint);
+                        LogManager.serverInfo("ContentPackContext", "Loaded structure from: %s", path.getFileName());
+                    } catch (Exception e) {
+                        LogManager.serverError("ContentPackContext", "Failed to load structure from %s: %s",
+                            path.getFileName(), e.getMessage());
+                    }
+                });
+        } catch (IOException e) {
+            LogManager.serverError("ContentPackContext", "Failed to scan structures directory: %s", e.getMessage());
+        }
     }
 
     /**

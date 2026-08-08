@@ -1,0 +1,128 @@
+{
+  "structureId": "example_structure",
+  "namespace": "catoxidesbattlerebuild",
+  "startPool": "start",
+  "maxDistanceFromCenter": 112,
+  "structureSize": 2,
+  "terrainAdaptation": "beard_cut",
+  "fallbackPool": "minecraft:empty_pool_element",
+  "pieces": [
+    {
+      "name": "main_hall",
+      "templatePath": "catoxidesbattlerebuild/example_structure/main_hall",
+      "size": [10, 8, 10],
+      "weight": 1,
+      "isStart": true,
+      "projection": "ground",
+      "jigsawBlocks": [
+        {
+          "x": 5, "y": 8, "z": 5,
+          "name": "top",
+          "targetPool": "catoxidesbattlerebuild:example_structure/tower",
+          "finalState": "minecraft:stone_bricks",
+          "jointType": "plain",
+          "maxDepth": 4,
+          "facing": "up"
+        },
+        {
+          "x": 10, "y": 1, "z": 5,
+          "name": "east",
+          "targetPool": "catoxidesbattlerebuild:example_structure/corridor",
+          "finalState": "minecraft:stone_bricks",
+          "jointType": "plain",
+          "maxDepth": 4,
+          "facing": "east"
+        },
+        {
+          "x": 0, "y": 1, "z": 5,
+          "name": "west",
+          "targetPool": "catoxidesbattlerebuild:example_structure/corridor",
+          "finalState": "minecraft:stone_bricks",
+          "jointType": "plain",
+          "maxDepth": 4,
+          "facing": "west"
+        }
+      ]
+    },
+    {
+      "name": "tower",
+      "templatePath": "catoxidesbattlerebuild/example_structure/tower",
+      "size": [6, 12, 6],
+      "weight": 1,
+      "projection": "ground",
+      "jigsawBlocks": [
+        {
+          "x": 3, "y": 0, "z": 3,
+          "name": "bottom",
+          "targetPool": "minecraft:empty",
+          "finalState": "minecraft:stone_bricks",
+          "jointType": "plain",
+          "maxDepth": 4,
+          "facing": "down"
+        }
+      ]
+    },
+    {
+      "name": "corridor",
+      "templatePath": "catoxidesbattlerebuild/example_structure/corridor",
+      "size": [8, 4, 4],
+      "weight": 1,
+      "projection": "ground",
+      "jigsawBlocks": [
+        {
+          "x": 0, "y": 1, "z": 2,
+          "name": "entry",
+          "targetPool": "catoxidesbattlerebuild:example_structure/main_hall",
+          "finalState": "minecraft:stone_bricks",
+          "jointType": "plain",
+          "maxDepth": 4,
+          "facing": "west"
+        },
+        {
+          "x": 8, "y": 1, "z": 2,
+          "name": "exit",
+          "targetPool": "minecraft:empty",
+          "finalState": "minecraft:cobblestone_wall",
+          "jointType": "plain",
+          "maxDepth": 4,
+          "facing": "east"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "fromPiece": "main_hall", "fromJigsaw": "top",
+      "toPiece": "tower", "toJigsaw": "bottom",
+      "weight": 1
+    },
+    {
+      "fromPiece": "main_hall", "fromJigsaw": "east",
+      "toPiece": "corridor", "toJigsaw": "entry",
+      "weight": 1
+    },
+    {
+      "fromPiece": "main_hall", "fromJigsaw": "west",
+      "toPiece": "corridor", "toJigsaw": "entry",
+      "weight": 1
+    }
+  ],
+  "processors": [],
+  "placement": {
+    "spacing": 32,
+    "separation": 12,
+    "salt": 12345,
+    "recommendedDensity": 1.0,
+    "type": "random_spread",
+    "heightType": "motion_blocking",
+    "heightOffset": 0,
+    "biomes": [],
+    "excludedBiomes": [],
+    "exclusionZones": [
+      {
+        "structureType": "minecraft:village",
+        "distance": 16
+      }
+    ]
+  }
+}

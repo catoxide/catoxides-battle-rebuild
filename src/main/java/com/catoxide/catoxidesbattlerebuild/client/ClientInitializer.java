@@ -4,6 +4,7 @@ import cn.solarmoon.spark_core.event.ItemInHandModelRegisterEvent;
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
 import com.catoxide.catoxidesbattlerebuild.client.geometry.EntityBoneManager;
 import com.catoxide.catoxidesbattlerebuild.client.models.ModelDataManager;
+import com.catoxide.catoxidesbattlerebuild.client.renderer.CustomProjectileRenderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.IronSwordRenderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombie2Renderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombieRenderer;
@@ -50,6 +51,10 @@ public class ClientInitializer {
         LogManager.clientStartup("ClientInitializer", "Registering ModularZombie2Renderer...");
         event.registerEntityRenderer(ModEntities.MODULAR_ZOMBIE_2.get(), ModularZombie2Renderer::new);
         LogManager.clientStartup("ClientInitializer", "ModularZombie2Renderer registered");
+
+        LogManager.clientStartup("ClientInitializer", "Registering CustomProjectileRenderer...");
+        event.registerEntityRenderer(ModEntities.CUSTOM_PROJECTILE.get(), CustomProjectileRenderer::new);
+        LogManager.clientStartup("ClientInitializer", "CustomProjectileRenderer registered");
 
         for (ContentPackRegistry.LoadedPack loaded : ContentPackRegistry.getAllPacks()) {
             if (loaded.pack() instanceof ModularZombie3Pack pack) {
