@@ -50,6 +50,8 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
     private int hitTime = 0;
     /** 挥动事件诊断 */
     private boolean lastSwingFlag = false;
+    /** 本次挥动开始 tick（防御性重置用，仅 false→true 时记录） */
+    private long swingStartTick = 0;
 
     /** 懒初始化：首次访问时从 MobDefinitionRegistry 装配 */
     private MobDefinition definition;
@@ -218,6 +220,7 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         if (!this.level().isClientSide) {
             // 挥动事件诊断：记录每次 swinging 从 false 变 true（攻击频率 + 攻击源）
             if (this.swinging && !lastSwingFlag) {
+                swingStartTick = this.level().getGameTime();
                 LogManager.serverInfo("AnimDiag",
                         "Entity %d NEW SWING tick=%d state=%d goals=%d target=%s",
                         getId(), this.level().getGameTime(), getAnimState(),
@@ -236,8 +239,9 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
             }
             // 防御：原版 swinging 重置（updateSwingTime 仅 Player 调用）在 Spark 环境下
             // 对非玩家实体失效——swingTime 卡负值、swinging 永不重置 → 状态机锁死攻击动画。
-            // 超过攻击间隔(20tick)仍 swinging 则强制重置（不影响正常攻击节奏）
-            if (this.swinging && this.level().getGameTime() - lastSwingTick > 20) {
+            // 用 swingStartTick（仅挥动开始时记录）判断：超过攻击间隔仍 swinging 则强制重置
+            if (this.swinging && swingStartTick > 0
+                    && this.level().getGameTime() - swingStartTick > 20) {
                 this.swinging = false;
                 this.swingTime = 0;
             }
