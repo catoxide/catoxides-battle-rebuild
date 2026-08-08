@@ -48,6 +48,8 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
 
     /** 受击状态计时（服务端） */
     private int hitTime = 0;
+    /** 挥动事件诊断 */
+    private boolean lastSwingFlag = false;
 
     /** 懒初始化：首次访问时从 MobDefinitionRegistry 装配 */
     private MobDefinition definition;
@@ -198,6 +200,14 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         // 必须无条件调用（客户端需要 syncClientAnimation 来播放动画）——与手写类（zombie3）一致
         tickAnimation();
         if (!this.level().isClientSide) {
+            // 挥动事件诊断：记录每次 swinging 从 false 变 true（攻击频率）
+            if (this.swinging && !lastSwingFlag) {
+                LogManager.serverInfo("AnimDiag",
+                        "Entity %d NEW SWING tick=%d state=%d target=%s",
+                        getId(), this.level().getGameTime(), getAnimState(),
+                        this.getTarget() != null ? this.getTarget().getName().getString() : "null");
+            }
+            lastSwingFlag = this.swinging;
             // 诊断日志（每 20 tick）：swinging 状态 + ATTACK_SPEED + swing 时长
             if (this.level().getGameTime() % 20 == 0) {
                 LogManager.serverInfo("AnimDiag",
