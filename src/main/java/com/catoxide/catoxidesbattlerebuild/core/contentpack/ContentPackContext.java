@@ -4,6 +4,7 @@ import com.catoxide.catoxidesbattlerebuild.core.mob.DataDrivenMob;
 import com.catoxide.catoxidesbattlerebuild.core.mob.MobDefinition;
 import com.catoxide.catoxidesbattlerebuild.core.mob.MobDefinitionRegistry;
 import com.catoxide.catoxidesbattlerebuild.core.sound.MobSoundProfile;
+import com.catoxide.catoxidesbattlerebuild.core.sound.MobSoundRegistry;
 import com.catoxide.catoxidesbattlerebuild.core.structure.blueprint.StructureBlueprint;
 import com.catoxide.catoxidesbattlerebuild.core.structure.blueprint.BlueprintParser;
 import com.catoxide.catoxidesbattlerebuild.core.structure.manager.StructureManager;
@@ -191,9 +192,7 @@ public final class ContentPackContext {
      * @param profile 声音配置
      */
     public void registerMobSoundProfile(String mobId, MobSoundProfile profile) {
-        LogManager.serverInfo("ContentPackContext", "Registered MobSoundProfile for '%s': ambient=%s, hurt=%s, death=%s",
-                mobId, profile.ambient(), profile.hurt(), profile.death());
-        // TODO: 存入全局 MobSoundRegistry，供 AnimatedMob 子类在运行时查询
+        MobSoundRegistry.register(mobId, profile);
     }
 
     /**
