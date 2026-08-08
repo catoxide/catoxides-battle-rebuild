@@ -193,6 +193,20 @@ dependencies {
 // A missing property will result in an error. Properties are expanded using ${} Groovy notation.
 // When "copyIdeResources" is enabled, this will also run before the game launches in IDE environments.
 // See https://docs.gradle.org/current/dsl/org.gradle.language.jvm.tasks.ProcessResources.html
+// P2 独立包编译辅助：输出运行时 classpath 到文件
+// 供 contentpacks-source/build-pack.ps1 用 javac 独立编译 contentpack 入口类
+tasks.register('writeRuntimeClasspath') {
+    // 该 task 在执行期访问 project（写 classpath 文件），与配置缓存不兼容，跳过缓存
+    notCompatibleWithConfigurationCache()
+    dependsOn compileJava
+    doLast {
+        def cp = project.sourceSets.main.runtimeClasspath.files.join(File.pathSeparator)
+        def outFile = new File(project.projectDir, 'build/runtime-classpath.txt')
+        outFile.text = cp
+        println "Runtime classpath written to ${outFile}"
+    }
+}
+
 tasks.withType(ProcessResources).configureEach {
     var replaceProperties = [
             minecraft_version      : minecraft_version,
