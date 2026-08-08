@@ -23,6 +23,7 @@
     "1": "walking",
     "2": "running",
     "3": "attack",
+    "4": "alert",
     "5": "hit_front",
     "6": "hit_back"
   },

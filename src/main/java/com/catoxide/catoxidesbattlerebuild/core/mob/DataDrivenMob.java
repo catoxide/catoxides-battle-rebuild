@@ -139,6 +139,12 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
             return STATE_ATTACK;
         }
         boolean isMoving = this.moveControl.hasWanted() || !this.getNavigation().isDone();
+        net.minecraft.world.entity.LivingEntity target = this.getTarget();
+        boolean hasTarget = target != null && target.isAlive();
+        if (hasTarget) {
+            // 有目标（警觉/追击）：移动用 RUNNING（跑），静止用 ALERT（警觉姿态）
+            return isMoving ? STATE_RUNNING : STATE_ALERT;
+        }
         return isMoving ? STATE_WALKING : STATE_IDLE;
     }
 
