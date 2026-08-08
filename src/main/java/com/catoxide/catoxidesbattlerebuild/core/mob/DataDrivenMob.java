@@ -61,6 +61,14 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         // 懒初始化在首次访问时完成（getType() 此时已可用，注册表已填充）
     }
 
+    /** 诊断：捕获每次挥动调用（定位 swinging 持续来源） */
+    @Override
+    public void swing(net.minecraft.world.InteractionHand hand) {
+        LogManager.serverInfo("AnimDiag",
+                "SWING CALLED entity=%d tick=%d state=%d", getId(), this.level().getGameTime(), getAnimState());
+        super.swing(hand);
+    }
+
     // ==================== 懒初始化访问器 ====================
 
     private MobDefinition def() {
