@@ -22,7 +22,9 @@
     "0": "still",
     "1": "walking",
     "2": "running",
-    "3": "attack"
+    "3": "attack",
+    "5": "hit_front",
+    "6": "hit_back"
   },
   "behaviors": [
     { "type": "attack", "damage": 3.0, "cooldown": 20 },

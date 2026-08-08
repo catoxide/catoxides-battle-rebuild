@@ -43,6 +43,11 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
 
     private static final EntityDataAccessor<Integer> DATA_ANIM_STATE =
             SynchedEntityData.defineId(DataDrivenMob.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Boolean> DATA_IS_HIT =
+            SynchedEntityData.defineId(DataDrivenMob.class, EntityDataSerializers.BOOLEAN);
+
+    /** 受击状态计时（服务端） */
+    private int hitTime = 0;
 
     /** 懒初始化：首次访问时从 MobDefinitionRegistry 装配 */
     private MobDefinition definition;
@@ -111,6 +116,11 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
         super.defineSynchedData(builder);
         builder.define(DATA_ANIM_STATE, STATE_IDLE);
+        builder.define(DATA_IS_HIT, false);
+    }
+
+    public boolean isHit() {
+        return this.entityData.get(DATA_IS_HIT);
     }
 
     @Override
@@ -188,6 +198,13 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         // 必须无条件调用（客户端需要 syncClientAnimation 来播放动画）——与手写类（zombie3）一致
         tickAnimation();
         if (!this.level().isClientSide) {
+            // 受击状态计时
+            if (isHit()) {
+                hitTime--;
+                if (hitTime <= 0) {
+                    this.entityData.set(DATA_IS_HIT, false);
+                }
+            }
             for (IMobBehavior behavior : behaviors()) {
                 try {
                     behavior.tick(this);
@@ -196,6 +213,55 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
                 }
             }
         }
+    }
+
+    // ==================== 受击处理（受击动画 hit_front/hit_back）====================
+
+    @Override
+    public boolean hurt(net.minecraft.world.damagesource.DamageSource source, float amount) {
+        if (this.isDeadOrDying()) {
+            return false;
+        }
+        boolean hurt = super.hurt(source, amount);
+        if (hurt) {
+            if (this.getHealth() <= 0.0F) {
+                return true;
+            }
+            // 受击状态：设置受击动画方向（front/back），短暂停止移动
+            this.entityData.set(DATA_IS_HIT, true);
+            hitTime = 20;
+            setAnimState(determineHitAnimation(source));
+            this.getNavigation().stop();
+        }
+        return hurt;
+    }
+
+    /** 依据攻击者相对位置判定受击动画方向（正面 hit_front / 背面 hit_back） */
+    private int determineHitAnimation(net.minecraft.world.damagesource.DamageSource source) {
+        net.minecraft.world.entity.Entity attacker = source.getEntity();
+        if (attacker == null) {
+            return getRandom().nextBoolean() ? STATE_HIT_FRONT : STATE_HIT_BACK;
+        }
+        double dx = attacker.getX() - this.getX();
+        double dz = attacker.getZ() - this.getZ();
+        float attackerAngle = (float) Math.toDegrees(Math.atan2(dz, dx));
+        float angleDiff = normalizeAngle(attackerAngle - this.getYRot());
+        return (angleDiff >= -90 && angleDiff <= 90) ? STATE_HIT_BACK : STATE_HIT_FRONT;
+    }
+
+    private static float normalizeAngle(float angle) {
+        while (angle > 180) angle -= 360;
+        while (angle <= -180) angle += 360;
+        return angle;
+    }
+
+    /** 受击动画播放期间不切换状态（与 zombie3 一致） */
+    @Override
+    protected boolean shouldUpdateState(int currentState) {
+        if (isHit() && (currentState == STATE_HIT_FRONT || currentState == STATE_HIT_BACK)) {
+            return false;
+        }
+        return true;
     }
 
     @Override

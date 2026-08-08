@@ -274,6 +274,7 @@ public class ModularZombie3 extends AnimatedMob<ModularZombie3> {
                 .add(Attributes.FOLLOW_RANGE, 16.0)
                 .add(Attributes.MAX_HEALTH, 20.0)
                 .add(Attributes.ATTACK_KNOCKBACK, 1.0)
-                .add(Attributes.ARMOR, 2.0);
+                .add(Attributes.ARMOR, 2.0)
+                .add(Attributes.ATTACK_SPEED, 4.0); // 缺失会导致 swinging 永不重置 -> 动画卡死
     }
 }

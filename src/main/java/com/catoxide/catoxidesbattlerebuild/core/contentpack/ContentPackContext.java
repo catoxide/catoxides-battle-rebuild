@@ -195,6 +195,9 @@ public final class ContentPackContext {
             b.add(Attributes.MOVEMENT_SPEED, attrs.getOrDefault("movementSpeed", 0.25f));
             b.add(Attributes.FOLLOW_RANGE, attrs.getOrDefault("followRange", 16.0f));
             b.add(Attributes.ARMOR, attrs.getOrDefault("armor", 0.0f));
+            // 关键：ATTACK_SPEED 缺失会导致 getCurrentSwingDuration() 除零,
+            // swinging 永不重置 -> 状态机卡在攻击动画（"摆腿参数异常"）
+            b.add(Attributes.ATTACK_SPEED, attrs.getOrDefault("attackSpeed", 4.0f));
             return b;
         };
     }
