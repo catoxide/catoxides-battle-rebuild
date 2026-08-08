@@ -4,8 +4,6 @@ import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 
 import java.io.File;
 import java.io.IOException;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
@@ -24,13 +22,15 @@ import java.util.zip.ZipFile;
  * Module-Requires: catoxidesbattlerebuild>=1.0.0
  * Module-Type: contentpack
  * Module-Entry: com.example.mypack.CustomZombiesPack
+ * Module-Dependencies: mission-core, gun-framework   (可选, 逗号分隔的依赖包名)
  * </pre>
  */
 public record ContentPackManifest(
         String moduleName,
         String moduleVersion,
         String moduleRequires,
-        String moduleEntry
+        String moduleEntry,
+        String moduleDependencies
 ) {
 
     private static final String ATTR_NAME = "Module-Name";
@@ -38,6 +38,7 @@ public record ContentPackManifest(
     private static final String ATTR_REQUIRES = "Module-Requires";
     private static final String ATTR_TYPE = "Module-Type";
     private static final String ATTR_ENTRY = "Module-Entry";
+    private static final String ATTR_DEPENDENCIES = "Module-Dependencies";
     private static final String EXPECTED_TYPE = "contentpack";
 
     /**
@@ -84,6 +85,7 @@ public record ContentPackManifest(
         String version = attrs.getValue(ATTR_VERSION);
         String requires = attrs.getValue(ATTR_REQUIRES);
         String entry = attrs.getValue(ATTR_ENTRY);
+        String dependencies = attrs.getValue(ATTR_DEPENDENCIES);
 
         if (name == null || entry == null) {
             LogManager.serverWarn("ContentPack", "JAR '%s' missing required MANIFEST attributes (Module-Name, Module-Entry)", jarName);
@@ -95,8 +97,31 @@ public record ContentPackManifest(
             LogManager.serverDebug("ContentPack", "JAR '%s' has no Module-Version, defaulting to 0.0.0", jarName);
         }
 
-        LogManager.serverInfo("ContentPack", "Found ContentPack manifest: %s v%s (entry: %s)", name, version, entry);
-        return new ContentPackManifest(name, version, requires, entry);
+        LogManager.serverInfo("ContentPack", "Found ContentPack manifest: %s v%s (entry: %s)",
+                name, version, entry);
+        if (dependencies != null && !dependencies.trim().isEmpty()) {
+            LogManager.serverDebug("ContentPack", "  dependencies: %s", dependencies);
+        }
+        return new ContentPackManifest(name, version, requires, entry, dependencies);
+    }
+
+    /**
+     * 解析显式声明的依赖包名列表（Module-Dependencies，逗号分隔）。
+     *
+     * @return 依赖包名列表；未声明或空则返回空列表
+     */
+    public List<String> dependencyNames() {
+        if (moduleDependencies == null || moduleDependencies.trim().isEmpty()) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (String s : moduleDependencies.split(",")) {
+            String trimmed = s.trim();
+            if (!trimmed.isEmpty()) {
+                result.add(trimmed);
+            }
+        }
+        return result;
     }
 
     /**
@@ -149,16 +174,13 @@ public record ContentPackManifest(
     }
 
     /**
-     * 创建 JAR 的 ClassLoader
+     * 创建 JAR 的 ClassLoader（子优先，黑名单 parent-only）
+     *
+     * @param jarFile 单个插件 jar（自身空间，无依赖）
+     * @return ChildFirstClassLoader
      */
-    public static URLClassLoader createClassLoader(File jarFile) {
-        try {
-            URL url = jarFile.toURI().toURL();
-            ClassLoader parent = ContentPackManifest.class.getClassLoader();
-            return new URLClassLoader(new URL[]{url}, parent);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to create ClassLoader for " + jarFile, e);
-        }
+    public static ChildFirstClassLoader createClassLoader(File jarFile) {
+        return ChildFirstClassLoader.of(List.of(jarFile), ContentPackManifest.class.getClassLoader());
     }
 
     /**

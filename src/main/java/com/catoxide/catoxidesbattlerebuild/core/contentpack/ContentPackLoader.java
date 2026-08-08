@@ -13,11 +13,16 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.jar.JarFile;
 
 /**
@@ -77,18 +82,32 @@ public final class ContentPackLoader {
 
         LogManager.serverInfo(TAG, "Discovered %d ContentPack candidate(s)", discovered.size());
 
-        // Step 2: 加载并注册
+        // Step 2: 构建委托链 —— 计算每个插件的可见闭包（自身 + 所有可达依赖的 jar）
+        Map<String, File> jarByName = new HashMap<>();
+        Map<String, ContentPackManifest> manifestByName = new HashMap<>();
+        for (ScannablePack p : discovered) {
+            jarByName.put(p.manifest.moduleName(), p.jarFile);
+            manifestByName.put(p.manifest.moduleName(), p.manifest);
+        }
+        Map<String, List<File>> closures = new HashMap<>();
+        for (ScannablePack p : discovered) {
+            closures.put(p.manifest.moduleName(),
+                    computeClosure(p.manifest, jarByName, manifestByName));
+        }
+
+        // Step 3: 按依赖拓扑序加载并注册
         int loaded = 0;
         int failed = 0;
         int skipped = 0;
 
-        for (ScannablePack pack : discovered) {
+        List<ScannablePack> ordered = topologicalSort(discovered, jarByName);
+        for (ScannablePack pack : ordered) {
             if (pack.skipReason != null) {
                 skipped++;
                 continue;
             }
 
-            if (loadAndRegister(pack, hostVersion)) {
+            if (loadAndRegister(pack, hostVersion, closures.get(pack.manifest.moduleName()))) {
                 loaded++;
             } else {
                 failed++;
@@ -161,17 +180,21 @@ public final class ContentPackLoader {
 
     /**
      * 加载并注册单个 ContentPack
+     *
+     * @param pack         扫描到的插件
+     * @param hostVersion  主 mod 版本号
+     * @param closureJars  可见闭包 jar（自身 + 所有可达依赖），用于构建委托链 ClassLoader
      */
-    private static boolean loadAndRegister(ScannablePack pack, String hostVersion) {
+    private static boolean loadAndRegister(ScannablePack pack, String hostVersion, List<File> closureJars) {
         File jar = pack.jarFile;
         ContentPackManifest manifest = pack.manifest;
 
         LogManager.serverInfo(TAG, "Loading ContentPack: '%s' v%s", manifest.moduleName(), manifest.moduleVersion());
 
-        // Step 1: 创建 ClassLoader
+        // Step 1: 创建委托链 ClassLoader（自身 + 依赖插件的合并空间，黑名单 parent-only）
         URLClassLoader classLoader;
         try {
-            classLoader = ContentPackManifest.createClassLoader(jar);
+            classLoader = ChildFirstClassLoader.of(closureJars, ContentPackManifest.class.getClassLoader());
         } catch (Exception e) {
             LogManager.serverError(TAG, String.format("Failed to create ClassLoader for '%s': %s",
                     manifest.moduleName(), e.getMessage()));
@@ -220,6 +243,112 @@ public final class ContentPackLoader {
 
         LogManager.serverInfo(TAG, "  ✓ Successfully loaded ContentPack '%s'", contentPack.getId());
         return true;
+    }
+
+    /**
+     * 计算插件的【可见闭包】：自身 jar + 所有可达依赖插件的 jar（BFS，环安全）。
+     * <p>顺序：自身优先（child-first 语义——同名类时自己的赢），随后按 BFS 层级加入依赖。
+     * 声明了依赖但未扫描到的包只跳过（软性，不阻止加载）。
+     */
+    private static List<File> computeClosure(ContentPackManifest manifest,
+                                             Map<String, File> jarByName,
+                                             Map<String, ContentPackManifest> manifestByName) {
+        List<File> closure = new ArrayList<>();
+        Set<String> visited = new HashSet<>();
+        ArrayDeque<String> queue = new ArrayDeque<>();
+
+        File self = jarByName.get(manifest.moduleName());
+        if (self != null) {
+            closure.add(self);
+        }
+        visited.add(manifest.moduleName());
+        queue.addAll(manifest.dependencyNames());
+
+        while (!queue.isEmpty()) {
+            String dep = queue.poll();
+            if (!visited.add(dep)) {
+                continue;
+            }
+            File depJar = jarByName.get(dep);
+            if (depJar != null) {
+                closure.add(depJar);
+                ContentPackManifest depManifest = manifestByName.get(dep);
+                if (depManifest != null) {
+                    queue.addAll(depManifest.dependencyNames());
+                }
+            }
+        }
+        return closure;
+    }
+
+    /**
+     * 拓扑排序（DFS）：按依赖序排列插件——依赖者先加载、被依赖者先注册。
+     * <ul>
+     *   <li>声明了依赖但未扫描到的包 → 警告 + 忽略（软依赖，不阻止加载）</li>
+     *   <li>循环依赖 → 警告 + 尽力排序（executeAllRegistries 的两阶段 init 兜底，功能不损失）</li>
+     * </ul>
+     */
+    private static List<ScannablePack> topologicalSort(List<ScannablePack> packs,
+                                                       Map<String, File> jarByName) {
+        Map<String, ScannablePack> byName = new HashMap<>();
+        for (ScannablePack p : packs) {
+            if (p.skipReason != null) {
+                continue; // 兼容性失败的包不参与依赖图（反正不会被加载）
+            }
+            byName.put(p.manifest.moduleName(), p);
+        }
+
+        // 第二遍构建依赖集（确保 byName 完整后再判断 containsKey）
+        Map<String, Set<String>> depSet = new HashMap<>();
+        for (ScannablePack p : packs) {
+            if (p.skipReason != null) {
+                continue;
+            }
+            Set<String> deps = new LinkedHashSet<>();
+            for (String dep : p.manifest.dependencyNames()) {
+                if (byName.containsKey(dep)) {
+                    deps.add(dep);
+                } else {
+                    LogManager.serverWarn(TAG, "ContentPack '%s' declares dependency '%s' but it is not loaded (soft-ignore)",
+                            p.manifest.moduleName(), dep);
+                }
+            }
+            depSet.put(p.manifest.moduleName(), deps);
+        }
+
+        List<ScannablePack> result = new ArrayList<>();
+        Set<String> done = new HashSet<>();
+        Set<String> inProgress = new HashSet<>();
+        for (String name : byName.keySet()) {
+            dfsTopo(name, byName, depSet, done, inProgress, result);
+        }
+        return result;
+    }
+
+    /** DFS 拓扑排序（递归）；检测到环时警告并跳过该分支（尽力排序） */
+    private static void dfsTopo(String name,
+                                Map<String, ScannablePack> byName,
+                                Map<String, Set<String>> depSet,
+                                Set<String> done,
+                                Set<String> inProgress,
+                                List<ScannablePack> result) {
+        if (done.contains(name)) {
+            return;
+        }
+        if (inProgress.contains(name)) {
+            LogManager.serverWarn(TAG, "Circular dependency detected involving ContentPack '%s'; order will be best-effort", name);
+            return;
+        }
+        inProgress.add(name);
+        for (String dep : depSet.getOrDefault(name, Set.of())) {
+            dfsTopo(dep, byName, depSet, done, inProgress, result);
+        }
+        inProgress.remove(name);
+        done.add(name);
+        ScannablePack pack = byName.get(name);
+        if (pack != null) {
+            result.add(pack);
+        }
     }
 
     private static final List<SparkPackage> pendingSparkPackages = new ArrayList<>();
