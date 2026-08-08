@@ -63,22 +63,6 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         // 懒初始化在首次访问时完成（getType() 此时已可用，注册表已填充）
     }
 
-    /** 诊断：捕获每次挥动调用 + 完整调用栈（定位 swinging 持续来源） */
-    @Override
-    public void swing(net.minecraft.world.InteractionHand hand) {
-        StackTraceElement[] st = Thread.currentThread().getStackTrace();
-        StringBuilder chain = new StringBuilder();
-        for (int i = 2; i < Math.min(st.length, 14); i++) {
-            if (i > 2) chain.append(" < ");
-            String cn = st[i].getClassName();
-            cn = cn.substring(cn.lastIndexOf('.') + 1);
-            chain.append(cn).append(".").append(st[i].getMethodName()).append(":").append(st[i].getLineNumber());
-        }
-        LogManager.serverInfo("AnimDiag", "SWING entity=%d tick=%d state=%d | %s",
-                getId(), this.level().getGameTime(), getAnimState(), chain);
-        super.swing(hand);
-    }
-
     // ==================== 懒初始化访问器 ====================
 
     private MobDefinition def() {
@@ -218,25 +202,11 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         // 必须无条件调用（客户端需要 syncClientAnimation 来播放动画）——与手写类（zombie3）一致
         tickAnimation();
         if (!this.level().isClientSide) {
-            // 挥动事件诊断：记录每次 swinging 从 false 变 true（攻击频率 + 攻击源）
+            // 记录挥动开始（供防御性 swinging 重置判断：仅 false→true 时记录）
             if (this.swinging && !lastSwingFlag) {
                 swingStartTick = this.level().getGameTime();
-                LogManager.serverInfo("AnimDiag",
-                        "Entity %d NEW SWING tick=%d state=%d goals=%d target=%s",
-                        getId(), this.level().getGameTime(), getAnimState(),
-                        this.goalSelector.getAvailableGoals().size(),
-                        this.getTarget() != null ? this.getTarget().getName().getString() : "null");
             }
             lastSwingFlag = this.swinging;
-            // 诊断日志（每 20 tick）：swinging 状态 + ATTACK_SPEED + swing 时长 + swingTime
-            if (this.level().getGameTime() % 20 == 0) {
-                LogManager.serverInfo("AnimDiag",
-                        "Entity %d state=%d swinging=%s swingTime=%d dur=%d speed=%.2f moving=%s",
-                        getId(), getAnimState(), this.swinging, this.swingTime,
-                        this.getCurrentSwingDuration(),
-                        this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_SPEED),
-                        this.moveControl.hasWanted() || !this.getNavigation().isDone());
-            }
             // 防御：原版 swinging 重置（updateSwingTime 仅 Player 调用）在 Spark 环境下
             // 对非玩家实体失效——swingTime 卡负值、swinging 永不重置 → 状态机锁死攻击动画。
             // 用 swingStartTick（仅挥动开始时记录）判断：超过攻击间隔仍 swinging 则强制重置
