@@ -34,21 +34,6 @@ public class AttackBehavior implements IMobBehavior {
     public float damage() { return damage; }
     public int cooldown() { return cooldown; }
 
-    /** 固定攻击间隔的近战目标（参考原版 ZombieAttackGoal 的做法） */
-    private static final class FixedIntervalAttackGoal extends MeleeAttackGoal {
-        private final int attackInterval;
-
-        FixedIntervalAttackGoal(PathfinderMob mob, double speedModifier, boolean followUnseen, int attackInterval) {
-            super(mob, speedModifier, followUnseen);
-            this.attackInterval = attackInterval;
-        }
-
-        @Override
-        protected int getTicksUntilNextAttack() {
-            return this.attackInterval;
-        }
-    }
-
     /** 工厂 */
     public static final class Factory implements IBehaviorFactory {
         @Override

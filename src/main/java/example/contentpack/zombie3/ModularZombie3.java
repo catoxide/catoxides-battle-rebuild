@@ -145,7 +145,8 @@ public class ModularZombie3 extends AnimatedMob<ModularZombie3> {
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        this.goalSelector.addGoal(1, new MeleeAttackGoal(this, 1.0D, false));
+        // 固定攻击间隔（20tick），避免裸 MeleeAttackGoal 的 6/ATTACK_SPEED=2tick 疯狂挥动
+        this.goalSelector.addGoal(1, new com.catoxide.catoxidesbattlerebuild.core.mob.FixedIntervalAttackGoal(this, 1.0D, false, 20));
         this.goalSelector.addGoal(2, new WaterAvoidingRandomStrollGoal(this, 0.8D));
         this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 8.0F));
         this.goalSelector.addGoal(4, new RandomLookAroundGoal(this));
