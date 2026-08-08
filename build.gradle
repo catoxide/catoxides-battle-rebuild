@@ -195,15 +195,16 @@ dependencies {
 // See https://docs.gradle.org/current/dsl/org.gradle.language.jvm.tasks.ProcessResources.html
 // P2 独立包编译辅助：输出运行时 classpath 到文件
 // 供 contentpacks-source/build-pack.ps1 用 javac 独立编译 contentpack 入口类
-tasks.register('writeRuntimeClasspath') {
+tasks.register('writeCompileClasspath') {
     // 该 task 在执行期访问 project（写 classpath 文件），与配置缓存不兼容，跳过缓存
     notCompatibleWithConfigurationCache()
     dependsOn compileJava
     doLast {
-        def cp = project.sourceSets.main.runtimeClasspath.files.join(File.pathSeparator)
+        // compileClasspath：含 compileOnly 依赖（如 sable），独立编译 contentpack 入口类需要
+        def cp = project.sourceSets.main.compileClasspath.files.join(File.pathSeparator)
         def outFile = new File(project.projectDir, 'build/runtime-classpath.txt')
         outFile.text = cp
-        println "Runtime classpath written to ${outFile}"
+        println "Compile classpath written to ${outFile}"
     }
 }
 

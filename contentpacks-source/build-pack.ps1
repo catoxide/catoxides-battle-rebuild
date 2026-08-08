@@ -50,11 +50,11 @@ Get-ChildItem $srcAbs -Directory | ForEach-Object {
 $srcJava = Join-Path $srcAbs "java"
 $entryClasses = Join-Path $classes $pkgPath
 if (Test-Path $srcJava) {
-    # Independent compile: javac with main mod classpath (from writeRuntimeClasspath)
+    # Independent compile: javac with main mod compile classpath (from writeCompileClasspath)
     $cpFile = Join-Path $root "build/runtime-classpath.txt"
     if (-not (Test-Path $cpFile)) {
-        & (Join-Path $root "gradlew.bat") writeRuntimeClasspath --no-configuration-cache --console=plain | Out-Null
-        if (-not (Test-Path $cpFile)) { Write-Error "Failed to generate runtime classpath"; exit 1 }
+        & (Join-Path $root "gradlew.bat") writeCompileClasspath --no-configuration-cache --console=plain | Out-Null
+        if (-not (Test-Path $cpFile)) { Write-Error "Failed to generate compile classpath"; exit 1 }
     }
     $mainClasses = Join-Path $root "build/classes/java/main"
     $cp = "$mainClasses;$((Get-Content $cpFile -Raw).Trim())"
