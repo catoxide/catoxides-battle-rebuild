@@ -72,6 +72,11 @@ public abstract class RangedWeaponItem extends Item {
         CustomProjectileEntity.shoot(level, player, direction, power, config, entityType);
         LogManager.serverInfo("RangedWeapon", "Projectile released: player=%s, power=%.2f",
                 player.getName().getString(), power);
+
+        // 射击扣耐久（可配置有限耐久）
+        if (consumesDurability() && !player.isCreative()) {
+            stack.hurtAndBreak(1, player, net.minecraft.world.entity.EquipmentSlot.MAINHAND);
+        }
     }
 
     @Override

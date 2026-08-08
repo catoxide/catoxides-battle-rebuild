@@ -47,6 +47,17 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
         super(properties);
     }
 
+    /**
+     * 近战命中：扣耐久（可配置有限耐久，配合 DurabilitySupport 能力与降级系统）。
+     * 伤害由攻击属性驱动（后续 weapon ③ 数据驱动化）。
+     */
+    @Override
+    public boolean hurtEnemy(ItemStack stack, net.minecraft.world.entity.LivingEntity target,
+                             net.minecraft.world.entity.LivingEntity attacker) {
+        stack.hurtAndBreak(1, attacker, net.minecraft.world.entity.EquipmentSlot.MAINHAND);
+        return true;
+    }
+
     @Override
     public boolean isEnchantable(ItemStack stack) {
         return true;
