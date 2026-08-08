@@ -200,14 +200,21 @@ public final class ContentPackContext {
             b.add(Attributes.ATTACK_SPEED, 4.0f); // 缺失会导致 swinging 永不重置 -> 动画卡死
 
             // JSON 显式声明的属性：按 key 查原版属性注册表（任意属性可配，无需主 mod 打洞）
+            // 防御：单个属性解析异常不影响其他属性（默认值含 ATTACK_SPEED 保留）
             for (var entry : definition.attributes().entrySet()) {
-                var attr = lookupAttribute(entry.getKey());
-                if (attr != null) {
-                    b.add(attr, entry.getValue());
-                } else {
+                try {
+                    var attr = lookupAttribute(entry.getKey());
+                    if (attr != null) {
+                        b.add(attr, entry.getValue());
+                    } else {
+                        LogManager.serverWarn("ContentPackContext",
+                                "Unknown attribute '{}' in entity definition {}, skipped",
+                                entry.getKey(), definition.id());
+                    }
+                } catch (Exception e) {
                     LogManager.serverWarn("ContentPackContext",
-                            "Unknown attribute '{}' in entity definition {}, skipped",
-                            entry.getKey(), definition.id());
+                            "Failed to apply attribute '{}' for entity {}: {}",
+                            entry.getKey(), definition.id(), e.getMessage());
                 }
             }
             return b;
