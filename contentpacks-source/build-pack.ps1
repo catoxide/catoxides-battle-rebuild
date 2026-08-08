@@ -42,12 +42,37 @@ if (Test-Path $srcEntities) {
     Copy-Item (Join-Path $srcEntities "*") (Join-Path $temp "entities/")
 }
 Get-ChildItem $srcAbs -Directory | ForEach-Object {
-    if ($_.Name -ne "entities") {
+    if ($_.Name -ne "entities" -and $_.Name -ne "java") {
         Copy-Item $_.FullName (Join-Path $temp $_.Name) -Recurse -Force
     }
 }
+# 3b. Compile/collect entry classes: prefer independent compile (pack java/ sources), fallback main mod output
+$srcJava = Join-Path $srcAbs "java"
 $entryClasses = Join-Path $classes $pkgPath
-if (Test-Path $entryClasses) {
+if (Test-Path $srcJava) {
+    # Independent compile: javac with main mod classpath (from writeRuntimeClasspath)
+    $cpFile = Join-Path $root "build/runtime-classpath.txt"
+    if (-not (Test-Path $cpFile)) {
+        & (Join-Path $root "gradlew.bat") writeRuntimeClasspath --no-configuration-cache --console=plain | Out-Null
+        if (-not (Test-Path $cpFile)) { Write-Error "Failed to generate runtime classpath"; exit 1 }
+    }
+    $mainClasses = Join-Path $root "build/classes/java/main"
+    $cp = "$mainClasses;$((Get-Content $cpFile -Raw).Trim())"
+    $classesOut = Join-Path $temp "classes-out"
+    New-Item -ItemType Directory -Force -Path $classesOut | Out-Null
+    $javaFiles = @(Get-ChildItem $srcJava -Recurse -Filter "*.java" | ForEach-Object { $_.FullName })
+    if ($javaFiles.Count -eq 0) { Write-Error "No .java files in $srcJava"; exit 1 }
+    & javac -encoding UTF-8 -cp $cp -d $classesOut $javaFiles
+    if ($LASTEXITCODE -ne 0) { Write-Error "javac compile failed"; exit 1 }
+    $outPkg = Join-Path $classesOut $pkgPath
+    if (Test-Path $outPkg) {
+        Copy-Item (Join-Path $outPkg "*.class") (Join-Path $temp $pkgPath)
+    } else {
+        Write-Warning "Compiled entry package not found: $outPkg"
+    }
+    Write-Output "Compiled pack Java independently ($($javaFiles.Count) files)"
+} elseif (Test-Path $entryClasses) {
+    # Fallback: collect from main mod build output (legacy mode)
     Copy-Item (Join-Path $entryClasses "*.class") (Join-Path $temp $pkgPath)
 } else {
     Write-Warning "Entry classes not found: $entryClasses (run gradlew compileJava first)"
@@ -57,10 +82,10 @@ if (Test-Path $entryClasses) {
 $outJarAbs = Join-Path $root $OutJar
 Push-Location $temp
 try {
-    # Collect top-level items: entry package + entities + all resource dirs (skip META-INF, handled by manifest input)
+    # Collect top-level items: entry package + entities + all resource dirs (skip META-INF/classes-out/java, handled separately)
     $topItems = @($topPkg, "entities")
     Get-ChildItem $temp -Directory | ForEach-Object {
-        if ($_.Name -ne "META-INF" -and $_.Name -ne "entities" -and $_.Name -ne $topPkg) {
+        if ($_.Name -ne "META-INF" -and $_.Name -ne "entities" -and $_.Name -ne $topPkg -and $_.Name -ne "classes-out" -and $_.Name -ne "java") {
             $topItems += $_.Name
         }
     }
