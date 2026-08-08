@@ -120,7 +120,8 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
 
     @Override
     protected int determineAnimationState() {
-        if (this.swinging) {
+        // 用挥动保持窗口（isAttackStateActive）替代裸 swinging：挥空后 attack 动画播完再回落
+        if (isAttackStateActive()) {
             return STATE_ATTACK;
         }
         boolean isMoving = this.moveControl.hasWanted() || !this.getNavigation().isDone();

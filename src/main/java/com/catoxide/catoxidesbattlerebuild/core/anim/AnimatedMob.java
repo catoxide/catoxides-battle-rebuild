@@ -59,6 +59,10 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
     protected static final long MIN_STATE_HOLD_TICKS = 10;
     protected static final long ZERO_POSE_GRACE_TICKS = 10;
 
+    // 挥动保持窗口：挥动结束后短暂保持攻击动画，避免状态机卡在 attack / 闪烁
+    protected static final long SWING_HOLD_TICKS = 8;
+    protected long lastSwingTick = 0;
+
     protected boolean serverInitialAnimPlayed = false;
     protected long lastStateChangeTick = 0;
     protected long lastAnimRequestTick = 0;
@@ -356,6 +360,10 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
      * <p>子类在 {@link Mob#tick()} 中调用此方法，避免重复编写动画 tick 逻辑。
      */
     protected void tickAnimation() {
+        // 跟踪挥动时刻（供 isAttackStateActive 的保持窗口使用）
+        if (this.swinging) {
+            lastSwingTick = this.level().getGameTime();
+        }
         if (!this.level().isClientSide) {
             updateAnimationState();
             checkZeroPose();
@@ -363,6 +371,17 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
             syncClientAnimation();
             checkZeroPose();
         }
+    }
+
+    /**
+     * 是否处于攻击动画状态（挥动中，或挥动结束后的保持窗口内）。
+     * <p>子类的 {@code determineAnimationState()} 应使用本方法替代裸 {@code this.swinging}：
+     * 挥空/目标脱离后 swinging 立即变 false，若直接回退会导致 attack 动画被截断、
+     * 状态机在 attack 与 walking/idle 之间闪烁或卡死。保持窗口让攻击动画播完再平滑回落。
+     */
+    protected boolean isAttackStateActive() {
+        return this.swinging
+                || (this.level().getGameTime() - lastSwingTick < SWING_HOLD_TICKS);
     }
 
     // ========== Sound Hooks ==========

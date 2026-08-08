@@ -116,7 +116,8 @@ public class ModularZombie3 extends AnimatedMob<ModularZombie3> {
             lastMovingTick = this.level().getGameTime();
         }
 
-        if (this.swinging) return STATE_ATTACK;
+        // 挥动保持窗口（基类辅助）：挥空后 attack 动画播完再回落，避免状态机卡死
+        if (isAttackStateActive()) return STATE_ATTACK;
         if (isWindingUp()) return STATE_WINDING;
         if (isAlerting() && !isAlertCompleted()) return STATE_ALERT;
 
