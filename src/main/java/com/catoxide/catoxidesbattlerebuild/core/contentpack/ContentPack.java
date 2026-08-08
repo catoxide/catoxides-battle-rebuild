@@ -71,4 +71,11 @@ public interface ContentPack {
      * <p>用于事件监听器注册、网络包注册等需要 modEventBus 的操作。
      */
     default void init() {}
+
+    /**
+     * 客户端渲染器注册（Dist.CLIENT 下由主 mod 在 RegisterRenderers 事件中调用）
+     * <p>pack 在此通过 {@link ClientRenderRegistrar} 注册自己实体的渲染器。
+     * 主 mod 不依赖任何 pack 的具体类（渲染器注册不再使用 instanceof）。
+     */
+    default void registerClientRenderers(ClientRenderRegistrar registrar) {}
 }

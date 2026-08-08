@@ -17,7 +17,6 @@ import com.catoxide.catoxidesbattlerebuild.mob.zombie2.ModularZombie2;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import com.catoxide.catoxidesbattlerebuild.registry.ModWeapons;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
-import example.contentpack.zombie3.ModularZombie3Pack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -58,20 +57,23 @@ public class ClientInitializer {
         event.registerEntityRenderer(ModEntities.CUSTOM_PROJECTILE.get(), CustomProjectileRenderer::new);
         LogManager.clientStartup("ClientInitializer", "CustomProjectileRenderer registered");
 
+        // 内容包渲染器注册：pack 通过 registerClientRenderers 自注册（主 mod 不依赖具体类）
+        for (ContentPackRegistry.LoadedPack loaded : ContentPackRegistry.getAllPacks()) {
+            try {
+                loaded.pack().registerClientRenderers((holder, provider) ->
+                        event.registerEntityRenderer((net.minecraft.world.entity.EntityType) holder.get(), provider));
+            } catch (Exception e) {
+                LogManager.clientWarn("ClientInitializer", "Failed to register client renderers for pack '{}': {}",
+                        loaded.id(), e.getMessage());
+            }
+        }
+
         // 数据驱动实体通用渲染器（所有 JSON 定义实体共用，无需逐个写渲染器）
         var contentPackContext = CatoxidesBattleRebuild.getContentPackContext();
         if (contentPackContext != null) {
             for (var holder : contentPackContext.getDataDrivenEntities()) {
                 event.registerEntityRenderer(holder.get(), DataDrivenMobRenderer::new);
                 LogManager.clientStartup("ClientInitializer", "DataDrivenMobRenderer registered for " + holder.getKey());
-            }
-        }
-
-        for (ContentPackRegistry.LoadedPack loaded : ContentPackRegistry.getAllPacks()) {
-            if (loaded.pack() instanceof ModularZombie3Pack pack) {
-                LogManager.clientStartup("ClientInitializer", "Registering ModularZombie3Renderer from ContentPack '" + loaded.id() + "'...");
-                event.registerEntityRenderer(pack.getModularZombie3().get(), example.contentpack.zombie3.ModularZombie3Renderer::new);
-                LogManager.clientStartup("ClientInitializer", "ModularZombie3Renderer registered");
             }
         }
     }

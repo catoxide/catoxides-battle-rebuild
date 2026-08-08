@@ -67,21 +67,16 @@ public class ModularZombie3Pack implements ContentPack {
     @Override
     public void init() {
         LogManager.serverInfo("Zombie3Pack", "Initializing ContentPack: {} v{}", getId(), getVersion());
-        // Note: Renderer registration is now handled by ContentPackRendererRegistrar
-        // via FMLClientSetupEvent. This avoids accessing DeferredHolder.get() before
-        // the DeferredRegister is locked by NeoForge.
     }
 
     /**
-     * 在 DeferredRegister 锁定后安全地注册渲染器。
-     * 由 ContentPackRendererRegistrar 在 FMLClientSetupEvent 中调用。
+     * 客户端渲染器注册：pack 自注册（主 mod 不再 instanceof，避免类加载器隔离导致的类身份失效）
+     * 由主 mod 在 RegisterRenderers 事件中遍历调用。
      */
-    public void registerRenderer() {
-        net.minecraft.client.renderer.entity.EntityRenderers.register(
-            MODULAR_ZOMBIE_3.get(),
-            ModularZombie3Renderer::new
-        );
-        LogManager.clientInfo("Zombie3Pack", "ModularZombie3Renderer registered via deferred call");
+    @Override
+    public void registerClientRenderers(com.catoxide.catoxidesbattlerebuild.core.contentpack.ClientRenderRegistrar registrar) {
+        registrar.register(MODULAR_ZOMBIE_3, ModularZombie3Renderer::new);
+        LogManager.clientInfo("Zombie3Pack", "ModularZombie3Renderer registered via registerClientRenderers");
     }
 
     public DeferredHolder<EntityType<?>, EntityType<ModularZombie3>> getModularZombie3() {

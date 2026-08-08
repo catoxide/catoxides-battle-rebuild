@@ -48,7 +48,7 @@ Get-ChildItem $srcAbs -Directory | ForEach-Object {
 }
 $entryClasses = Join-Path $classes $pkgPath
 if (Test-Path $entryClasses) {
-    Copy-Item (Join-Path $entryClasses "$className.class") (Join-Path $temp $pkgPath)
+    Copy-Item (Join-Path $entryClasses "*.class") (Join-Path $temp $pkgPath)
 } else {
     Write-Warning "Entry classes not found: $entryClasses (run gradlew compileJava first)"
 }
@@ -57,7 +57,14 @@ if (Test-Path $entryClasses) {
 $outJarAbs = Join-Path $root $OutJar
 Push-Location $temp
 try {
-    & jar cfm $outJarAbs "META-INF/MANIFEST.MF" "entities" $topPkg
+    # Collect top-level items: entry package + entities + all resource dirs (skip META-INF, handled by manifest input)
+    $topItems = @($topPkg, "entities")
+    Get-ChildItem $temp -Directory | ForEach-Object {
+        if ($_.Name -ne "META-INF" -and $_.Name -ne "entities" -and $_.Name -ne $topPkg) {
+            $topItems += $_.Name
+        }
+    }
+    & jar cfm $outJarAbs "META-INF/MANIFEST.MF" @topItems
 } finally {
     Pop-Location
 }
