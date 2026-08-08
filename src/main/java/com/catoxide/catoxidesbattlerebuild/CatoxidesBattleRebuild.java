@@ -41,6 +41,9 @@ public class CatoxidesBattleRebuild {
         ModSounds.SOUNDS.register(modEventBus);
         ModWeapons.ITEMS.register(modEventBus);
 
+        // 耐久能力框架（可变耐久 DataComponent 注册）
+        com.catoxide.catoxidesbattlerebuild.core.durability.DurabilityCapabilities.DATA_COMPONENT_TYPES.register(modEventBus);
+
         loadContentPacks(modEventBus);
 
         LogManager.serverInfo("CatoxidesBattleRebuild", "Mod initialization complete");
