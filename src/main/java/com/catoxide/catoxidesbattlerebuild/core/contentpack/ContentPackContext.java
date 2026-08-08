@@ -68,6 +68,15 @@ public final class ContentPackContext {
     }
 
     /**
+     * 获取 mod 总线（供 contentpack 注册能力/监听 mod 事件，如 RegisterCapabilitiesEvent）。
+     * <p>能力注册需在 mod 加载阶段：contentpack 的 register() 中调用
+     * {@code getModEventBus().addListener(...)} 即可赶上 RegisterCapabilitiesEvent。
+     */
+    public net.neoforged.bus.api.IEventBus getModEventBus() {
+        return modEventBus;
+    }
+
+    /**
      * 创建模块专属的 ResourceLocation
      */
     public ResourceLocation id(String path) {
