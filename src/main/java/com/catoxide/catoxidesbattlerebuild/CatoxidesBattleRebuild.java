@@ -46,6 +46,13 @@ public class CatoxidesBattleRebuild {
         // 耐久能力框架（可变耐久 DataComponent 注册）
         com.catoxide.catoxidesbattlerebuild.core.durability.DurabilityCapabilities.DATA_COMPONENT_TYPES.register(modEventBus);
 
+        // 现有武器接入耐久端口（可配置有限耐久；未来迁 contentpack 后由武器包自注册）
+        modEventBus.addListener((net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent e) ->
+                com.catoxide.catoxidesbattlerebuild.core.durability.DurabilitySupport.registerVariableDurability(
+                        e,
+                        com.catoxide.catoxidesbattlerebuild.registry.ModWeapons.IRON_SWORD_WEAPON.get(),
+                        com.catoxide.catoxidesbattlerebuild.registry.ModWeapons.CUSTOM_BOW.get()));
+
         loadContentPacks(modEventBus);
 
         LogManager.serverInfo("CatoxidesBattleRebuild", "Mod initialization complete");
