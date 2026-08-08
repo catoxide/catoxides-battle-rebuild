@@ -205,10 +205,13 @@ public class ModularZombie3 extends AnimatedMob<ModularZombie3> {
         boolean hurt = super.hurt(source, amount);
         if (hurt) {
             if (this.getHealth() <= 0.0F) { resetAllStates(); return true; }
-            this.entityData.set(DATA_IS_HIT, true);
-            hitTime = 20;
-            setAnimState(determineHitAnimation(source));
-            this.getNavigation().stop();
+            // 受击免疫：高频受击时不重置受击状态，避免被锁死在受击姿态
+            if (!isHit() || hitTime <= 5) {
+                this.entityData.set(DATA_IS_HIT, true);
+                hitTime = 10;   // 受击动画 0.5 秒
+                setAnimState(determineHitAnimation(source));
+            }
+            // 不再 navigation.stop()：受击不打断 AI/移动
         }
         return hurt;
     }

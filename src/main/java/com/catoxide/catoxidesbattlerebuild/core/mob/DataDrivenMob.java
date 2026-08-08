@@ -232,11 +232,14 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
             if (this.getHealth() <= 0.0F) {
                 return true;
             }
-            // 受击状态：设置受击动画方向（front/back），短暂停止移动
-            this.entityData.set(DATA_IS_HIT, true);
-            hitTime = 20;
-            setAnimState(determineHitAnimation(source));
-            this.getNavigation().stop();
+            // 受击免疫：持续受击（hitTime 未过半）时不重置受击状态——
+            // 否则高频受击会让受击状态永续、实体被锁死在受击姿态（"停原地+准备攻击"）
+            if (!isHit() || hitTime <= 5) {
+                this.entityData.set(DATA_IS_HIT, true);
+                hitTime = 10;   // 受击动画 0.5 秒
+                setAnimState(determineHitAnimation(source));
+            }
+            // 不再 navigation.stop()：受击不打断 AI/移动（原版受击不影响 AI 决策）
         }
         return hurt;
     }
