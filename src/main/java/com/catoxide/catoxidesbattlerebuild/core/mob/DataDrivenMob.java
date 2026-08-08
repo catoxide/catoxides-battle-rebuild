@@ -198,6 +198,11 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         // 必须无条件调用（客户端需要 syncClientAnimation 来播放动画）——与手写类（zombie3）一致
         tickAnimation();
         if (!this.level().isClientSide) {
+            // 攻击动画播放期间停止移动：attack 动画是 hold_on_last_frame（播完保持抬手帧），
+            // 若移动会与抬手姿态叠加成"抬手走路"（参考原版：攻击时 navigation.stop()）
+            if (isAttackStateActive()) {
+                this.getNavigation().stop();
+            }
             // 受击状态计时
             if (isHit()) {
                 hitTime--;
