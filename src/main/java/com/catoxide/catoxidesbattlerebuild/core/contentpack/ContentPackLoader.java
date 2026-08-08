@@ -164,13 +164,22 @@ public final class ContentPackLoader {
                 continue;
             }
 
-            // 兼容性验证
+            // 兼容性验证（主 mod 版本 + 外部 mod 硬依赖）
             String compatIssue = manifest.verifyCompatibility(hostVersion);
+            if (compatIssue == null) {
+                compatIssue = manifest.verifyModDependencies();
+            }
             if (compatIssue != null) {
                 LogManager.serverWarn(TAG, "ContentPack '%s' compatibility issue: %s",
                         manifest.moduleName(), compatIssue);
                 discovered.add(new ScannablePack(jar, manifest, compatIssue));
                 continue;
+            }
+
+            // 可选 mod 缺失：仅警告，不阻止加载（软依赖）
+            for (String missing : manifest.missingOptionalMods()) {
+                LogManager.serverWarn(TAG, "ContentPack '%s': optional mod '%s' not installed (continuing)",
+                        manifest.moduleName(), missing);
             }
 
             LogManager.serverInfo(TAG, "  ✓ '%s' v%s passes compatibility check",
