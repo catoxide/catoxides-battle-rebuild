@@ -185,21 +185,53 @@ public final class ContentPackContext {
 
     /**
      * 从定义属性表构建 AttributeSupplier（延迟执行，NeoForge 自定义属性注册后）。
+     * <p>设计原则：主 mod 只在机制层打洞，参数走数据——JSON 里任意原版属性 key
+     * 直接查属性注册表生效，主 mod 无需为每个属性预定义字段。
      */
     private static Supplier<AttributeSupplier.Builder> buildAttributes(MobDefinition definition) {
         return () -> {
             AttributeSupplier.Builder b = Mob.createMobAttributes();
-            Map<String, Float> attrs = definition.attributes();
-            b.add(Attributes.MAX_HEALTH, attrs.getOrDefault("maxHealth", 20.0f));
-            b.add(Attributes.ATTACK_DAMAGE, attrs.getOrDefault("attackDamage", 4.0f));
-            b.add(Attributes.MOVEMENT_SPEED, attrs.getOrDefault("movementSpeed", 0.25f));
-            b.add(Attributes.FOLLOW_RANGE, attrs.getOrDefault("followRange", 16.0f));
-            b.add(Attributes.ARMOR, attrs.getOrDefault("armor", 0.0f));
-            // 关键：ATTACK_SPEED 缺失会导致 getCurrentSwingDuration() 除零,
-            // swinging 永不重置 -> 状态机卡在攻击动画（"摆腿参数异常"）
-            b.add(Attributes.ATTACK_SPEED, attrs.getOrDefault("attackSpeed", 4.0f));
+            // 兜底默认值（JSON 显式声明会覆盖）
+            b.add(Attributes.MAX_HEALTH, 20.0f);
+            b.add(Attributes.ATTACK_DAMAGE, 4.0f);
+            b.add(Attributes.MOVEMENT_SPEED, 0.25f);
+            b.add(Attributes.FOLLOW_RANGE, 16.0f);
+            b.add(Attributes.ARMOR, 0.0f);
+            b.add(Attributes.ATTACK_SPEED, 4.0f); // 缺失会导致 swinging 永不重置 -> 动画卡死
+
+            // JSON 显式声明的属性：按 key 查原版属性注册表（任意属性可配，无需主 mod 打洞）
+            for (var entry : definition.attributes().entrySet()) {
+                var attr = lookupAttribute(entry.getKey());
+                if (attr != null) {
+                    b.add(attr, entry.getValue());
+                } else {
+                    LogManager.serverWarn("ContentPackContext",
+                            "Unknown attribute '{}' in entity definition {}, skipped",
+                            entry.getKey(), definition.id());
+                }
+            }
             return b;
         };
+    }
+
+    /**
+     * 按 key 查原版属性注册表。支持两种写法：
+     * <ul>
+     *   <li>camelCase：{@code maxHealth} / {@code knockbackResistance}（自动转 snake_case）</li>
+     *   <li>原版注册名：{@code minecraft:max_health}（直接解析）</li>
+     * </ul>
+     */
+    private static net.minecraft.world.entity.ai.attributes.Attribute lookupAttribute(String key) {
+        String snake = key.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
+        var attr = net.minecraft.core.registries.BuiltInRegistries.ATTRIBUTE
+                .get(net.minecraft.resources.ResourceLocation.withDefaultNamespace(snake));
+        if (attr == null) {
+            var parsed = net.minecraft.resources.ResourceLocation.tryParse(key);
+            if (parsed != null) {
+                attr = net.minecraft.core.registries.BuiltInRegistries.ATTRIBUTE.get(parsed);
+            }
+        }
+        return attr;
     }
 
     // ==================== SoundEvent 注册 ====================
