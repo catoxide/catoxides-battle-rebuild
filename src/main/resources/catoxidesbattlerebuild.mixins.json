@@ -6,7 +6,8 @@
   "mixins": [
     "PlayerAttackMixin",
     "LivingEntityHurtMixin",
-    "ItemStackMixin"
+    "ItemStackMixin",
+    "EnchantmentHelperMixin"
   ],
   "client": [
   ],

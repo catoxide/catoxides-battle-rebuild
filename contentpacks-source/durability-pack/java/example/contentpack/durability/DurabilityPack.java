@@ -56,4 +56,12 @@ public class DurabilityPack implements ContentPack {
                     "Registered variable durability capability for %d damageable items", damageable.size());
         });
     }
+
+    @Override
+    public void init() {
+        // 注册降级处理器（Mending/铁砧/合成台三机制）——主 mod mixin 经分发器调用
+        com.catoxide.catoxidesbattlerebuild.core.durability.DurabilityDegradationRegistry
+                .register(new DegradationHandler());
+        LogManager.serverInfo("DurabilityPack", "Degradation handler registered (Mending/Anvil/Crafting)");
+    }
 }
