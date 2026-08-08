@@ -215,23 +215,24 @@ public final class ContentPackContext {
     }
 
     /**
-     * 按 key 查原版属性注册表。支持两种写法：
+     * 按 key 查原版属性注册表（返回 Holder 供 AttributeSupplier.Builder.add 使用）。
+     * 支持两种写法：
      * <ul>
      *   <li>camelCase：{@code maxHealth} / {@code knockbackResistance}（自动转 snake_case）</li>
      *   <li>原版注册名：{@code minecraft:max_health}（直接解析）</li>
      * </ul>
      */
-    private static net.minecraft.world.entity.ai.attributes.Attribute lookupAttribute(String key) {
+    private static net.minecraft.core.Holder.Reference<net.minecraft.world.entity.ai.attributes.Attribute> lookupAttribute(String key) {
         String snake = key.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
-        var attr = net.minecraft.core.registries.BuiltInRegistries.ATTRIBUTE
-                .get(net.minecraft.resources.ResourceLocation.withDefaultNamespace(snake));
-        if (attr == null) {
+        var holder = net.minecraft.core.registries.BuiltInRegistries.ATTRIBUTE
+                .getHolder(net.minecraft.resources.ResourceLocation.withDefaultNamespace(snake)).orElse(null);
+        if (holder == null) {
             var parsed = net.minecraft.resources.ResourceLocation.tryParse(key);
             if (parsed != null) {
-                attr = net.minecraft.core.registries.BuiltInRegistries.ATTRIBUTE.get(parsed);
+                holder = net.minecraft.core.registries.BuiltInRegistries.ATTRIBUTE.getHolder(parsed).orElse(null);
             }
         }
-        return attr;
+        return holder;
     }
 
     // ==================== SoundEvent 注册 ====================
