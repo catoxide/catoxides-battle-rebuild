@@ -183,8 +183,10 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
     @Override
     public void tick() {
         super.tick();
+        // tickAnimation() 内部区分双端：服务端 updateAnimationState / 客户端 syncClientAnimation。
+        // 必须无条件调用（客户端需要 syncClientAnimation 来播放动画）——与手写类（zombie3）一致
+        tickAnimation();
         if (!this.level().isClientSide) {
-            tickAnimation();
             for (IMobBehavior behavior : behaviors()) {
                 try {
                     behavior.tick(this);
