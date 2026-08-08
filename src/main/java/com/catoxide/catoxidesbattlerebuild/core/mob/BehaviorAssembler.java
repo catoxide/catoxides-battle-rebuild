@@ -56,9 +56,10 @@ public final class BehaviorAssembler {
         if (builtinsRegistered) {
             return;
         }
+        // 先标记再注册：registerFactory 内部会调用 ensureBuiltins，必须先置位避免无限递归
+        builtinsRegistered = true;
         registerFactory(new AttackBehavior.Factory());
         registerFactory(new AiBehavior.Factory());
         registerFactory(new RaycastBehavior.Factory());
-        builtinsRegistered = true;
     }
 }
