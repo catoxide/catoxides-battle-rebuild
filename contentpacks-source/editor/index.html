@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ContentPack 编辑器</title>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<style>
+  :root { --bg:#1e1e2e; --card:#313244; --fg:#cdd6f4; --acc:#89b4fa; --ok:#a6e3a1; --err:#f38ba8; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--fg); font-family:"Segoe UI",system-ui,sans-serif; padding:20px; }
+  h1 { color:var(--acc); margin-bottom:6px; }
+  .sub { opacity:.7; margin-bottom:20px; font-size:13px; }
+  .card { background:var(--card); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .card h2 { font-size:15px; color:var(--acc); margin-bottom:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; }
+  label { display:block; font-size:12px; opacity:.8; margin-bottom:3px; }
+  input, textarea, select { width:100%; background:#45475a; border:1px solid #585b70; color:var(--fg);
+    border-radius:6px; padding:6px 8px; font-size:13px; font-family:inherit; }
+  input:focus, textarea:focus { outline:2px solid var(--acc); }
+  textarea { font-family:Consolas,monospace; }
+  .btn { background:var(--acc); color:#1e1e2e; border:none; border-radius:6px; padding:8px 16px;
+    font-size:14px; font-weight:600; cursor:pointer; margin-right:8px; }
+  .btn:hover { filter:brightness(1.1); }
+  .btn.ghost { background:#45475a; color:var(--fg); font-weight:400; }
+  .mob { border:1px solid #45475a; border-radius:8px; padding:12px; margin-bottom:10px; background:#2a2b3d; }
+  .mob h3 { font-size:13px; color:var(--acc); margin-bottom:10px; }
+  .beh-row { display:flex; gap:8px; margin-bottom:6px; align-items:center; }
+  .beh-row input { flex:1; }
+  .anim-row { display:flex; gap:8px; margin-bottom:6px; align-items:center; }
+  .anim-row input { flex:1; }
+  .row { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
+  .row .btn { padding:4px 10px; font-size:12px; }
+  .out { background:#11111b; border-radius:8px; padding:12px; margin-top:12px; font-family:Consolas,monospace;
+    font-size:12px; white-space:pre-wrap; max-height:300px; overflow:auto; display:none; }
+  .status { margin-top:10px; font-size:13px; }
+  .ok { color:var(--ok); } .err { color:var(--err); }
+  .note { font-size:12px; opacity:.7; margin-top:8px; line-height:1.6; }
+  code { background:#45475a; padding:1px 5px; border-radius:4px; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>ContentPack 编辑器</h1>
+<div class="sub">生成内容包（MANIFEST + entities JSON）— 纯网页工具，配合 <code>contentpacks-source/build-pack.ps1</code> 打包。</div>
+
+<div class="card">
+  <h2>包设置</h2>
+  <div class="grid">
+    <div><label>Module-Name（必填）</label><input id="pkgName" value="my-pack"></div>
+    <div><label>Module-Version</label><input id="pkgVersion" value="1.0.0"></div>
+    <div><label>Module-Requires</label><input id="pkgRequires" value="catoxidesbattlerebuild>=0.2.0"></div>
+    <div><label>Module-Dependencies（逗号分隔）</label><input id="pkgDeps" placeholder="mission-core, gun-framework"></div>
+    <div><label>Module-Mod-Requires（逗号分隔）</label><input id="pkgModReq" placeholder="sable>=2.0.3"></div>
+    <div><label>Module-Entry（有代码时）</label><input id="pkgEntry" placeholder="example.contentpack.my.MyPack"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>实体定义 <button class="btn ghost" onclick="addMob()">+ 添加实体</button></h2>
+  <div id="mobList"></div>
+</div>
+
+<div class="card">
+  <h2>生成</h2>
+  <button class="btn" onclick="generateZip()">下载内容包 zip</button>
+  <button class="btn ghost" onclick="previewJson()">预览 JSON</button>
+  <button class="btn ghost" onclick="previewManifest()">预览 MANIFEST</button>
+  <div class="status" id="status"></div>
+  <div class="out" id="output"></div>
+  <div class="note">
+    <b>使用步骤：</b>① 填写包设置 + 实体表单 → ② 下载 zip（含 MANIFEST.MF + entities/*.json）→
+    ③ 解压到 <code>contentpacks-source/&lt;你的包名&gt;/</code>，如需代码按模板写入口类 →
+    运行 <code>powershell -File contentpacks-source/build-pack.ps1 -SourceDir contentpacks-source/&lt;你的包名&gt; -OutJar contentpacks/&lt;你的包名&gt;.jar</code>
+    <br>格式规范见 <code>design/CONTENTPACK_FORMAT.md</code>
+  </div>
+</div>
+
+<script>
+let mobId = 0;
+const BUILTIN_BEHAVIORS = ["attack","ai","raycast"];
+
+function addMob(data) {
+  const id = ++mobId;
+  const div = document.createElement('div');
+  div.className = 'mob';
+  div.innerHTML = `
+    <h3>实体 #${id} <button class="btn ghost" onclick="this.parentElement.parentElement.remove()">删除</button></h3>
+    <div class="grid">
+      <div><label>id（必填）</label><input class="f-id" value="${data?.id||'example_mob'}"></div>
+      <div><label>namespace（缺省挂主mod）</label><input class="f-ns" value="${data?.ns||''}"></div>
+      <div><label>displayName</label><input class="f-dn" value="${data?.dn||''}"></div>
+      <div><label>width</label><input class="f-w" type="number" step="0.1" value="${data?.w||0.6}"></div>
+      <div><label>height</label><input class="f-h" type="number" step="0.1" value="${data?.h||1.95}"></div>
+      <div><label>maxHealth</label><input class="f-mh" type="number" step="0.5" value="${data?.mh||20}"></div>
+      <div><label>attackDamage</label><input class="f-ad" type="number" step="0.5" value="${data?.ad||3}"></div>
+      <div><label>movementSpeed</label><input class="f-ms" type="number" step="0.01" value="${data?.ms||0.23}"></div>
+      <div><label>followRange</label><input class="f-fr" type="number" value="${data?.fr||16}"></div>
+      <div><label>armor</label><input class="f-ar" type="number" step="0.5" value="${data?.ar||0}"></div>
+      <div><label>model id（如 ns:model）</label><input class="f-mid" value="${data?.mid||'minecraft:zombie'}"></div>
+      <div><label>texture（如 ns:textures/...png）</label><input class="f-tex" value="${data?.tex||'minecraft:textures/entity/zombie/zombie.png'}"></div>
+    </div>
+    <div style="margin-top:10px">
+      <label>音效（ResourceLocation，留空=无）</label>
+      <div class="grid">
+        <div><input class="f-s1" placeholder="ambient" value="${data?.s1||'minecraft:entity.zombie.ambient'}"></div>
+        <div><input class="f-s2" placeholder="hurt" value="${data?.s2||'minecraft:entity.zombie.hurt'}"></div>
+        <div><input class="f-s3" placeholder="death" value="${data?.s3||'minecraft:entity.zombie.death'}"></div>
+        <div><input class="f-s4" placeholder="step" value="${data?.s4||'minecraft:entity.zombie.step'}"></div>
+        <div><input class="f-s5" placeholder="swing" value="${data?.s5||''}"></div>
+      </div>
+    </div>
+    <div style="margin-top:10px">
+      <label>动画映射（state → 动画名）</label>
+      <div id="anims-${id}"></div>
+      <div class="row"><button class="btn ghost" onclick="addAnimRow('anims-${id}','0','still')">+ 动画</button></div>
+    </div>
+    <div style="margin-top:10px">
+      <label>行为组件（type + JSON 配置）</label>
+      <div id="behs-${id}"></div>
+      <div class="row">
+        <button class="btn ghost" onclick="addBehRow('behs-${id}','attack')">+ 行为</button>
+        <span class="note">内置: ${BUILTIN_BEHAVIORS.join(' / ')}</span>
+      </div>
+    </div>`;
+  document.getElementById('mobList').appendChild(div);
+  ['0,still','1,walking','3,attack'].forEach(p=>{const [s,n]=p.split(',');addAnimRow(`anims-${id}`,s,n);});
+  addBehRow(`behs-${id}`,'attack');
+  addBehRow(`behs-${id}`,'ai');
+}
+
+function addAnimRow(containerId, s, n) {
+  const c = document.getElementById(containerId);
+  const row = document.createElement('div');
+  row.className = 'anim-row';
+  row.innerHTML = `<input class="a-s" placeholder="state(0-7)" value="${s||''}" style="max-width:70px">
+    <input class="a-n" placeholder="动画名(still/walking/attack...)" value="${n||''}">
+    <button class="btn ghost" onclick="this.parentElement.remove()">×</button>`;
+  c.appendChild(row);
+}
+
+function addBehRow(containerId, type) {
+  const c = document.getElementById(containerId);
+  const row = document.createElement('div');
+  row.className = 'beh-row';
+  row.innerHTML = `<select class="b-t" style="max-width:110px">
+      ${BUILTIN_BEHAVIORS.map(t=>`<option ${t===type?'selected':''}>${t}</option>`).join('')}</select>
+    <input class="b-c" placeholder='{"damage":3.0}' value='${type==='attack'?'{"damage":3.0,"cooldown":20}':type==='ai'?'{"goals":["hunt_player","random_stroll"]}':'{"range":12.0}'}'>
+    <button class="btn ghost" onclick="this.parentElement.remove()">×</button>`;
+  c.appendChild(row);
+}
+
+function collectMobs() {
+  const mobs = [];
+  document.querySelectorAll('.mob').forEach(m=>{
+    const g = id => m.querySelector(id)?.value || '';
+    const anims = {}; m.querySelectorAll('.anim-row').forEach(r=>{
+      const s=r.querySelector('.a-s').value, n=r.querySelector('.a-n').value;
+      if(s!=='' && n!=='') anims[s]=n; });
+    const behs = []; m.querySelectorAll('.beh-row').forEach(r=>{
+      const t=r.querySelector('.b-t').value, c=r.querySelector('.b-c').value.trim();
+      let cfg = {}; try { cfg = c ? JSON.parse(c) : {}; } catch(e) { cfg = {_error:c}; }
+      behs.push({type:t, ...cfg}); });
+    const sounds = {};
+    ['f-s1','f-s2','f-s3','f-s4','f-s5'].forEach((sel,i)=>{
+      const v=g('.'+sel); if(v) sounds[['ambient','hurt','death','step','swing'][i]]=v; });
+    const obj = { id:g('.f-id') };
+    if(g('.f-ns')) obj.namespace=g('.f-ns');
+    if(g('.f-dn')) obj.displayName=g('.f-dn');
+    obj.size={width:parseFloat(g('.f-w')), height:parseFloat(g('.f-h'))};
+    obj.attributes={maxHealth:parseFloat(g('.f-mh')), attackDamage:parseFloat(g('.f-ad')),
+      movementSpeed:parseFloat(g('.f-ms')), followRange:parseFloat(g('.f-fr')), armor:parseFloat(g('.f-ar'))};
+    obj.model={type:'entity', id:g('.f-mid')};
+    if(g('.f-tex')) obj.texture=g('.f-tex');
+    if(Object.keys(sounds).length) obj.sounds=sounds;
+    if(Object.keys(anims).length) obj.animations=anims;
+    if(behs.length) obj.behaviors=behs;
+    mobs.push(obj);
+  });
+  return mobs;
+}
+
+function buildManifest() {
+  const L = [];
+  L.push('Manifest-Version: 1.0');
+  L.push('Module-Name: '+(document.getElementById('pkgName').value||'my-pack'));
+  L.push('Module-Version: '+(document.getElementById('pkgVersion').value||'0.0.0'));
+  if(document.getElementById('pkgRequires').value) L.push('Module-Requires: '+document.getElementById('pkgRequires').value);
+  L.push('Module-Type: contentpack');
+  if(document.getElementById('pkgEntry').value) L.push('Module-Entry: '+document.getElementById('pkgEntry').value);
+  if(document.getElementById('pkgDeps').value) L.push('Module-Dependencies: '+document.getElementById('pkgDeps').value);
+  if(document.getElementById('pkgModReq').value) L.push('Module-Mod-Requires: '+document.getElementById('pkgModReq').value);
+  return L.join('\r\n');
+}
+
+function showOutput(title, text) {
+  const o = document.getElementById('output');
+  o.style.display='block';
+  o.textContent = '===== '+title+' =====\n\n'+text;
+}
+
+function status(msg, ok) {
+  const s = document.getElementById('status');
+  s.className = 'status '+(ok?'ok':'err');
+  s.textContent = msg;
+}
+
+function previewJson() {
+  const mobs = collectMobs();
+  if(!mobs.length){ status('请至少添加一个实体', false); return; }
+  showOutput('entities/*.json 预览（每实体一个文件）', mobs.map((m,i)=>`entities/entity_${i+1}.json:\n${JSON.stringify(m,null,2)}`).join('\n\n'));
+  status('JSON 生成完毕', true);
+}
+
+function previewManifest() {
+  showOutput('MANIFEST.MF', buildManifest());
+  status('MANIFEST 生成完毕', true);
+}
+
+async function generateZip() {
+  if(typeof JSZip === 'undefined'){ status('JSZip 加载失败（需联网加载 CDN）；可用"预览"复制内容手动打包', false); return; }
+  const mobs = collectMobs();
+  if(!mobs.length){ status('请至少添加一个实体', false); return; }
+  const zip = new JSZip();
+  zip.file('META-INF/MANIFEST.MF', buildManifest());
+  mobs.forEach((m,i)=>{ zip.file('entities/'+m.id+'.json', JSON.stringify(m,null,2)); });
+  const blob = await zip.generateAsync({type:'blob'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (document.getElementById('pkgName').value||'my-pack')+'-content.zip';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  status('zip 已下载：解压到 contentpacks-source/'+(document.getElementById('pkgName').value||'my-pack')+'/ 即可', true);
+}
+
+addMob({id:'example_mob'});
+</script>
+</body>
+</html>
