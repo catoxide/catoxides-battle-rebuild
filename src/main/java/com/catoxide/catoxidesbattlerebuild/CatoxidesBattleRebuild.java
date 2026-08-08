@@ -60,7 +60,8 @@ public class CatoxidesBattleRebuild {
             contentPackContext = new ContentPackContext(
                     CatoxidesBattleRebuildConstants.MODID,
                     ModSounds.SOUNDS,
-                    ModEntities.ENTITIES
+                    ModEntities.ENTITIES,
+                    modEventBus
             );
             ContentPackLoader.executeAllRegistries(contentPackContext);
             ModEvents.setContentPackContext(contentPackContext);

@@ -45,7 +45,7 @@ public class TestMobPack implements ContentPack {
             String json = new String(in.readAllBytes(), StandardCharsets.UTF_8);
             MobDefinition definition = MobDefinitionParser.parse(json);
             context.registerDataDrivenMob(definition);
-            LogManager.serverInfo("TestMobPack", "Registered data-driven test mob: {} ({} behaviors)",
+            LogManager.serverInfo("TestMobPack", "Registered data-driven test mob: %s (%d behaviors)",
                     definition.entityKey(), definition.behaviors().size());
         } catch (Exception e) {
             LogManager.serverError("TestMobPack", "Failed to register test mob: {}", e.getMessage(), e);

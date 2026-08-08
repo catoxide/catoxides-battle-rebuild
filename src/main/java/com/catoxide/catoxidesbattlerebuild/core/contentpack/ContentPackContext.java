@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -38,6 +39,10 @@ public final class ContentPackContext {
     private final String modId;
     private final DeferredRegister<SoundEvent> soundRegister;
     private final DeferredRegister<EntityType<?>> entityRegister;
+    private final net.neoforged.bus.api.IEventBus modEventBus;
+
+    /** 按命名空间动态创建的实体注册表（DLC 独立 namespace 用） */
+    private final Map<String, DeferredRegister<EntityType<?>>> entityRegistries = new HashMap<>();
 
     /**
      * 收集在此 context 下注册的所有实体 factory，供外部在 AttributeCreationEvent 中注册属性。
@@ -49,10 +54,12 @@ public final class ContentPackContext {
 
     public ContentPackContext(String modId,
                               DeferredRegister<SoundEvent> soundRegister,
-                              DeferredRegister<EntityType<?>> entityRegister) {
+                              DeferredRegister<EntityType<?>> entityRegister,
+                              net.neoforged.bus.api.IEventBus modEventBus) {
         this.modId = modId;
         this.soundRegister = soundRegister;
         this.entityRegister = entityRegister;
+        this.modEventBus = modEventBus;
         LogManager.serverInfo("ContentPackContext", "Created for modId: %s", modId);
     }
 
@@ -68,6 +75,24 @@ public final class ContentPackContext {
     }
 
     // ==================== EntityType 注册 ====================
+
+    /**
+     * 获取（或创建）指定命名空间的实体注册表。
+     * <p>主 mod 命名空间 → 用主 DeferredRegister；独立 namespace → 动态创建并注册到 modEventBus
+     * （NeoForge 注册表不绑定 mod id，任意命名空间可注册）。
+     */
+    private DeferredRegister<EntityType<?>> getOrCreateEntityRegister(String namespace) {
+        if (namespace == null || namespace.isEmpty() || namespace.equals(modId)) {
+            return entityRegister;
+        }
+        return entityRegistries.computeIfAbsent(namespace, ns -> {
+            DeferredRegister<EntityType<?>> reg = DeferredRegister.create(
+                    net.minecraft.core.registries.Registries.ENTITY_TYPE, ns);
+            reg.register(modEventBus);
+            LogManager.serverInfo("ContentPackContext", "Created entity registry for namespace: %s", ns);
+            return reg;
+        });
+    }
 
     /**
      * 注册一个 EntityType（生物）
@@ -103,8 +128,18 @@ public final class ContentPackContext {
             String entityPath,
             EntityType.Builder<T> builder,
             java.util.function.Supplier<net.minecraft.world.entity.ai.attributes.AttributeSupplier.Builder> attributeSupplierFactory) {
+        return registerEntityIn(entityRegister, entityPath, builder, attributeSupplierFactory);
+    }
+
+    /** 在指定命名空间的注册表中注册实体（支持 DLC 独立 namespace） */
+    @SuppressWarnings("unchecked")
+    private <T extends LivingEntity> DeferredHolder<EntityType<?>, EntityType<T>> registerEntityIn(
+            DeferredRegister<EntityType<?>> registry,
+            String entityPath,
+            EntityType.Builder<T> builder,
+            java.util.function.Supplier<net.minecraft.world.entity.ai.attributes.AttributeSupplier.Builder> attributeSupplierFactory) {
         DeferredHolder<EntityType<?>, EntityType<T>> holder =
-                (DeferredHolder<EntityType<?>, EntityType<T>>) (Object) entityRegister.register(
+                (DeferredHolder<EntityType<?>, EntityType<T>>) (Object) registry.register(
                         entityPath, () -> builder.build(entityPath));
         registeredEntities.add(new RegisteredEntity<>(entityPath, holder, builder, attributeSupplierFactory));
         LogManager.serverInfo("ContentPackContext", "Registered entity: %s (%s)", entityPath, modId);
@@ -126,17 +161,20 @@ public final class ContentPackContext {
         String ns = (definition.namespace() == null || definition.namespace().isEmpty())
                 ? modId : definition.namespace();
 
-        DeferredHolder<EntityType<?>, EntityType<DataDrivenMob>> holder = registerEntity(
+        // 独立 namespace → 动态创建 DeferredRegister（实体注册在 ns:path）
+        DeferredHolder<EntityType<?>, EntityType<DataDrivenMob>> holder = registerEntityIn(
+                getOrCreateEntityRegister(ns),
                 definition.id(),
                 EntityType.Builder.<DataDrivenMob>of(DataDrivenMob::new, MobCategory.MONSTER)
                         .sized(definition.width(), definition.height()),
                 buildAttributes(definition)
         );
 
-        MobDefinitionRegistry.register(ResourceLocation.fromNamespaceAndPath(ns, definition.id()), definition);
+        // 定义 key = 实体实际注册的 EntityType key（与 DataDrivenMob 构造时 getKey(type) 一致）
+        MobDefinitionRegistry.register(holder.getKey().location(), definition);
         dataDrivenEntities.add(holder);
-        LogManager.serverInfo("ContentPackContext", "Registered data-driven mob: %s:%s (behaviors: %d)",
-                ns, definition.id(), definition.behaviors().size());
+        LogManager.serverInfo("ContentPackContext", "Registered data-driven mob: %s (behaviors: %d)",
+                holder.getKey().location(), definition.behaviors().size());
         return holder;
     }
 
