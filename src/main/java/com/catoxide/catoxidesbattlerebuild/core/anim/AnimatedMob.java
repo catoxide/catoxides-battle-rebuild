@@ -355,6 +355,9 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
      * <p>子类在 {@link Mob#tick()} 中调用此方法，避免重复编写动画 tick 逻辑。
      */
     protected void tickAnimation() {
+        // 显式更新 swinging 生命周期（原版 updateSwingTime 仅 Player 调用，
+        // 非玩家实体 swinging 永不重置 → 状态机锁死攻击动画）
+        this.updateSwingTime();
         // 跟踪挥动时刻（供 isAttackStateActive 的保持窗口使用）
         if (this.swinging) {
             lastSwingTick = this.level().getGameTime();
@@ -365,6 +368,23 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
         } else {
             syncClientAnimation();
             checkZeroPose();
+        }
+    }
+
+    /**
+     * 显式实现 swinging 重置（根本修复）。
+     * <p>原版 updateSwingTime() 在 1.21.1 仅 Player 类调用——非玩家实体 swinging
+     * 永不重置（swingTime 卡负值），导致 isAttackStateActive 永真、状态机锁死攻击动画。
+     * 本 override 补全逻辑，并在 {@link #tickAnimation()} 中每 tick 显式调用。
+     */
+    @Override
+    protected void updateSwingTime() {
+        if (this.swinging) {
+            this.swingTime++;
+            if (this.swingTime >= this.getCurrentSwingDuration()) {
+                this.swingTime = 0;
+                this.swinging = false;
+            }
         }
     }
 
