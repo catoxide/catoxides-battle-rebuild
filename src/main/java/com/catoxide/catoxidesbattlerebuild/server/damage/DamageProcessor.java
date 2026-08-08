@@ -1,5 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.server.damage;
 
+import com.catoxide.catoxidesbattlerebuild.core.behavior.BehaviorRouter;
+import com.catoxide.catoxidesbattlerebuild.core.behavior.HurtContext;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.EntityBoneSystem;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.world.entity.LivingEntity;
@@ -16,6 +18,11 @@ public class DamageProcessor {
     }
 
     public void processHit(LivingEntity attacker, LivingEntity target, String boneName, float damage) {
+        // 行为分发：插件注册的受击处理器可接管整条伤害链路（短路默认逻辑）
+        if (BehaviorRouter.routeHurt(new HurtContext(attacker, target, boneName, damage))) {
+            return;
+        }
+
         LogManager.serverDebug("DamageProcessor", "Processing hit: attacker={}, target={}, boneName={}, damage={}",
                 attacker.getName().getString(), target.getName().getString(), boneName, damage);
         
