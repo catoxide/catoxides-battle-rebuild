@@ -22,6 +22,10 @@ public class FixedIntervalAttackGoal extends MeleeAttackGoal {
 
     @Override
     protected int getTicksUntilNextAttack() {
+        // 诊断：每次攻击冷却请求（判断攻击频率是否异常）
+        com.catoxide.catoxidesbattlerebuild.util.LogManager.serverInfo("AnimDiag",
+                "Entity %d ATTACK tick=%d interval=%d",
+                this.mob.getId(), this.mob.level().getGameTime(), this.attackInterval);
         return this.attackInterval;
     }
 }
