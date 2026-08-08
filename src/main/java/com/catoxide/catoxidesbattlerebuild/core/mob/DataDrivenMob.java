@@ -22,8 +22,10 @@ import java.util.List;
  * <p>所有 JSON 定义实体的统一实体类：模型/贴图/尺寸/属性/音效/动画状态/行为组件
  * 全部由 {@link MobDefinition}（实体定义 JSON）驱动。加新生物 = 加 JSON + 资源，零 Java。
  *
- * <p><b>对照意义</b>：zombie2（内部手写类注册）vs DataDrivenMob（JSON 装配）
- * 用于验证 mob 加载器两种模式的正确性与等价性。
+ * <p><b>懒初始化设计</b>：{@code definition} / {@code behaviors} 不在构造时初始化，
+ * 而在首次访问时从静态注册表装配。原因：Mob 父类构造器会调用 {@code registerGoals()}，
+ * AnimatedMob 构造器会调用 {@code getTextureLocation()}——这些虚方法在 {@code super()} 链中
+ * 被调用时，实例字段尚未初始化（Java 字段初始化在 super() 之后）。走静态注册表可规避此时序问题。
  */
 public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
 
@@ -42,22 +44,51 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
     private static final EntityDataAccessor<Integer> DATA_ANIM_STATE =
             SynchedEntityData.defineId(DataDrivenMob.class, EntityDataSerializers.INT);
 
-    private final MobDefinition definition;
-    private final List<IMobBehavior> behaviors;
+    /** 懒初始化：首次访问时从 MobDefinitionRegistry 装配 */
+    private MobDefinition definition;
+    private List<IMobBehavior> behaviors;
 
     public DataDrivenMob(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
-        MobDefinition def = MobDefinitionRegistry.get(EntityType.getKey(type));
-        if (def == null) {
-            LogManager.serverError(TAG, "No MobDefinition registered for entity key {} - using empty fallback",
-                    EntityType.getKey(type));
-            def = emptyDefinition(EntityType.getKey(type));
+        // 不在此装配：父类构造链中 registerGoals()/getTextureLocation() 已被调用，
+        // 懒初始化在首次访问时完成（getType() 此时已可用，注册表已填充）
+    }
+
+    // ==================== 懒初始化访问器 ====================
+
+    private MobDefinition def() {
+        MobDefinition d = this.definition;
+        if (d == null) {
+            d = MobDefinitionRegistry.get(EntityType.getKey(this.getType()));
+            if (d == null) {
+                LogManager.serverError(TAG, "No MobDefinition for entity key {} - using empty fallback",
+                        EntityType.getKey(this.getType()));
+                d = emptyDefinition(EntityType.getKey(this.getType()));
+            }
+            this.definition = d;
         }
-        this.definition = def;
-        this.behaviors = BehaviorAssembler.assemble(def.behaviors());
-        for (IMobBehavior behavior : behaviors) {
-            behavior.onRegister(this);
+        return d;
+    }
+
+    private List<IMobBehavior> behaviors() {
+        List<IMobBehavior> b = this.behaviors;
+        if (b == null) {
+            synchronized (this) {
+                b = this.behaviors;
+                if (b == null) {
+                    b = BehaviorAssembler.assemble(def().behaviors());
+                    for (IMobBehavior behavior : b) {
+                        try {
+                            behavior.onRegister(this);
+                        } catch (Exception e) {
+                            LogManager.serverError(TAG, "Behavior onRegister threw: {}", e.getMessage(), e);
+                        }
+                    }
+                    this.behaviors = b;
+                }
+            }
         }
+        return b;
     }
 
     private static MobDefinition emptyDefinition(ResourceLocation key) {
@@ -84,7 +115,7 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
 
     @Override
     public String getStateAnimationName(int state) {
-        return definition.stateAnimations().get(state);
+        return def().stateAnimations().get(state);
     }
 
     @Override
@@ -108,39 +139,39 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
 
     @Override
     public ModelIndex getDefaultModelIndex() {
-        return new ModelIndex(definition.modelType(), definition.modelId());
+        return new ModelIndex(def().modelType(), def().modelId());
     }
 
     @Override
     public ResourceLocation getTextureLocation() {
-        return definition.texture();
+        return def().texture();
     }
 
     // ==================== 音效（从定义读取）====================
 
     @Override
     protected SoundEvent getAmbientSound() {
-        return toSound(definition.sounds().ambient());
+        return toSound(def().sounds().ambient());
     }
 
     @Override
     protected SoundEvent getHurtSound(DamageSource damageSource) {
-        return toSound(definition.sounds().hurt());
+        return toSound(def().sounds().hurt());
     }
 
     @Override
     protected SoundEvent getDeathSound() {
-        return toSound(definition.sounds().death());
+        return toSound(def().sounds().death());
     }
 
     @Override
     public SoundEvent getStepSound() {
-        return toSound(definition.sounds().step());
+        return toSound(def().sounds().step());
     }
 
     @Override
     public SoundEvent getSwingSound() {
-        return toSound(definition.sounds().swing());
+        return toSound(def().sounds().swing());
     }
 
     private static SoundEvent toSound(ResourceLocation id) {
@@ -154,7 +185,7 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         super.tick();
         if (!this.level().isClientSide) {
             tickAnimation();
-            for (IMobBehavior behavior : behaviors) {
+            for (IMobBehavior behavior : behaviors()) {
                 try {
                     behavior.tick(this);
                 } catch (Exception e) {
@@ -168,7 +199,7 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
     public void onAddedToLevel() {
         super.onAddedToLevel();
         if (!this.level().isClientSide) {
-            for (IMobBehavior behavior : behaviors) {
+            for (IMobBehavior behavior : behaviors()) {
                 try {
                     behavior.onSpawn(this);
                 } catch (Exception e) {
@@ -182,7 +213,7 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
     public void die(DamageSource source) {
         super.die(source);
         if (!this.level().isClientSide) {
-            for (IMobBehavior behavior : behaviors) {
+            for (IMobBehavior behavior : behaviors()) {
                 try {
                     behavior.onDeath(this);
                 } catch (Exception e) {
@@ -194,7 +225,8 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
 
     @Override
     protected void registerGoals() {
-        for (IMobBehavior behavior : behaviors) {
+        // 父类 Mob 构造器也会调用本方法——懒初始化保证此时也能正确装配
+        for (IMobBehavior behavior : behaviors()) {
             try {
                 behavior.registerGoals(this);
             } catch (Exception e) {
@@ -203,14 +235,9 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         }
     }
 
-    /** 获取本实体的数据驱动定义 */
+    /** 获取本实体的数据驱动定义（懒装配） */
     public MobDefinition definition() {
-        return definition;
-    }
-
-    /** 获取装配的行为组件列表 */
-    public List<IMobBehavior> behaviors() {
-        return behaviors;
+        return def();
     }
 
     /**
@@ -219,7 +246,7 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
      */
     public boolean routeHurt(LivingEntity attacker, String boneName, float damage) {
         HurtContext ctx = new HurtContext(attacker, this, boneName, damage);
-        for (IMobBehavior behavior : behaviors) {
+        for (IMobBehavior behavior : behaviors()) {
             try {
                 if (behavior.onHit(this, ctx)) {
                     return true;
