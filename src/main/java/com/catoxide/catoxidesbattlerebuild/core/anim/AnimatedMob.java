@@ -59,10 +59,10 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
     protected static final long MIN_STATE_HOLD_TICKS = 10;
     protected static final long ZERO_POSE_GRACE_TICKS = 10;
 
-    // 挥动保持窗口：挥动结束后短暂保持攻击动画（攻击停顿）。
-    // 必须明显短于攻击间隔（cooldown 20tick）——否则每次攻击刷新窗口，
-    // isAttackStateActive 永真 → 导航持续 stop → 实体不会移动
-    protected static final long SWING_HOLD_TICKS = 8;
+    // 挥动保持窗口：挥动结束后极短保持攻击动画。
+    // 原 8 tick 让攻击反复打断移动（走走停停→"打后停/走得慢"）。
+    // 缩到 2 tick：攻击瞬间抬手，随即切回 walking，移动不被攻击打断
+    protected static final long SWING_HOLD_TICKS = 2;
     protected long lastSwingTick = 0;
 
     protected boolean serverInitialAnimPlayed = false;
