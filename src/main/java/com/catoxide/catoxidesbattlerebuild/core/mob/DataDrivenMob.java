@@ -198,6 +198,15 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         // 必须无条件调用（客户端需要 syncClientAnimation 来播放动画）——与手写类（zombie3）一致
         tickAnimation();
         if (!this.level().isClientSide) {
+            // 诊断日志（每 20 tick）：swinging 状态 + ATTACK_SPEED + swing 时长
+            if (this.level().getGameTime() % 20 == 0) {
+                LogManager.serverInfo("AnimDiag",
+                        "Entity {} state={} swinging={} attackSpeed={} swingDur={} moving={}",
+                        getId(), getAnimState(), this.swinging,
+                        this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_SPEED),
+                        this.getCurrentSwingDuration(),
+                        this.moveControl.hasWanted() || !this.getNavigation().isDone());
+            }
             // 受击状态计时
             if (isHit()) {
                 hitTime--;
