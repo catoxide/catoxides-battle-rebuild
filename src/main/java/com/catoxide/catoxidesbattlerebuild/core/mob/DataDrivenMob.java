@@ -61,11 +61,19 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         // 懒初始化在首次访问时完成（getType() 此时已可用，注册表已填充）
     }
 
-    /** 诊断：捕获每次挥动调用（定位 swinging 持续来源） */
+    /** 诊断：捕获每次挥动调用 + 完整调用栈（定位 swinging 持续来源） */
     @Override
     public void swing(net.minecraft.world.InteractionHand hand) {
-        LogManager.serverInfo("AnimDiag",
-                "SWING CALLED entity=%d tick=%d state=%d", getId(), this.level().getGameTime(), getAnimState());
+        StackTraceElement[] st = Thread.currentThread().getStackTrace();
+        StringBuilder chain = new StringBuilder();
+        for (int i = 2; i < Math.min(st.length, 14); i++) {
+            if (i > 2) chain.append(" < ");
+            String cn = st[i].getClassName();
+            cn = cn.substring(cn.lastIndexOf('.') + 1);
+            chain.append(cn).append(".").append(st[i].getMethodName()).append(":").append(st[i].getLineNumber());
+        }
+        LogManager.serverInfo("AnimDiag", "SWING entity=%d tick=%d state=%d | %s",
+                getId(), this.level().getGameTime(), getAnimState(), chain);
         super.swing(hand);
     }
 
