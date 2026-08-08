@@ -236,7 +236,9 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
 
     /**
      * 服务端：更新动画状态
-     * <p>比较当前状态和新状态，如果不同且超过最小保持时间，则切换并播放新动画。
+     * <p><b>重构要点</b>：determineAnimationState() 是纯判定（稳定输出），
+     * 状态变化<b>立即切换</b>——不再被 MIN_STATE_HOLD_TICKS 阻挡。
+     * 原实现用 hold 防抖动，但会导致攻击结束后切不回 walking（"攻击脱离后脚停/切不回去"）。
      */
     protected void updateAnimationState() {
         int currentState = getAnimState();
@@ -254,29 +256,13 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
 
         int newState = determineAnimationState();
 
-        if (currentState != newState &&
-                (this.level().getGameTime() - lastStateChangeTick >= MIN_STATE_HOLD_TICKS)) {
+        if (currentState != newState) {
             String fromName = getStateAnimationName(currentState);
             String toName = getStateAnimationName(newState);
             setAnimState(newState);
             lastStateChangeTick = this.level().getGameTime();
             playAnimationForState(newState);
             LogManager.zombie2StateChanged(getId(), fromName, toName);
-        } else if (currentState != newState && this.level().getGameTime() % 20 == 0) {
-            // 状态不同但被 MIN_STATE_HOLD_TICKS 阻止
-            long ticksSinceChange = this.level().getGameTime() - lastStateChangeTick;
-            LogManager.serverDebug("AnimDiag",
-                "Entity %d wants %s(%d)->%s(%d) but blocked | swinging=%s | ticksSinceChange=%d < holdTicks=%d",
-                getId(), getStateAnimationName(currentState), currentState,
-                getStateAnimationName(newState), newState,
-                String.valueOf(this.swinging), ticksSinceChange, MIN_STATE_HOLD_TICKS);
-        } else if (currentState == newState && this.level().getGameTime() % 20 == 0) {
-            // 诊断日志：每秒记录一次状态未改变的原因
-            long ticksSinceChange = this.level().getGameTime() - lastStateChangeTick;
-            LogManager.serverDebug("AnimDiag",
-                "Entity %d stuck in %s (state=%d) | swinging=%s | ticksSinceChange=%d | holdTicks=%d",
-                getId(), getStateAnimationName(currentState), currentState,
-                String.valueOf(this.swinging), ticksSinceChange, MIN_STATE_HOLD_TICKS);
         }
     }
 
@@ -336,13 +322,20 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
         }
     }
 
+    /** 零姿态恢复冷却（防止 hold_on_last_frame 动画播完被无限重播 → 抬手持续） */
+    private long lastRecoverTick = 0;
+
     /**
      * tick 中调用：检测零姿态并恢复
+     * <p><b>重构要点</b>：恢复带 20 tick 冷却。原实现每 10 tick 重播当前状态动画，
+     * 对 hold_on_last_frame 动画（如 attack）会导致无限重播（抬手持续）。
      */
     protected void checkZeroPose() {
         if (serverInitialAnimPlayed || lastClientAnimState != -1) {
             if (!this.animController.isPlayingAnim()
-                    && this.level().getGameTime() - lastAnimRequestTick > ZERO_POSE_GRACE_TICKS) {
+                    && this.level().getGameTime() - lastAnimRequestTick > ZERO_POSE_GRACE_TICKS
+                    && this.level().getGameTime() - lastRecoverTick > 20) {
+                lastRecoverTick = this.level().getGameTime();
                 recoverFromZeroPose();
             }
         }
