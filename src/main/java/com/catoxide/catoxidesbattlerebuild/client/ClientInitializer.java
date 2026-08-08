@@ -1,10 +1,12 @@
 package com.catoxide.catoxidesbattlerebuild.client;
 
 import cn.solarmoon.spark_core.event.ItemInHandModelRegisterEvent;
+import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuild;
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
 import com.catoxide.catoxidesbattlerebuild.client.geometry.EntityBoneManager;
 import com.catoxide.catoxidesbattlerebuild.client.models.ModelDataManager;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.CustomProjectileRenderer;
+import com.catoxide.catoxidesbattlerebuild.client.renderer.DataDrivenMobRenderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.IronSwordRenderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombie2Renderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombieRenderer;
@@ -55,6 +57,15 @@ public class ClientInitializer {
         LogManager.clientStartup("ClientInitializer", "Registering CustomProjectileRenderer...");
         event.registerEntityRenderer(ModEntities.CUSTOM_PROJECTILE.get(), CustomProjectileRenderer::new);
         LogManager.clientStartup("ClientInitializer", "CustomProjectileRenderer registered");
+
+        // 数据驱动实体通用渲染器（所有 JSON 定义实体共用，无需逐个写渲染器）
+        var contentPackContext = CatoxidesBattleRebuild.getContentPackContext();
+        if (contentPackContext != null) {
+            for (var holder : contentPackContext.getDataDrivenEntities()) {
+                event.registerEntityRenderer(holder.get(), DataDrivenMobRenderer::new);
+                LogManager.clientStartup("ClientInitializer", "DataDrivenMobRenderer registered for " + holder.getKey());
+            }
+        }
 
         for (ContentPackRegistry.LoadedPack loaded : ContentPackRegistry.getAllPacks()) {
             if (loaded.pack() instanceof ModularZombie3Pack pack) {

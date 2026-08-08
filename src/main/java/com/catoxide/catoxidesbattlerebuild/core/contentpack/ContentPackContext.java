@@ -1,5 +1,8 @@
 package com.catoxide.catoxidesbattlerebuild.core.contentpack;
 
+import com.catoxide.catoxidesbattlerebuild.core.mob.DataDrivenMob;
+import com.catoxide.catoxidesbattlerebuild.core.mob.MobDefinition;
+import com.catoxide.catoxidesbattlerebuild.core.mob.MobDefinitionRegistry;
 import com.catoxide.catoxidesbattlerebuild.core.sound.MobSoundProfile;
 import com.catoxide.catoxidesbattlerebuild.core.structure.blueprint.StructureBlueprint;
 import com.catoxide.catoxidesbattlerebuild.core.structure.blueprint.BlueprintParser;
@@ -9,6 +12,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
@@ -17,6 +24,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * ContentPack 注册上下文
@@ -33,6 +42,9 @@ public final class ContentPackContext {
      * 收集在此 context 下注册的所有实体 factory，供外部在 AttributeCreationEvent 中注册属性。
      */
     final List<RegisteredEntity<?>> registeredEntities = new ArrayList<>();
+
+    /** 本 context 下注册的所有数据驱动实体（供客户端通用渲染器注册） */
+    private final List<DeferredHolder<EntityType<?>, EntityType<DataDrivenMob>>> dataDrivenEntities = new ArrayList<>();
 
     public ContentPackContext(String modId,
                               DeferredRegister<SoundEvent> soundRegister,
@@ -96,6 +108,56 @@ public final class ContentPackContext {
         registeredEntities.add(new RegisteredEntity<>(entityPath, holder, builder, attributeSupplierFactory));
         LogManager.serverInfo("ContentPackContext", "Registered entity: %s (%s)", entityPath, modId);
         return holder;
+    }
+
+    // ==================== 数据驱动实体注册 ====================
+
+    /**
+     * 注册一个数据驱动实体（{@link DataDrivenMob}）
+     * <p>从 {@link MobDefinition} 注册 EntityType + 属性，并把定义写入
+     * {@link MobDefinitionRegistry}（DataDrivenMob 构造时按 EntityType key 查询）。
+     * namespace 缺省挂主 mod 命名空间。
+     *
+     * @param definition 实体定义（由实体定义 JSON 解析而来）
+     * @return EntityType DeferredHolder
+     */
+    public DeferredHolder<EntityType<?>, EntityType<DataDrivenMob>> registerDataDrivenMob(MobDefinition definition) {
+        String ns = (definition.namespace() == null || definition.namespace().isEmpty())
+                ? modId : definition.namespace();
+
+        DeferredHolder<EntityType<?>, EntityType<DataDrivenMob>> holder = registerEntity(
+                definition.id(),
+                EntityType.Builder.<DataDrivenMob>of(DataDrivenMob::new, MobCategory.MONSTER)
+                        .sized(definition.width(), definition.height()),
+                buildAttributes(definition)
+        );
+
+        MobDefinitionRegistry.register(ResourceLocation.fromNamespaceAndPath(ns, definition.id()), definition);
+        dataDrivenEntities.add(holder);
+        LogManager.serverInfo("ContentPackContext", "Registered data-driven mob: %s:%s (behaviors: %d)",
+                ns, definition.id(), definition.behaviors().size());
+        return holder;
+    }
+
+    /** 本 context 下注册的所有数据驱动实体（供客户端通用渲染器注册） */
+    public List<DeferredHolder<EntityType<?>, EntityType<DataDrivenMob>>> getDataDrivenEntities() {
+        return dataDrivenEntities;
+    }
+
+    /**
+     * 从定义属性表构建 AttributeSupplier（延迟执行，NeoForge 自定义属性注册后）。
+     */
+    private static Supplier<AttributeSupplier.Builder> buildAttributes(MobDefinition definition) {
+        return () -> {
+            AttributeSupplier.Builder b = Mob.createMobAttributes();
+            Map<String, Float> attrs = definition.attributes();
+            b.add(Attributes.MAX_HEALTH, attrs.getOrDefault("maxHealth", 20.0f));
+            b.add(Attributes.ATTACK_DAMAGE, attrs.getOrDefault("attackDamage", 4.0f));
+            b.add(Attributes.MOVEMENT_SPEED, attrs.getOrDefault("movementSpeed", 0.25f));
+            b.add(Attributes.FOLLOW_RANGE, attrs.getOrDefault("followRange", 16.0f));
+            b.add(Attributes.ARMOR, attrs.getOrDefault("armor", 0.0f));
+            return b;
+        };
     }
 
     // ==================== SoundEvent 注册 ====================
