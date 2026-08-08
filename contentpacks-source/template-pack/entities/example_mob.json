@@ -1,0 +1,30 @@
+{
+  "id": "example_mob",
+  "namespace": "templatepack",
+  "displayName": "Example Mob",
+  "size": { "width": 0.6, "height": 1.95 },
+  "attributes": {
+    "maxHealth": 20.0,
+    "attackDamage": 3.0,
+    "movementSpeed": 0.23,
+    "followRange": 16.0,
+    "armor": 0.0
+  },
+  "model": { "type": "entity", "id": "minecraft:zombie" },
+  "texture": "minecraft:textures/entity/zombie/zombie.png",
+  "sounds": {
+    "ambient": "minecraft:entity.zombie.ambient",
+    "hurt": "minecraft:entity.zombie.hurt",
+    "death": "minecraft:entity.zombie.death",
+    "step": "minecraft:entity.zombie.step"
+  },
+  "animations": {
+    "0": "still",
+    "1": "walking",
+    "3": "attack"
+  },
+  "behaviors": [
+    { "type": "attack", "damage": 3.0, "cooldown": 20 },
+    { "type": "ai", "goals": ["hunt_player", "random_stroll", "look_around"] }
+  ]
+}
