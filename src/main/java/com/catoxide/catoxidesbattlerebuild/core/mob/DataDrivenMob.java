@@ -234,6 +234,13 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
                         this.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_SPEED),
                         this.moveControl.hasWanted() || !this.getNavigation().isDone());
             }
+            // 防御：原版 swinging 重置（updateSwingTime 仅 Player 调用）在 Spark 环境下
+            // 对非玩家实体失效——swingTime 卡负值、swinging 永不重置 → 状态机锁死攻击动画。
+            // 超过攻击间隔(20tick)仍 swinging 则强制重置（不影响正常攻击节奏）
+            if (this.swinging && this.level().getGameTime() - lastSwingTick > 20) {
+                this.swinging = false;
+                this.swingTime = 0;
+            }
             // 受击状态计时
             if (isHit()) {
                 hitTime--;
