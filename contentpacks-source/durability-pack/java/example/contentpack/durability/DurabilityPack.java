@@ -53,7 +53,7 @@ public class DurabilityPack implements ContentPack {
                         damageable.toArray(new Item[0]));
             }
             LogManager.serverInfo("DurabilityPack",
-                    "Registered variable durability capability for {} damageable items", damageable.size());
+                    "Registered variable durability capability for %d damageable items", damageable.size());
         });
     }
 }
