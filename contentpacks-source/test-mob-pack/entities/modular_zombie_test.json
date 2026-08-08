@@ -1,0 +1,34 @@
+{
+  "id": "modular_zombie_test",
+  "namespace": "testmob",
+  "displayName": "Modular Zombie Test",
+  "size": { "width": 0.6, "height": 1.95 },
+  "attributes": {
+    "maxHealth": 20.0,
+    "attackDamage": 3.0,
+    "movementSpeed": 0.23,
+    "followRange": 16.0,
+    "armor": 2.0
+  },
+  "model": { "type": "entity", "id": "zombie3pack:modular_zombie_3" },
+  "texture": "zombie3pack:textures/entity/modular_zombie_3.png",
+  "sounds": {
+    "ambient": "minecraft:entity.zombie.ambient",
+    "hurt": "minecraft:entity.zombie.hurt",
+    "death": "minecraft:entity.zombie.death",
+    "step": "minecraft:entity.zombie.step"
+  },
+  "animations": {
+    "0": "still",
+    "1": "walking",
+    "2": "running",
+    "3": "attack"
+  },
+  "behaviors": [
+    { "type": "attack", "damage": 3.0, "cooldown": 20 },
+    {
+      "type": "ai",
+      "goals": ["hunt_player", "random_stroll", "look_at_player", "look_around", "hurt_by_target"]
+    }
+  ]
+}
