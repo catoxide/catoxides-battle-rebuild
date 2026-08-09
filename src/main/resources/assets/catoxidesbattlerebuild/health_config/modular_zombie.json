@@ -70,8 +70,8 @@
         {
           "boneName": "right_arm",
           "transmissionCoeff": 1.0,
-          "armorValue": 3.0,
-          "antiPiercing": 2.0,
+          "armorValue": 100.0,
+          "antiPiercing": 100.0,
           "collisionTag": "arm",
           "specialEffects": [],
           "hitSound": "entity.zombie.hurt"
