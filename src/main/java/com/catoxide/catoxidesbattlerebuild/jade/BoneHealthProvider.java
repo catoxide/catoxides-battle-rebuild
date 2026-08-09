@@ -139,6 +139,48 @@ public enum BoneHealthProvider implements IEntityComponentProvider, IServerDataP
         return t2 >= 0 ? t2 : -1;
     }
 
+    // ========== 骨骼外形拾取（射线 vs 骨骼球体，替代原版碰撞箱判定）==========
+
+    /** 拾取结果：命中的实体 + 命中点 */
+    public record BonePickResult(AnimatedMob<?> mob, Vec3 hitPoint) {
+    }
+
+    /**
+     * 玩家视线射线 vs 附近所有 AnimatedMob 的骨骼球体（动画外形），返回最近命中。
+     * <p>用于 Jade 拾取覆盖：准星对到模型外形（如手臂伸出碰撞箱外）也能拾取到实体。
+     * <p>拾取阶段不查 serverData 半径（可能尚未请求），用统一默认半径即可确定"命中哪个实体"；
+     * 精确部位由 tooltip 阶段（{@link #appendTooltip}）的 serverData 半径负责。
+     *
+     * @param player 客户端玩家
+     * @return 最近命中的 (实体, 命中点)，未命中返回 null
+     */
+    public static BonePickResult raycastNearestMob(net.minecraft.world.entity.player.Player player) {
+        net.minecraft.world.level.Level level = player.level();
+        if (level == null) {
+            return null;
+        }
+        net.minecraft.world.phys.AABB box = player.getBoundingBox().inflate(8.0);
+        Vec3 eyePos = player.getEyePosition(1.0f);
+        Vec3 lookDir = player.getViewVector(1.0f);
+
+        double bestT = Double.MAX_VALUE;
+        AnimatedMob<?> bestMob = null;
+        Vec3 bestHit = null;
+        for (net.minecraft.world.entity.Entity e : level.getEntities(player, box, ent -> ent instanceof AnimatedMob<?>)) {
+            AnimatedMob<?> mob = (AnimatedMob<?>) e;
+            for (Vector3f pos : mob.getAllServerBonePositions().values()) {
+                Vec3 center = new Vec3(pos.x(), pos.y(), pos.z());
+                double t = raySphere(eyePos, lookDir, center, DEFAULT_RADIUS);
+                if (t >= 0 && t < bestT) {
+                    bestT = t;
+                    bestMob = mob;
+                    bestHit = eyePos.add(lookDir.x * t, lookDir.y * t, lookDir.z * t);
+                }
+            }
+        }
+        return bestMob != null ? new BonePickResult(bestMob, bestHit) : null;
+    }
+
     // ========== 服务端数据 ==========
 
     @Override
