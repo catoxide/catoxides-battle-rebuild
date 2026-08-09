@@ -8,6 +8,7 @@ import com.catoxide.catoxidesbattlerebuild.registry.ModEvents;
 import com.catoxide.catoxidesbattlerebuild.registry.ModSounds;
 import com.catoxide.catoxidesbattlerebuild.registry.ModWeapons;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.EntityBoneSystem;
+import com.catoxide.catoxidesbattlerebuild.server.bodypart.ServerBoneSyncManager;
 import com.catoxide.catoxidesbattlerebuild.server.damage.DamageProcessor;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.core.registries.Registries;
@@ -35,6 +36,8 @@ public class CatoxidesBattleRebuild {
         ModNetworkHandler.init();
         EntityBoneSystem.getInstance();
         DamageProcessor.getInstance();
+        // 骨骼位置同步管理器（懒单例：必须主动初始化，否则事件监听不注册 → 客户端无骨骼数据）
+        ServerBoneSyncManager.getInstance();
 
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);
