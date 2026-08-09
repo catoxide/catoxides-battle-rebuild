@@ -55,7 +55,7 @@ public class CatoxideJadePlugin implements IWailaPlugin {
         if (mc.player == null) {
             return accessor;
         }
-        BoneHealthProvider.BonePickResult pick = BoneHealthProvider.raycastNearestMob(mc.player);
+        BoneHealthProvider.BoneOBBHit pick = BoneHealthProvider.raycastNearestOBB(mc.player);
         if (pick == null) {
             return accessor;
         }

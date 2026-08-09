@@ -1,6 +1,11 @@
 package com.catoxide.catoxidesbattlerebuild.jade;
 
+import cn.solarmoon.spark_core.animation.IEntityAnimatable;
+import cn.solarmoon.spark_core.animation.model.BonePose;
+import cn.solarmoon.spark_core.animation.model.ModelInstance;
 import com.catoxide.catoxidesbattlerebuild.core.anim.AnimatedMob;
+import com.catoxide.catoxidesbattlerebuild.core.hitbox.HitboxConfig;
+import com.catoxide.catoxidesbattlerebuild.core.hitbox.HitboxResolver;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.BodyPart;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.BodyUnit;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.EntityBoneSystem;
@@ -10,6 +15,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import snownee.jade.api.EntityAccessor;
 import snownee.jade.api.IEntityComponentProvider;
@@ -58,7 +65,7 @@ public enum BoneHealthProvider implements IEntityComponentProvider, IServerDataP
             return;
         }
         CompoundTag radii = accessor.getServerData().getCompound(KEY_RADII);
-        String hitBone = raycastFocusedBone(accessor, living, radii);
+        String hitBone = raycastFocusedBone(living);
         if (hitBone == null) {
             return;
         }
@@ -83,102 +90,183 @@ public enum BoneHealthProvider implements IEntityComponentProvider, IServerDataP
     }
 
     /**
-     * 客户端射线检测：玩家眼睛沿视线方向，对目标实体所有骨骼球体求最近命中。
+     * 客户端射线检测（OBB）：对目标实体所有骨骼的真实模型立方体做射线命中，
+     * 返回最近命中的骨骼名。
+     * <p>用渲染模型的实时世界矩阵（{@code BonePose.getWorldBonePivotMatrix}）+ 模型提取的
+     * OBB 配置（{@link HitboxResolver}）——精确贴合动画外形，左右肢体不会混淆。
+     *
      * @return 命中的骨骼名，未命中返回 null
      */
-    private String raycastFocusedBone(EntityAccessor accessor, LivingEntity target, CompoundTag radii) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) {
-            return null;
-        }
+    private String raycastFocusedBone(LivingEntity target) {
         if (!(target instanceof AnimatedMob<?> mob)) {
             return null;
         }
-        Map<String, Vector3f> bones = mob.getAllServerBonePositions();
-        if (bones.isEmpty()) {
-            return null;
-        }
-        float partialTick = mc.getTimer().getGameTimeDeltaPartialTick(true);
-        Vec3 eyePos = mc.player.getEyePosition(partialTick);
-        Vec3 lookDir = mc.player.getViewVector(partialTick);
-
-        double bestT = Double.MAX_VALUE;
-        String bestBone = null;
-        for (Map.Entry<String, Vector3f> e : bones.entrySet()) {
-            CompoundTag info = radii.getCompound(e.getKey());
-            float radius = info.contains("R") ? info.getFloat("R") : DEFAULT_RADIUS;
-            Vec3 center = new Vec3(e.getValue().x(), e.getValue().y(), e.getValue().z());
-            double t = raySphere(eyePos, lookDir, center, radius);
-            if (t >= 0 && t < bestT) {
-                bestT = t;
-                bestBone = e.getKey();
-            }
-        }
-        return bestBone;
+        return raycastBoneOBB(mob, currentEye(), currentLook()).boneName();
     }
 
-    /** 射线-球体相交：返回射线参数 t（≥0 命中），未命中返回 -1 */
-    private static double raySphere(Vec3 origin, Vec3 dir, Vec3 center, float radius) {
-        double ocX = origin.x - center.x, ocY = origin.y - center.y, ocZ = origin.z - center.z;
-        double a = dir.x * dir.x + dir.y * dir.y + dir.z * dir.z;
-        if (a < 1e-8) {
-            return -1;
-        }
-        double b = 2.0 * (ocX * dir.x + ocY * dir.y + ocZ * dir.z);
-        double c = ocX * ocX + ocY * ocY + ocZ * ocZ - (double) radius * radius;
-        double disc = b * b - 4.0 * a * c;
-        if (disc < 0.0) {
-            return -1;
-        }
-        double sqrt = Math.sqrt(disc);
-        double t1 = (-b - sqrt) / (2.0 * a);
-        double t2 = (-b + sqrt) / (2.0 * a);
-        if (t1 >= 0) {
-            return t1;
-        }
-        return t2 >= 0 ? t2 : -1;
+    private static Vec3 currentEye() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.player.getEyePosition(mc.getTimer().getGameTimeDeltaPartialTick(true));
     }
 
-    // ========== 骨骼外形拾取（射线 vs 骨骼球体，替代原版碰撞箱判定）==========
+    private static Vec3 currentLook() {
+        Minecraft mc = Minecraft.getInstance();
+        return mc.player.getViewVector(mc.getTimer().getGameTimeDeltaPartialTick(true));
+    }
 
-    /** 拾取结果：命中的实体 + 命中点 */
-    public record BonePickResult(AnimatedMob<?> mob, Vec3 hitPoint) {
+    // ========== 骨骼 OBB 射线检测（动画外形精确拾取）==========
+
+    /** 单骨骼命中结果：骨骼名 + 世界空间命中距离 t */
+    public record BoneT(String boneName, double t) {
+    }
+
+    /** 实体拾取结果：命中的实体 + 骨骼 + 命中点 */
+    public record BoneOBBHit(AnimatedMob<?> mob, String boneName, Vec3 hitPoint) {
     }
 
     /**
-     * 玩家视线射线 vs 附近所有 AnimatedMob 的骨骼球体（动画外形），返回最近命中。
-     * <p>用于 Jade 拾取覆盖：准星对到模型外形（如手臂伸出碰撞箱外）也能拾取到实体。
-     * <p>拾取阶段不查 serverData 半径（可能尚未请求），用统一默认半径即可确定"命中哪个实体"；
-     * 精确部位由 tooltip 阶段（{@link #appendTooltip}）的 serverData 半径负责。
+     * 玩家视线 vs 附近所有 AnimatedMob 的真实模型 OBB，返回最近命中。
+     * <p>拾取范围 = 模型真实外形（手臂/头伸出碰撞箱外也能拾取），
+     * 且左右肢体用真实几何区分（不会互相混淆）。
      *
      * @param player 客户端玩家
-     * @return 最近命中的 (实体, 命中点)，未命中返回 null
+     * @return 最近命中 (实体, 骨骼, 命中点)，未命中返回 null
      */
-    public static BonePickResult raycastNearestMob(net.minecraft.world.entity.player.Player player) {
+    public static BoneOBBHit raycastNearestOBB(net.minecraft.world.entity.player.Player player) {
         net.minecraft.world.level.Level level = player.level();
         if (level == null) {
             return null;
         }
         net.minecraft.world.phys.AABB box = player.getBoundingBox().inflate(8.0);
-        Vec3 eyePos = player.getEyePosition(1.0f);
-        Vec3 lookDir = player.getViewVector(1.0f);
+        Vec3 eye = player.getEyePosition(1.0f);
+        Vec3 look = player.getViewVector(1.0f);
 
         double bestT = Double.MAX_VALUE;
         AnimatedMob<?> bestMob = null;
-        Vec3 bestHit = null;
+        String bestBone = null;
         for (net.minecraft.world.entity.Entity e : level.getEntities(player, box, ent -> ent instanceof AnimatedMob<?>)) {
             AnimatedMob<?> mob = (AnimatedMob<?>) e;
-            for (Vector3f pos : mob.getAllServerBonePositions().values()) {
-                Vec3 center = new Vec3(pos.x(), pos.y(), pos.z());
-                double t = raySphere(eyePos, lookDir, center, DEFAULT_RADIUS);
-                if (t >= 0 && t < bestT) {
-                    bestT = t;
-                    bestMob = mob;
-                    bestHit = eyePos.add(lookDir.x * t, lookDir.y * t, lookDir.z * t);
-                }
+            BoneT hit = raycastBoneOBB(mob, eye, look);
+            if (hit != null && hit.t() >= 0 && hit.t() < bestT) {
+                bestT = hit.t();
+                bestMob = mob;
+                bestBone = hit.boneName();
             }
         }
-        return bestMob != null ? new BonePickResult(bestMob, bestHit) : null;
+        if (bestMob == null) {
+            return null;
+        }
+        Vec3 hitPoint = eye.add(look.x * bestT, look.y * bestT, look.z * bestT);
+        return new BoneOBBHit(bestMob, bestBone, hitPoint);
+    }
+
+    /**
+     * 对单个实体的所有骨骼 OBB 做射线检测，返回最近命中。
+     * <p>数据来源：渲染模型的实时姿态（{@code ModelPose.getBonePoses()}）
+     * + 从 geo.json 提取的每骨骼 OBB（{@link HitboxResolver#resolveFromModel}）。
+     */
+    private static BoneT raycastBoneOBB(AnimatedMob<?> mob, Vec3 eye, Vec3 look) {
+        if (!(mob instanceof IEntityAnimatable<?> animatable)) {
+            return null;
+        }
+        ModelInstance model = animatable.getModelController().getModel();
+        if (model == null || model.getPose() == null) {
+            return null;
+        }
+        Map<String, BonePose> poses = model.getPose().getBonePoses();
+        if (poses.isEmpty()) {
+            return null;
+        }
+        Map<String, HitboxConfig> configs = HitboxResolver.resolveFromModel(model);
+        float partialTick = Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(true);
+
+        double bestT = Double.MAX_VALUE;
+        String bestBone = null;
+        for (Map.Entry<String, BonePose> entry : poses.entrySet()) {
+            HitboxConfig cfg = configs.get(entry.getKey());
+            if (cfg == null) {
+                continue;
+            }
+            try {
+                Matrix4f worldMat = entry.getValue().getWorldBonePivotMatrix(partialTick);
+                // OBB 中心 = 矩阵平移 + R * localOffset（一次 transformPosition 完成）
+                Vector3f obbCenter = worldMat.transformPosition(cfg.localOffset(), new Vector3f());
+                Quaternionf rot = worldMat.getUnnormalizedRotation(new Quaternionf());
+                double t = rayOBB(eye, look,
+                        new Vec3(obbCenter.x(), obbCenter.y(), obbCenter.z()),
+                        cfg.halfExtents(), rot);
+                if (t >= 0 && t < bestT) {
+                    bestT = t;
+                    bestBone = entry.getKey();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return bestBone != null ? new BoneT(bestBone, bestT) : null;
+    }
+
+    /**
+     * 射线 vs OBB（slab 法，世界空间）。
+     * <p>把射线投影到 OBB 的三个正交轴（旋转四元数生成），对每个轴做 slab 裁剪，
+     * 得到射线进入/离开参数区间 [tmin, tmax]。dir 必须为单位向量，返回的 t 是世界空间距离。
+     *
+     * @param origin      射线起点
+     * @param dir         射线方向（单位向量）
+     * @param center      OBB 中心
+     * @param halfExtents 半尺寸（米）
+     * @param rot         OBB 旋转（骨骼世界旋转）
+     * @return 最近命中距离 t（≥0），未命中返回 -1
+     */
+    private static double rayOBB(Vec3 origin, Vec3 dir, Vec3 center, Vector3f halfExtents, Quaternionf rot) {
+        // OBB 局部轴（旋转后的三个正交方向）
+        Vector3f axisX = rot.transform(new Vector3f(1, 0, 0));
+        Vector3f axisY = rot.transform(new Vector3f(0, 1, 0));
+        Vector3f axisZ = rot.transform(new Vector3f(0, 0, 1));
+
+        double px = origin.x - center.x, py = origin.y - center.y, pz = origin.z - center.z;
+        double hx = halfExtents.x(), hy = halfExtents.y(), hz = halfExtents.z();
+
+        double tmin = -Double.MAX_VALUE, tmax = Double.MAX_VALUE;
+
+        // 对每个轴做 slab 裁剪（axis 为 OBB 局部轴，e = p·axis, f = d·axis）
+        double eX = px * axisX.x() + py * axisX.y() + pz * axisX.z();
+        double fX = dir.x * axisX.x() + dir.y * axisX.y() + dir.z * axisX.z();
+        if (Math.abs(fX) < 1e-8) {
+            if (eX < -hx || eX > hx) return -1;
+        } else {
+            double t1 = (-hx - eX) / fX, t2 = (hx - eX) / fX;
+            if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
+            tmin = Math.max(tmin, t1);
+            tmax = Math.min(tmax, t2);
+            if (tmin > tmax) return -1;
+        }
+
+        double eY = px * axisY.x() + py * axisY.y() + pz * axisY.z();
+        double fY = dir.x * axisY.x() + dir.y * axisY.y() + dir.z * axisY.z();
+        if (Math.abs(fY) < 1e-8) {
+            if (eY < -hy || eY > hy) return -1;
+        } else {
+            double t1 = (-hy - eY) / fY, t2 = (hy - eY) / fY;
+            if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
+            tmin = Math.max(tmin, t1);
+            tmax = Math.min(tmax, t2);
+            if (tmin > tmax) return -1;
+        }
+
+        double eZ = px * axisZ.x() + py * axisZ.y() + pz * axisZ.z();
+        double fZ = dir.x * axisZ.x() + dir.y * axisZ.y() + dir.z * axisZ.z();
+        if (Math.abs(fZ) < 1e-8) {
+            if (eZ < -hz || eZ > hz) return -1;
+        } else {
+            double t1 = (-hz - eZ) / fZ, t2 = (hz - eZ) / fZ;
+            if (t1 > t2) { double tmp = t1; t1 = t2; t2 = tmp; }
+            tmin = Math.max(tmin, t1);
+            tmax = Math.min(tmax, t2);
+            if (tmin > tmax) return -1;
+        }
+
+        if (tmax < 0) return -1;
+        return Math.max(tmin, 0.0);
     }
 
     // ========== 服务端数据 ==========
