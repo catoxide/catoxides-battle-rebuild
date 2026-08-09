@@ -17,6 +17,8 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
@@ -302,10 +304,23 @@ public class CustomProjectileEntity extends Entity implements IEntityAnimatable<
                 }
                 target.hurt(target.damageSources().mobAttack(this.shooter), result.totalDamage());
                 if (fatal) target.kill();
+            } else {
+                // 硬甲完全免疫（伤害被完全抵消）：目标无受击动画（没打疼），
+                // 攻击方反馈——播放武器损坏/弹开音效（打中了但打不穿）
+                playWeaponBlockSound(hitResult.hitPosition());
             }
         } catch (Exception e) {
             LogManager.serverWarn(TAG, "Combat failed: %s", e.getMessage());
         }
+    }
+
+    /**
+     * 硬甲免疫反馈：在命中点播放武器被弹开（损坏）的音效。
+     * <p>默认用盾牌格挡声（金属弹开感）；如需"碎裂"感可换 {@link SoundEvents#ITEM_BREAK}。
+     */
+    protected void playWeaponBlockSound(Vec3 pos) {
+        this.level().playSound(null, pos.x, pos.y, pos.z,
+                SoundEvents.SHIELD_BLOCK, SoundSource.PLAYERS, 1.0f, 1.0f);
     }
 
     @Override
