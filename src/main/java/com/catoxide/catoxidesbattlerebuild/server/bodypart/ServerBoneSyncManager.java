@@ -1,26 +1,26 @@
 package com.catoxide.catoxidesbattlerebuild.server.bodypart;
 
-import com.catoxide.catoxidesbattlerebuild.mob.zombie2.ModularZombie2;
+import com.catoxide.catoxidesbattlerebuild.core.anim.AnimatedMob;
 import com.catoxide.catoxidesbattlerebuild.network.SyncBoneDataPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.tick.EntityTickEvent;
 
-import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
+/**
+ * 骨骼位置同步管理器（服务端 → 客户端）。
+ * <p>对每个 {@link AnimatedMob}（有骨骼数据的实体）**每 tick 全量**同步骨骼世界位置到附近玩家。
+ * <p>位置是绝对浮点坐标，必须全量同步保证精度（不做差值/增量编码）；
+ * 客户端 {@code BoneDataManager} 每 tick 全量替换。
+ */
 public class ServerBoneSyncManager {
-    
+
     private static final ServerBoneSyncManager INSTANCE = new ServerBoneSyncManager();
-    
-    // Track sync intervals per entity
-    private final Map<UUID, Integer> syncTimers = new HashMap<>();
-    // Sync every 5 ticks (roughly 4 times per second)
-    private static final int SYNC_INTERVAL = 5;
 
     private ServerBoneSyncManager() {
-        // Register event listener
         NeoForge.EVENT_BUS.addListener(this::onEntityTick);
     }
 
@@ -28,62 +28,31 @@ public class ServerBoneSyncManager {
         return INSTANCE;
     }
 
-    private void onEntityTick(net.neoforged.neoforge.event.tick.EntityTickEvent.Post event) {
+    @SubscribeEvent
+    private void onEntityTick(EntityTickEvent.Post event) {
         Entity entity = event.getEntity();
-        
-        // Only sync ModularZombie2 entities on server side
-        if (!(entity instanceof ModularZombie2 zombie) || entity.level().isClientSide()) {
+        if (entity.level().isClientSide()) {
             return;
         }
-
-        // Check if it's time to sync
-        UUID entityId = entity.getUUID();
-        int timer = syncTimers.getOrDefault(entityId, 0);
-        
-        if (timer >= SYNC_INTERVAL) {
-            syncBoneData(zombie);
-            syncTimers.put(entityId, 0);
-        } else {
-            syncTimers.put(entityId, timer + 1);
+        if (!(entity instanceof AnimatedMob<?> mob)) {
+            return;
         }
+        syncBoneData(mob);
     }
 
-    private void syncBoneData(ModularZombie2 zombie) {
-        Map<String, org.joml.Vector3f> bonePositions = zombie.getAllServerBonePositions();
-        
+    private void syncBoneData(AnimatedMob<?> mob) {
+        Map<String, org.joml.Vector3f> bonePositions = mob.getAllServerBonePositions();
         if (bonePositions.isEmpty()) {
             return;
         }
 
-        SyncBoneDataPacket packet = new SyncBoneDataPacket(zombie.getId(), bonePositions);
-        
+        SyncBoneDataPacket packet = new SyncBoneDataPacket(mob.getId(), bonePositions);
+
         // Send to all players tracking this entity
-        for (ServerPlayer player : zombie.getServer().getPlayerList().getPlayers()) {
-            if (player.getId() == zombie.getId() || player.distanceToSqr(zombie) < 4096) {
+        for (ServerPlayer player : mob.getServer().getPlayerList().getPlayers()) {
+            if (player.getId() == mob.getId() || player.distanceToSqr(mob) < 4096) {
                 packet.send(player.connection::send);
             }
         }
-    }
-
-    /**
-     * Force sync bone data immediately
-     */
-    public void forceSync(ModularZombie2 zombie) {
-        Map<String, org.joml.Vector3f> bonePositions = zombie.getAllServerBonePositions();
-        if (!bonePositions.isEmpty()) {
-            SyncBoneDataPacket packet = new SyncBoneDataPacket(zombie.getId(), bonePositions);
-            for (ServerPlayer player : zombie.getServer().getPlayerList().getPlayers()) {
-                if (player.getId() == zombie.getId() || player.distanceToSqr(zombie) < 4096) {
-                    packet.send(player.connection::send);
-                }
-            }
-        }
-    }
-
-    /**
-     * Clean up timer for dead entities
-     */
-    public void cleanup(Entity entity) {
-        syncTimers.remove(entity.getUUID());
     }
 }

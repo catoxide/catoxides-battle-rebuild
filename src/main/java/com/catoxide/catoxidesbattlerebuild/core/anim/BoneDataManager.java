@@ -45,7 +45,8 @@ public final class BoneDataManager {
     }
 
     /**
-     * 客户端：从同步数据更新位置
+     * 客户端：从同步数据更新位置（每 tick 全量替换。
+     * 位置是绝对浮点坐标，必须全量同步保证精度，不做差值/增量编码）。
      * @param positions 骨骼位置 map
      * @param gameTime   当前游戏刻
      */

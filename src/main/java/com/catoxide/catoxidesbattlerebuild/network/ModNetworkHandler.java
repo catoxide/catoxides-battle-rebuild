@@ -1,7 +1,7 @@
 package com.catoxide.catoxidesbattlerebuild.network;
 
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
-import com.catoxide.catoxidesbattlerebuild.mob.zombie2.ModularZombie2;
+import com.catoxide.catoxidesbattlerebuild.core.anim.AnimatedMob;
 import net.minecraft.world.entity.Entity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -69,8 +69,8 @@ public class ModNetworkHandler {
             CatoxidesBattleRebuildConstants.LOGGER.debug("Received bone data sync: entityId={}, boneCount={}", 
                     packet.entityId(), packet.bonePositions().size());
             Entity entity = context.player().level().getEntity(packet.entityId());
-            if (entity instanceof ModularZombie2 zombie) {
-                zombie.updateClientBonePositions(packet.bonePositions());
+            if (entity instanceof AnimatedMob<?> mob) {
+                mob.updateClientBonePositions(packet.bonePositions());
             }
         });
     }
