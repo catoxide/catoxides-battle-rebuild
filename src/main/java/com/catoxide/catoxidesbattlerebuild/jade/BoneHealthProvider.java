@@ -101,7 +101,8 @@ public enum BoneHealthProvider implements IEntityComponentProvider, IServerDataP
         if (!(target instanceof AnimatedMob<?> mob)) {
             return null;
         }
-        return raycastBoneOBB(mob, currentEye(), currentLook()).boneName();
+        BoneT hit = raycastBoneOBB(mob, currentEye(), currentLook());
+        return hit != null ? hit.boneName() : null;
     }
 
     private static Vec3 currentEye() {
