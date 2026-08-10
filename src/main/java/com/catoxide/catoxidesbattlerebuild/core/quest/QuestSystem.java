@@ -58,6 +58,11 @@ public final class QuestSystem {
         return definitions.get(id);
     }
 
+    /** 全部已注册定义（供 tick 驱动/发放检查/UI 遍历） */
+    public java.util.Collection<QuestDefinition> getDefinitions() {
+        return java.util.Collections.unmodifiableCollection(definitions.values());
+    }
+
     // ========== 组件工厂注册（内容包挂接） ==========
 
     public void registerGiverType(String type, Function<JsonObject, IQuestGiver> factory) {

@@ -1,0 +1,16 @@
+{
+  "id": "test_json_quest",
+  "title": "JSON 任务测试",
+  "description": "前往 (300, 64, 300)——验证 JSON 数据驱动定义",
+  "givers": [
+    { "type": "proximity_giver", "center": [0, 64, 0], "radius": 10 }
+  ],
+  "goals": [
+    { "type": "proximity", "target": [300, 64, 300], "radius": 5 }
+  ],
+  "conditions": [],
+  "failConditions": [],
+  "children": [],
+  "location": [300, 64, 300],
+  "priority": 2.0
+}
