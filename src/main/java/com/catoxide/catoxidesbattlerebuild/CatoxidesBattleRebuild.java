@@ -41,6 +41,10 @@ public class CatoxidesBattleRebuild {
         ServerBoneSyncManager.getInstance();
         // 任务状态同步管理器（懒单例：同上，否则客户端无任务数据）
         QuestSyncManager.getInstance();
+        // 任务调试命令 /quest
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
+                (net.neoforged.neoforge.event.RegisterCommandsEvent e) ->
+                        com.catoxide.catoxidesbattlerebuild.core.quest.command.QuestCommand.register(e.getDispatcher()));
 
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);
