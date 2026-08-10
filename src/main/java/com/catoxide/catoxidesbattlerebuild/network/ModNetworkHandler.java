@@ -35,6 +35,8 @@ public class ModNetworkHandler {
         // Server to client only packet
         registrar.playToClient(SyncBoneDataPacket.TYPE, SyncBoneDataPacket.STREAM_CODEC,
                 ModNetworkHandler::handleSyncBoneDataOnClient);
+        registrar.playToClient(QuestSyncPacket.TYPE, QuestSyncPacket.STREAM_CODEC,
+                ModNetworkHandler::handleQuestSyncOnClient);
     }
 
     private static void handleHitAttemptOnClient(HitAttemptPacket packet, IPayloadContext context) {
@@ -72,6 +74,13 @@ public class ModNetworkHandler {
             if (entity instanceof AnimatedMob<?> mob) {
                 mob.updateClientBonePositions(packet.bonePositions());
             }
+        });
+    }
+
+    private static void handleQuestSyncOnClient(QuestSyncPacket packet, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            com.catoxide.catoxidesbattlerebuild.client.quest.ClientQuestCache.getInstance()
+                    .update(context.player().getUUID(), packet.entries());
         });
     }
 
