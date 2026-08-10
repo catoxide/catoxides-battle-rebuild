@@ -19,7 +19,8 @@ import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
-
+import com.catoxide.catoxidesbattlerebuild.core.quest.QuestDefinition;
+import com.catoxide.catoxidesbattlerebuild.core.quest.QuestSystem;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -357,6 +358,22 @@ public final class ContentPackContext {
         StructureManager.registerStructure(blueprint);
         LogManager.serverInfo("ContentPackContext", "Registered structure: %s (namespace: %s, pieces: %d)",
             blueprint.structureId, blueprint.namespace, blueprint.pieces.size());
+    }
+
+    /**
+     * 注册一个任务定义（内容包挂接点）。
+     * <p>任务框架在 QuestSystem；具体 giver/goal/condition 由内容包实现并注册到 QuestSystem。
+     *
+     * @param definition 任务定义（含子任务树拓扑）
+     */
+    public void registerQuest(QuestDefinition definition) {
+        if (definition == null) {
+            LogManager.serverError("ContentPackContext", "Cannot register null quest definition");
+            return;
+        }
+        QuestSystem.getInstance().registerDefinition(definition);
+        LogManager.serverInfo("ContentPackContext", "Registered quest definition: %s (children: %d)",
+                definition.id(), definition.children().size());
     }
 
     /**
