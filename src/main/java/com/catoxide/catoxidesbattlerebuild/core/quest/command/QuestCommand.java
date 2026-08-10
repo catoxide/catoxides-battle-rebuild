@@ -11,7 +11,9 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Collection;
@@ -60,75 +62,75 @@ public final class QuestCommand {
                                         EntityArgument.getPlayer(ctx, "target")))))
                 // /quest give <definition_id> [target]
                 .then(Commands.literal("give")
-                        .then(Commands.argument("definition_id", StringArgumentType.string())
+                        .then(Commands.argument("definition_id", ResourceLocationArgument.id())
                                 .suggests(QUEST_DEFINITION_SUGGESTIONS)
                                 .executes(ctx -> giveQuest(ctx.getSource(),
-                                        StringArgumentType.getString(ctx, "definition_id"),
+                                        ResourceLocationArgument.getId(ctx, "definition_id").toString(),
                                         ctx.getSource().getPlayerOrException()))
                                 .then(Commands.argument("target", EntityArgument.player())
                                         .executes(ctx -> giveQuest(ctx.getSource(),
-                                                StringArgumentType.getString(ctx, "definition_id"),
+                                                ResourceLocationArgument.getId(ctx, "definition_id").toString(),
                                                 EntityArgument.getPlayer(ctx, "target"))))))
                 // /quest complete <definition_id> [target]
                 .then(Commands.literal("complete")
-                        .then(Commands.argument("definition_id", StringArgumentType.string())
+                        .then(Commands.argument("definition_id", ResourceLocationArgument.id())
                                 .suggests(QUEST_DEFINITION_SUGGESTIONS)
                                 .executes(ctx -> completeQuest(ctx.getSource(),
-                                        StringArgumentType.getString(ctx, "definition_id"),
+                                        ResourceLocationArgument.getId(ctx, "definition_id").toString(),
                                         ctx.getSource().getPlayerOrException()))
                                 .then(Commands.argument("target", EntityArgument.player())
                                         .executes(ctx -> completeQuest(ctx.getSource(),
-                                                StringArgumentType.getString(ctx, "definition_id"),
+                                                ResourceLocationArgument.getId(ctx, "definition_id").toString(),
                                                 EntityArgument.getPlayer(ctx, "target"))))))
                 // /quest fail <definition_id> [target]
                 .then(Commands.literal("fail")
-                        .then(Commands.argument("definition_id", StringArgumentType.string())
+                        .then(Commands.argument("definition_id", ResourceLocationArgument.id())
                                 .suggests(QUEST_DEFINITION_SUGGESTIONS)
                                 .executes(ctx -> failQuest(ctx.getSource(),
-                                        StringArgumentType.getString(ctx, "definition_id"),
+                                        ResourceLocationArgument.getId(ctx, "definition_id").toString(),
                                         ctx.getSource().getPlayerOrException()))
                                 .then(Commands.argument("target", EntityArgument.player())
                                         .executes(ctx -> failQuest(ctx.getSource(),
-                                                StringArgumentType.getString(ctx, "definition_id"),
+                                                ResourceLocationArgument.getId(ctx, "definition_id").toString(),
                                                 EntityArgument.getPlayer(ctx, "target"))))))
                 // /quest remove <definition_id> [target]
                 .then(Commands.literal("remove")
-                        .then(Commands.argument("definition_id", StringArgumentType.string())
+                        .then(Commands.argument("definition_id", ResourceLocationArgument.id())
                                 .suggests(QUEST_DEFINITION_SUGGESTIONS)
                                 .executes(ctx -> removeQuest(ctx.getSource(),
-                                        StringArgumentType.getString(ctx, "definition_id"),
+                                        ResourceLocationArgument.getId(ctx, "definition_id").toString(),
                                         ctx.getSource().getPlayerOrException()))
                                 .then(Commands.argument("target", EntityArgument.player())
                                         .executes(ctx -> removeQuest(ctx.getSource(),
-                                                StringArgumentType.getString(ctx, "definition_id"),
+                                                ResourceLocationArgument.getId(ctx, "definition_id").toString(),
                                                 EntityArgument.getPlayer(ctx, "target"))))))
                 // /quest progress <definition_id> <key> <value> [target]
                 .then(Commands.literal("progress")
-                        .then(Commands.argument("definition_id", StringArgumentType.string())
+                        .then(Commands.argument("definition_id", ResourceLocationArgument.id())
                                 .suggests(QUEST_DEFINITION_SUGGESTIONS)
                                 .then(Commands.argument("key", StringArgumentType.string())
                                         .then(Commands.argument("value", FloatArgumentType.floatArg())
                                                 .executes(ctx -> setProgress(ctx.getSource(),
-                                                        StringArgumentType.getString(ctx, "definition_id"),
+                                                        ResourceLocationArgument.getId(ctx, "definition_id").toString(),
                                                         StringArgumentType.getString(ctx, "key"),
                                                         FloatArgumentType.getFloat(ctx, "value"),
                                                         ctx.getSource().getPlayerOrException()))
                                                 .then(Commands.argument("target", EntityArgument.player())
                                                         .executes(ctx -> setProgress(ctx.getSource(),
-                                                                StringArgumentType.getString(ctx, "definition_id"),
+                                                                ResourceLocationArgument.getId(ctx, "definition_id").toString(),
                                                                 StringArgumentType.getString(ctx, "key"),
                                                                 FloatArgumentType.getFloat(ctx, "value"),
                                                                 EntityArgument.getPlayer(ctx, "target"))))))))
                 // /quest star <definition_id> [target]
                 .then(Commands.literal("star")
-                        .then(Commands.argument("definition_id", StringArgumentType.string())
+                        .then(Commands.argument("definition_id", ResourceLocationArgument.id())
                                 .suggests(QUEST_DEFINITION_SUGGESTIONS)
                                 .executes(ctx -> toggleStar(ctx.getSource(),
-                                        StringArgumentType.getString(ctx, "definition_id"),
+                                        ResourceLocationArgument.getId(ctx, "definition_id").toString(),
                                         ctx.getSource().getPlayerOrException()))
                                 .then(Commands.argument("target", EntityArgument.player())
                                         .executes(ctx -> toggleStar(ctx.getSource(),
-                                                StringArgumentType.getString(ctx, "definition_id"),
+                                                ResourceLocationArgument.getId(ctx, "definition_id").toString(),
                                                 EntityArgument.getPlayer(ctx, "target"))))))
         );
     }
