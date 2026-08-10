@@ -35,9 +35,9 @@ public final class ClientQuestCache {
         return List.copyOf(entries);
     }
 
-    /** 根任务（parentId 为 null） */
+    /** 根任务（parentId 为空串） */
     public synchronized List<QuestSyncPacket.QuestEntry> getRootQuests() {
-        return entries.stream().filter(e -> e.parentId() == null).toList();
+        return entries.stream().filter(e -> e.parentId() == null || e.parentId().isEmpty()).toList();
     }
 
     /** 子任务（parentId = 父 id） */

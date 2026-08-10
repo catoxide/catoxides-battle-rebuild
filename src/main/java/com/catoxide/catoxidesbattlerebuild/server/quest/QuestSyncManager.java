@@ -54,14 +54,14 @@ public final class QuestSyncManager {
         }
     }
 
-    /** 递归平铺任务树（parentId 关联父子） */
+    /** 递归平铺任务树（parentId 关联父子；根任务 parentId 用空串——STRING_UTF8 不允许 null） */
     private static void collect(QuestInstance quest, String parentId, List<QuestSyncPacket.QuestEntry> out) {
         out.add(new QuestSyncPacket.QuestEntry(
                 quest.getDefinition().id().toString(),
                 quest.getDefinition().title().getString(),
                 quest.getState().name(),
                 quest.isStarred(),
-                parentId));
+                parentId == null ? "" : parentId));
         for (QuestInstance child : quest.getChildInstances()) {
             collect(child, quest.getDefinition().id().toString(), out);
         }
