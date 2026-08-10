@@ -1,0 +1,6 @@
+Manifest-Version: 1.0
+Module-Name: quest-test-pack
+Module-Version: 1.0.0
+Module-Requires: catoxidesbattlerebuild>=0.2.0
+Module-Type: contentpack
+Module-Entry: example.contentpack.questtest.QuestTestPack

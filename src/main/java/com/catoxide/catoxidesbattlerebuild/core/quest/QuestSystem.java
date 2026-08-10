@@ -168,9 +168,16 @@ public final class QuestSystem {
                 LogManager.serverError(TAG, "failCondition.test threw: {}", e.getMessage(), e);
             }
         }
-        // 完成检查：所有 goals 完成 + 完成门槛满足
-        boolean allGoalsDone = quest.getDefinition().goals().stream()
-                .allMatch(g -> safeIsComplete(g, quest, player));
+        // 完成检查：容器任务（无自身 goal）= 所有子任务完成；否则所有 goals 完成 + 完成门槛满足
+        boolean allGoalsDone;
+        if (quest.getDefinition().goals().isEmpty()) {
+            // 任务树容器：依赖子任务全部完成
+            allGoalsDone = quest.getChildInstances().stream()
+                    .allMatch(QuestInstance::isCompleted);
+        } else {
+            allGoalsDone = quest.getDefinition().goals().stream()
+                    .allMatch(g -> safeIsComplete(g, quest, player));
+        }
         if (!allGoalsDone) {
             return;
         }
