@@ -145,8 +145,11 @@ public enum BoneHealthProvider implements IEntityComponentProvider, IServerDataP
             return null;
         }
         net.minecraft.world.phys.AABB box = player.getBoundingBox().inflate(8.0);
-        Vec3 eye = player.getEyePosition(1.0f);
-        Vec3 look = player.getViewVector(1.0f);
+        // 必须用当前帧 partialTick（与显示层/渲染一致）——固定 1.0f 是上一 tick 末的视线，
+        // 准星移动时滞后 1 tick → AABB 外的部位(头/上臂)扫过时错位漏判
+        float partialTick = Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(true);
+        Vec3 eye = player.getEyePosition(partialTick);
+        Vec3 look = player.getViewVector(partialTick);
 
         double bestT = Double.MAX_VALUE;
         AnimatedMob<?> bestMob = null;
