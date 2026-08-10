@@ -9,6 +9,7 @@ import com.catoxide.catoxidesbattlerebuild.core.hitbox.HitboxResolver;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.BodyPart;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.BodyUnit;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.EntityBoneSystem;
+import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -102,6 +103,11 @@ public enum BoneHealthProvider implements IEntityComponentProvider, IServerDataP
             return null;
         }
         BoneT hit = raycastBoneOBB(mob, currentEye(), currentLook());
+        if (hit == null) {
+            LogManager.clientDebug("JadePick", "raycastFocusedBone: MISS (entity={})", target.getId());
+        } else {
+            LogManager.clientDebug("JadePick", "raycastFocusedBone: HIT bone={}, t={}", hit.boneName(), hit.t());
+        }
         return hit != null ? hit.boneName() : null;
     }
 
@@ -172,10 +178,12 @@ public enum BoneHealthProvider implements IEntityComponentProvider, IServerDataP
         }
         ModelInstance model = animatable.getModelController().getModel();
         if (model == null || model.getPose() == null) {
+            LogManager.clientDebug("JadePick", "raycastBoneOBB: model/pose null (entity={})", mob.getId());
             return null;
         }
         Map<String, BonePose> poses = model.getPose().getBonePoses();
         if (poses.isEmpty()) {
+            LogManager.clientDebug("JadePick", "raycastBoneOBB: poses empty (entity={})", mob.getId());
             return null;
         }
         Map<String, HitboxConfig> configs = HitboxResolver.resolveFromModel(model);
@@ -196,13 +204,16 @@ public enum BoneHealthProvider implements IEntityComponentProvider, IServerDataP
                 double t = rayOBB(eye, look,
                         new Vec3(obbCenter.x(), obbCenter.y(), obbCenter.z()),
                         cfg.halfExtents(), rot);
+                LogManager.clientDebug("JadePick", "  bone={} t={}", entry.getKey(), t);
                 if (t >= 0 && t < bestT) {
                     bestT = t;
                     bestBone = entry.getKey();
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                LogManager.clientDebug("JadePick", "  bone={} EXC: {}", entry.getKey(), e.getMessage());
             }
         }
+        LogManager.clientDebug("JadePick", "raycastBoneOBB(entity={}): bestBone={}, bestT={}", mob.getId(), bestBone, bestT);
         return bestBone != null ? new BoneT(bestBone, bestT) : null;
     }
 
