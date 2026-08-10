@@ -17,7 +17,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
-import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import snownee.jade.api.EntityAccessor;
 import snownee.jade.api.IEntityComponentProvider;
@@ -200,10 +199,15 @@ public enum BoneHealthProvider implements IEntityComponentProvider, IServerDataP
                 Matrix4f worldMat = entry.getValue().getWorldBonePivotMatrix(partialTick);
                 // OBB 中心 = 矩阵平移 + R * localOffset（一次 transformPosition 完成）
                 Vector3f obbCenter = worldMat.transformPosition(cfg.localOffset(), new Vector3f());
-                Quaternionf rot = worldMat.getUnnormalizedRotation(new Quaternionf());
+                // OBB 轴 = 旋转矩阵的三列（归一化——消除缩放/插值噪声，保证 slab 区间正确）。
+                // 不能用 getUnnormalizedRotation 的四元数：动画插值或非刚体矩阵下其长度≠1，
+                // transform 出的轴非单位 → 远离中心的区域(如手臂上部)误差最大 → 间歇漏判。
+                Vector3f axisX = new Vector3f(worldMat.m00(), worldMat.m01(), worldMat.m02()).normalize();
+                Vector3f axisY = new Vector3f(worldMat.m10(), worldMat.m11(), worldMat.m12()).normalize();
+                Vector3f axisZ = new Vector3f(worldMat.m20(), worldMat.m21(), worldMat.m22()).normalize();
                 double t = rayOBB(eye, look,
                         new Vec3(obbCenter.x(), obbCenter.y(), obbCenter.z()),
-                        cfg.halfExtents(), rot);
+                        cfg.halfExtents(), axisX, axisY, axisZ);
                 LogManager.clientDebug("JadePick", "  bone={} t={}", entry.getKey(), t);
                 if (t >= 0 && t < bestT) {
                     bestT = t;
@@ -219,22 +223,20 @@ public enum BoneHealthProvider implements IEntityComponentProvider, IServerDataP
 
     /**
      * 射线 vs OBB（slab 法，世界空间）。
-     * <p>把射线投影到 OBB 的三个正交轴（旋转四元数生成），对每个轴做 slab 裁剪，
+     * <p>把射线投影到 OBB 的三个正交轴（归一化的旋转轴），对每个轴做 slab 裁剪，
      * 得到射线进入/离开参数区间 [tmin, tmax]。dir 必须为单位向量，返回的 t 是世界空间距离。
      *
      * @param origin      射线起点
      * @param dir         射线方向（单位向量）
      * @param center      OBB 中心
      * @param halfExtents 半尺寸（米）
-     * @param rot         OBB 旋转（骨骼世界旋转）
+     * @param axisX       OBB 局部 X 轴（世界方向，单位向量）
+     * @param axisY       OBB 局部 Y 轴（世界方向，单位向量）
+     * @param axisZ       OBB 局部 Z 轴（世界方向，单位向量）
      * @return 最近命中距离 t（≥0），未命中返回 -1
      */
-    private static double rayOBB(Vec3 origin, Vec3 dir, Vec3 center, Vector3f halfExtents, Quaternionf rot) {
-        // OBB 局部轴（旋转后的三个正交方向）
-        Vector3f axisX = rot.transform(new Vector3f(1, 0, 0));
-        Vector3f axisY = rot.transform(new Vector3f(0, 1, 0));
-        Vector3f axisZ = rot.transform(new Vector3f(0, 0, 1));
-
+    private static double rayOBB(Vec3 origin, Vec3 dir, Vec3 center, Vector3f halfExtents,
+                                 Vector3f axisX, Vector3f axisY, Vector3f axisZ) {
         double px = origin.x - center.x, py = origin.y - center.y, pz = origin.z - center.z;
         double hx = halfExtents.x(), hy = halfExtents.y(), hz = halfExtents.z();
 
