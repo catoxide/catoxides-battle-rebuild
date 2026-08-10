@@ -17,6 +17,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 import org.joml.Vector3f;
 import snownee.jade.api.EntityAccessor;
 import snownee.jade.api.IEntityComponentProvider;
@@ -199,12 +200,12 @@ public enum BoneHealthProvider implements IEntityComponentProvider, IServerDataP
                 Matrix4f worldMat = entry.getValue().getWorldBonePivotMatrix(partialTick);
                 // OBB 中心 = 矩阵平移 + R * localOffset（一次 transformPosition 完成）
                 Vector3f obbCenter = worldMat.transformPosition(cfg.localOffset(), new Vector3f());
-                // OBB 轴 = 旋转矩阵的三列（归一化——消除缩放/插值噪声，保证 slab 区间正确）。
-                // 不能用 getUnnormalizedRotation 的四元数：动画插值或非刚体矩阵下其长度≠1，
-                // transform 出的轴非单位 → 远离中心的区域(如手臂上部)误差最大 → 间歇漏判。
-                Vector3f axisX = new Vector3f(worldMat.m00(), worldMat.m01(), worldMat.m02()).normalize();
-                Vector3f axisY = new Vector3f(worldMat.m10(), worldMat.m11(), worldMat.m12()).normalize();
-                Vector3f axisZ = new Vector3f(worldMat.m20(), worldMat.m21(), worldMat.m22()).normalize();
+                // OBB 轴与 BoneDebugRenderer 青色框渲染【完全一致】：用同一旋转来源
+                // （getUnnormalizedRotation + transform），确保"检测的框"就是"看到的框"。
+                Quaternionf rot = worldMat.getUnnormalizedRotation(new Quaternionf());
+                Vector3f axisX = rot.transform(new Vector3f(1, 0, 0));
+                Vector3f axisY = rot.transform(new Vector3f(0, 1, 0));
+                Vector3f axisZ = rot.transform(new Vector3f(0, 0, 1));
                 double t = rayOBB(eye, look,
                         new Vec3(obbCenter.x(), obbCenter.y(), obbCenter.z()),
                         cfg.halfExtents(), axisX, axisY, axisZ);
