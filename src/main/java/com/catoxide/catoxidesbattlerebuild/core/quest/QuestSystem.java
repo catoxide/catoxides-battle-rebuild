@@ -50,7 +50,7 @@ public final class QuestSystem {
 
     public void registerDefinition(QuestDefinition definition) {
         definitions.put(definition.id(), definition);
-        LogManager.serverInfo(TAG, "Registered quest definition '{}': children={}, goals={}, givers={}",
+        LogManager.serverInfo(TAG, "Registered quest definition '%s': children=%s, goals=%s, givers=%s",
                 definition.id(), definition.children().size(), definition.goals().size(), definition.givers().size());
     }
 
@@ -102,7 +102,7 @@ public final class QuestSystem {
     public QuestInstance giveQuest(ServerPlayer player, ResourceLocation defId, String giverId) {
         QuestDefinition def = definitions.get(defId);
         if (def == null) {
-            LogManager.serverWarn(TAG, "giveQuest: unknown definition '{}'", defId);
+            LogManager.serverWarn(TAG, "giveQuest: unknown definition '%s'", defId);
             return null;
         }
         return giveQuest(player, def, giverId);
@@ -118,11 +118,11 @@ public final class QuestSystem {
             try {
                 giver.onGive(player, root);
             } catch (Exception e) {
-                LogManager.serverError(TAG, "giver.onGive threw: {}", e.getMessage(), e);
+                LogManager.serverError(TAG, "giver.onGive threw: %s", e.getMessage(), e);
             }
         }
         NeoForge.EVENT_BUS.post(new QuestEvents.QuestGivenEvent(root, player, giverId));
-        LogManager.serverInfo(TAG, "Quest '{}' given to player {} (giver={})", def.id(), player.getName().getString(), giverId);
+        LogManager.serverInfo(TAG, "Quest '%s' given to player %s (giver=%s)", def.id(), player.getName().getString(), giverId);
         return root;
     }
 
@@ -170,7 +170,7 @@ public final class QuestSystem {
                     return;
                 }
             } catch (Exception e) {
-                LogManager.serverError(TAG, "failCondition.test threw: {}", e.getMessage(), e);
+                LogManager.serverError(TAG, "failCondition.test threw: %s", e.getMessage(), e);
             }
         }
         // 完成检查：容器任务（无自身 goal）= 所有子任务完成；否则所有 goals 完成 + 完成门槛满足
@@ -192,7 +192,7 @@ public final class QuestSystem {
                     return;
                 }
             } catch (Exception e) {
-                LogManager.serverError(TAG, "condition.test threw: {}", e.getMessage(), e);
+                LogManager.serverError(TAG, "condition.test threw: %s", e.getMessage(), e);
                 return;
             }
         }
@@ -203,7 +203,7 @@ public final class QuestSystem {
         try {
             return goal.isComplete(quest, player);
         } catch (Exception e) {
-            LogManager.serverError(TAG, "goal.isComplete threw: {}", e.getMessage(), e);
+            LogManager.serverError(TAG, "goal.isComplete threw: %s", e.getMessage(), e);
             return false;
         }
     }
@@ -220,7 +220,7 @@ public final class QuestSystem {
         if (player != null) {
             NeoForge.EVENT_BUS.post(new QuestEvents.QuestCompletedEvent(quest, player));
         }
-        LogManager.serverInfo(TAG, "Quest '{}' completed (player={})", quest.getDefinition().id(),
+        LogManager.serverInfo(TAG, "Quest '%s' completed (player=%s)", quest.getDefinition().id(),
                 quest.getPlayerId());
         // 任务树传播：父任务在子完成后重新检查
         QuestInstance parent = quest.getParent();
@@ -242,7 +242,7 @@ public final class QuestSystem {
         if (player != null) {
             NeoForge.EVENT_BUS.post(new QuestEvents.QuestFailedEvent(quest, player, reason));
         }
-        LogManager.serverInfo(TAG, "Quest '{}' failed (player={}, reason={})", quest.getDefinition().id(),
+        LogManager.serverInfo(TAG, "Quest '%s' failed (player=%s, reason=%s)", quest.getDefinition().id(),
                 quest.getPlayerId(), reason);
         // 失败传播：父任务也失败（子失败 → 任务树整体失败）
         QuestInstance parent = quest.getParent();
@@ -272,7 +272,7 @@ public final class QuestSystem {
         if (player != null) {
             NeoForge.EVENT_BUS.post(new QuestEvents.QuestRemovedEvent(quest, player));
         }
-        LogManager.serverInfo(TAG, "Quest '{}' removed (player={})", quest.getDefinition().id(), quest.getPlayerId());
+        LogManager.serverInfo(TAG, "Quest '%s' removed (player=%s)", quest.getDefinition().id(), quest.getPlayerId());
     }
 
     private void removeChildFrom(QuestInstance parent, QuestInstance child) {

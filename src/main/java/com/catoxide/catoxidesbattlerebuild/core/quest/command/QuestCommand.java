@@ -176,10 +176,15 @@ public final class QuestCommand {
     }
 
     private static int giveQuest(CommandSourceStack source, String definitionId, ServerPlayer target) {
-        QuestInstance instance = QuestSystem.getInstance().giveQuest(target,
-                net.minecraft.resources.ResourceLocation.parse(definitionId), "command");
+        QuestDefinition def = resolveDefinition(definitionId);
+        if (def == null) {
+            source.sendFailure(Component.literal("未知任务定义: " + definitionId
+                    + "（用 /quest list 查看，支持无命名空间写法）"));
+            return 0;
+        }
+        QuestInstance instance = QuestSystem.getInstance().giveQuest(target, def.id(), "command");
         if (instance == null) {
-            source.sendFailure(Component.literal("发放失败（未知定义或已发放）: " + definitionId));
+            source.sendFailure(Component.literal("发放失败（可能已存在激活实例）: " + def.id()));
             return 0;
         }
         source.sendSuccess(() -> Component.literal("已发放任务: "
@@ -188,9 +193,14 @@ public final class QuestCommand {
     }
 
     private static int completeQuest(CommandSourceStack source, String definitionId, ServerPlayer target) {
-        QuestInstance q = findActive(target, definitionId);
+        QuestDefinition def = resolveDefinition(definitionId);
+        if (def == null) {
+            source.sendFailure(Component.literal("未知任务定义: " + definitionId));
+            return 0;
+        }
+        QuestInstance q = findActive(target, def.id().toString());
         if (q == null) {
-            source.sendFailure(Component.literal("玩家没有激活的任务: " + definitionId));
+            source.sendFailure(Component.literal("玩家没有激活的任务: " + def.id()));
             return 0;
         }
         if (QuestSystem.getInstance().completeQuest(q)) {
@@ -201,9 +211,14 @@ public final class QuestCommand {
     }
 
     private static int failQuest(CommandSourceStack source, String definitionId, ServerPlayer target) {
-        QuestInstance q = findActive(target, definitionId);
+        QuestDefinition def = resolveDefinition(definitionId);
+        if (def == null) {
+            source.sendFailure(Component.literal("未知任务定义: " + definitionId));
+            return 0;
+        }
+        QuestInstance q = findActive(target, def.id().toString());
         if (q == null) {
-            source.sendFailure(Component.literal("玩家没有激活的任务: " + definitionId));
+            source.sendFailure(Component.literal("玩家没有激活的任务: " + def.id()));
             return 0;
         }
         if (QuestSystem.getInstance().failQuest(q, "command")) {
@@ -214,11 +229,16 @@ public final class QuestCommand {
     }
 
     private static int removeQuest(CommandSourceStack source, String definitionId, ServerPlayer target) {
+        QuestDefinition def = resolveDefinition(definitionId);
+        if (def == null) {
+            source.sendFailure(Component.literal("未知任务定义: " + definitionId));
+            return 0;
+        }
         QuestInstance q = QuestSystem.getInstance().getPlayerQuests(target.getUUID()).stream()
-                .filter(i -> i.getDefinition().id().toString().equals(definitionId))
+                .filter(i -> i.getDefinition().id().equals(def.id()))
                 .findFirst().orElse(null);
         if (q == null) {
-            source.sendFailure(Component.literal("玩家没有该任务: " + definitionId));
+            source.sendFailure(Component.literal("玩家没有该任务: " + def.id()));
             return 0;
         }
         QuestSystem.getInstance().removeQuest(q);
@@ -228,9 +248,14 @@ public final class QuestCommand {
 
     private static int setProgress(CommandSourceStack source, String definitionId,
                                    String key, float value, ServerPlayer target) {
-        QuestInstance q = findActive(target, definitionId);
+        QuestDefinition def = resolveDefinition(definitionId);
+        if (def == null) {
+            source.sendFailure(Component.literal("未知任务定义: " + definitionId));
+            return 0;
+        }
+        QuestInstance q = findActive(target, def.id().toString());
         if (q == null) {
-            source.sendFailure(Component.literal("玩家没有激活的任务: " + definitionId));
+            source.sendFailure(Component.literal("玩家没有激活的任务: " + def.id()));
             return 0;
         }
         QuestSystem.getInstance().updateProgress(q, key, value);
@@ -240,11 +265,16 @@ public final class QuestCommand {
     }
 
     private static int toggleStar(CommandSourceStack source, String definitionId, ServerPlayer target) {
+        QuestDefinition def = resolveDefinition(definitionId);
+        if (def == null) {
+            source.sendFailure(Component.literal("未知任务定义: " + definitionId));
+            return 0;
+        }
         QuestInstance q = QuestSystem.getInstance().getPlayerQuests(target.getUUID()).stream()
-                .filter(i -> i.getDefinition().id().toString().equals(definitionId))
+                .filter(i -> i.getDefinition().id().equals(def.id()))
                 .findFirst().orElse(null);
         if (q == null) {
-            source.sendFailure(Component.literal("玩家没有该任务: " + definitionId));
+            source.sendFailure(Component.literal("玩家没有该任务: " + def.id()));
             return 0;
         }
         boolean newStar = !q.isStarred();
@@ -255,6 +285,28 @@ public final class QuestCommand {
     }
 
     // ========== 工具 ==========
+
+    /**
+     * 任务定义解析：先精确匹配（namespace:id），失败则按 path（冒号后部分）匹配，
+     * 支持无命名空间写法（如 "test_main" → "quest_test_pack:test_main"）。
+     */
+    private static QuestDefinition resolveDefinition(String input) {
+        QuestSystem questSystem = QuestSystem.getInstance();
+        try {
+            QuestDefinition exact = questSystem.getDefinition(
+                    net.minecraft.resources.ResourceLocation.parse(input));
+            if (exact != null) {
+                return exact;
+            }
+        } catch (Exception ignored) {
+        }
+        for (QuestDefinition d : questSystem.getDefinitions()) {
+            if (d.id().getPath().equals(input)) {
+                return d;
+            }
+        }
+        return null;
+    }
 
     private static QuestInstance findActive(ServerPlayer player, String definitionId) {
         return QuestSystem.getInstance().getPlayerQuests(player.getUUID()).stream()
