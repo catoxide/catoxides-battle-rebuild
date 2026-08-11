@@ -249,9 +249,7 @@ public final class QuestCommand {
             source.sendFailure(Component.literal("未知任务定义: " + definitionId));
             return 0;
         }
-        QuestInstance q = QuestSystem.getInstance().getPlayerQuests(target.getUUID()).stream()
-                .filter(i -> i.getDefinition().id().equals(def.id()))
-                .findFirst().orElse(null);
+        QuestInstance q = findAny(target, def.id().toString());
         if (q == null) {
             source.sendFailure(Component.literal("玩家没有该任务: " + def.id()));
             return 0;
@@ -285,9 +283,7 @@ public final class QuestCommand {
             source.sendFailure(Component.literal("未知任务定义: " + definitionId));
             return 0;
         }
-        QuestInstance q = QuestSystem.getInstance().getPlayerQuests(target.getUUID()).stream()
-                .filter(i -> i.getDefinition().id().equals(def.id()))
-                .findFirst().orElse(null);
+        QuestInstance q = findAny(target, def.id().toString());
         if (q == null) {
             source.sendFailure(Component.literal("玩家没有该任务: " + def.id()));
             return 0;
@@ -323,10 +319,30 @@ public final class QuestCommand {
         return null;
     }
 
+    /**
+     * 在玩家任务树中查找激活实例（递归根 + 子任务）。
+     * 子任务实例在父任务的 childInstances 里，不在根列表——必须递归搜索。
+     */
     private static QuestInstance findActive(ServerPlayer player, String definitionId) {
         return QuestSystem.getInstance().getPlayerQuests(player.getUUID()).stream()
+                .flatMap(QuestCommand::flatten)
                 .filter(i -> i.isActive() && i.getDefinition().id().toString().equals(definitionId))
                 .findFirst().orElse(null);
+    }
+
+    /** 在玩家任务树中查找任意实例（含已完成/失败的，递归） */
+    private static QuestInstance findAny(ServerPlayer player, String definitionId) {
+        return QuestSystem.getInstance().getPlayerQuests(player.getUUID()).stream()
+                .flatMap(QuestCommand::flatten)
+                .filter(i -> i.getDefinition().id().toString().equals(definitionId))
+                .findFirst().orElse(null);
+    }
+
+    /** 递归展开任务树（根 + 所有后代） */
+    private static java.util.stream.Stream<QuestInstance> flatten(QuestInstance quest) {
+        return java.util.stream.Stream.concat(
+                java.util.stream.Stream.of(quest),
+                quest.getChildInstances().stream().flatMap(QuestCommand::flatten));
     }
 
     private static String stateCn(QuestInstance quest) {
