@@ -296,10 +296,16 @@ public final class QuestSystem {
 
     /**
      * 标记任务失败。
+     * <p>级联：子任务也失败（任务树状态一致——父失败则整个树失去意义）；
+     * 父任务也失败（向上传播）。
      */
     public boolean failQuest(QuestInstance quest, String reason) {
         if (quest == null || !quest.isActive()) {
             return false;
+        }
+        // 级联子任务失败（先子后父，保证整树一致）
+        for (QuestInstance child : quest.getChildInstances()) {
+            failQuest(child, reason + ":child");
         }
         quest.setState(QuestState.FAILED);
         ServerPlayer player = findPlayer(quest.getPlayerId());
