@@ -211,10 +211,67 @@ public final class QuestSystem {
     /**
      * 标记任务完成。子任务完成时自动检查父任务（任务树传播）。
      */
+    /**
+     * 标记任务完成（正常逻辑）：先校验可完成性——
+     * 容器任务（无自身 goal）= 所有子任务已完成；有 goal = 全部完成 + 完成门槛满足。
+     * 校验不通过返回 false（不完成）。
+     */
     public boolean completeQuest(QuestInstance quest) {
         if (quest == null || !quest.isActive()) {
             return false;
         }
+        if (!canComplete(quest)) {
+            LogManager.serverInfo(TAG, "Quest '%s' completion rejected (prerequisites not met, player=%s)",
+                    quest.getDefinition().id(), quest.getPlayerId());
+            return false;
+        }
+        doComplete(quest);
+        return true;
+    }
+
+    /**
+     * 强制完成（调试/管理用）：递归级联完成所有子任务后完成自身，
+     * 保持任务树状态一致（不会出现"主任务完成但子任务未完成"）。
+     */
+    public boolean completeQuestForce(QuestInstance quest) {
+        if (quest == null || !quest.isActive()) {
+            return false;
+        }
+        for (QuestInstance child : quest.getChildInstances()) {
+            completeQuestForce(child);
+        }
+        doComplete(quest);
+        return true;
+    }
+
+    /** 可完成性校验（容器任务 = 子任务全完成；有 goal = 全完成 + 条件满足） */
+    private boolean canComplete(QuestInstance quest) {
+        ServerPlayer player = findPlayer(quest.getPlayerId());
+        if (player == null) {
+            return false;
+        }
+        if (quest.getDefinition().goals().isEmpty()) {
+            return quest.getChildInstances().stream().allMatch(QuestInstance::isCompleted);
+        }
+        if (!quest.getDefinition().goals().stream()
+                .allMatch(g -> safeIsComplete(g, quest, player))) {
+            return false;
+        }
+        for (IQuestCondition cond : quest.getDefinition().conditions()) {
+            try {
+                if (!cond.test(quest, player)) {
+                    return false;
+                }
+            } catch (Exception e) {
+                LogManager.serverError(TAG, "condition.test threw: {}", e.getMessage(), e);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 实际完成动作（状态 + 广播 + 父检查传播） */
+    private void doComplete(QuestInstance quest) {
         quest.setState(QuestState.COMPLETED);
         ServerPlayer player = findPlayer(quest.getPlayerId());
         if (player != null) {
@@ -227,7 +284,6 @@ public final class QuestSystem {
         if (parent != null && parent.isActive()) {
             checkCompletion(parent);
         }
-        return true;
     }
 
     /**

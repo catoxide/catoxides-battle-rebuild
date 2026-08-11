@@ -59,6 +59,7 @@ public final class QuestSyncManager {
         out.add(new QuestSyncPacket.QuestEntry(
                 quest.getDefinition().id().toString(),
                 quest.getDefinition().title().getString(),
+                quest.getDefinition().description().getString(),
                 quest.getState().name(),
                 quest.isStarred(),
                 parentId == null ? "" : parentId));

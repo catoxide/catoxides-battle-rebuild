@@ -161,20 +161,32 @@ public final class QuestCommand {
             return 0;
         }
         for (QuestInstance q : quests) {
-            QuestDefinition def = q.getDefinition();
-            String line = String.format(" - %s (%s) [%s]%s",
-                    def.title().getString(), def.id(), stateCn(q), starMark(q));
-            if (!q.getChildInstances().isEmpty()) {
-                long done = q.getChildInstances().stream().filter(QuestInstance::isCompleted).count();
-                line += " 子任务 " + done + "/" + q.getChildInstances().size();
-            }
-            if (!q.getGoalProgress().isEmpty()) {
-                line += " 进度 " + q.getGoalProgress();
-            }
-            final String out = line;
-            source.sendSuccess(() -> Component.literal(out), false);
+            appendQuestLine(source, q, 0);
         }
         return quests.size();
+    }
+
+    /** 递归显示任务行（含描述 + 子任务缩进明细） */
+    private static void appendQuestLine(CommandSourceStack source, QuestInstance q, int indent) {
+        QuestDefinition def = q.getDefinition();
+        String pad = "  ".repeat(indent);
+        String line = pad + "- " + def.title().getString() + " (" + def.id() + ") ["
+                + stateCn(q) + "]" + starMark(q);
+        if (!q.getGoalProgress().isEmpty()) {
+            line += " 进度 " + q.getGoalProgress();
+        }
+        if (def.location() != null) {
+            line += " 📍" + def.location();
+        }
+        final String out = line;
+        source.sendSuccess(() -> Component.literal(out), false);
+        if (!def.description().getString().isEmpty()) {
+            final String desc = pad + "    ↳ " + def.description().getString();
+            source.sendSuccess(() -> Component.literal(desc), false);
+        }
+        for (QuestInstance child : q.getChildInstances()) {
+            appendQuestLine(source, child, indent + 1);
+        }
     }
 
     private static int giveQuest(CommandSourceStack source, String definitionId, ServerPlayer target) {
@@ -205,8 +217,9 @@ public final class QuestCommand {
             source.sendFailure(Component.literal("玩家没有激活的任务: " + def.id()));
             return 0;
         }
-        if (QuestSystem.getInstance().completeQuest(q)) {
-            source.sendSuccess(() -> Component.literal("已完成任务: " + q.getDefinition().title().getString()), true);
+        if (QuestSystem.getInstance().completeQuestForce(q)) {
+            source.sendSuccess(() -> Component.literal("已强制完成任务（含子任务级联）: "
+                    + q.getDefinition().title().getString()), true);
             return 1;
         }
         return 0;

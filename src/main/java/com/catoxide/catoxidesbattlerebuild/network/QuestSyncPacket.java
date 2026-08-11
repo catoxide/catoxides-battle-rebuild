@@ -24,6 +24,7 @@ public record QuestSyncPacket(List<QuestEntry> entries) implements CustomPacketP
     public record QuestEntry(
             String questId,
             String title,
+            String description,
             String state,
             boolean starred,
             String parentId
@@ -33,6 +34,7 @@ public record QuestSyncPacket(List<QuestEntry> entries) implements CustomPacketP
     public static final StreamCodec<ByteBuf, QuestEntry> ENTRY_CODEC = StreamCodec.composite(
             ByteBufCodecs.STRING_UTF8, QuestEntry::questId,
             ByteBufCodecs.STRING_UTF8, QuestEntry::title,
+            ByteBufCodecs.STRING_UTF8, QuestEntry::description,
             ByteBufCodecs.STRING_UTF8, QuestEntry::state,
             ByteBufCodecs.BOOL, QuestEntry::starred,
             ByteBufCodecs.STRING_UTF8, QuestEntry::parentId,
