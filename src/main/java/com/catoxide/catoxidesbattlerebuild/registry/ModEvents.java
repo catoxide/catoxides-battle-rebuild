@@ -43,6 +43,14 @@ public class ModEvents {
     }
 
     @SubscribeEvent
+    public static void onLevelLoad(net.neoforged.neoforge.event.level.LevelEvent.Load event) {
+        // 服务端世界加载：恢复任务持久化数据（触发 QuestSavedData.get → load → restoreAll）
+        if (event.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            com.catoxide.catoxidesbattlerebuild.server.quest.QuestSavedData.get(serverLevel);
+        }
+    }
+
+    @SubscribeEvent
     public static void entityAttributeCreation(EntityAttributeCreationEvent event) {
         LogManager.serverDebug("ModEvents", "Registering entity attributes...");
         event.put(ModEntities.MODULAR_ZOMBIE.get(), net.minecraft.world.entity.monster.Zombie.createAttributes().build());

@@ -131,6 +131,7 @@ public final class QuestSystem {
         }
         NeoForge.EVENT_BUS.post(new QuestEvents.QuestGivenEvent(root, player, giverId));
         LogManager.serverInfo(TAG, "Quest '%s' given to player %s (giver=%s)", def.id(), player.getName().getString(), giverId);
+        markDirty(player.getUUID());
         return root;
     }
 
@@ -156,6 +157,7 @@ public final class QuestSystem {
         if (player != null) {
             NeoForge.EVENT_BUS.post(new QuestEvents.QuestProgressEvent(quest, player));
         }
+        markDirty(quest.getPlayerId());
         checkCompletion(quest);
     }
 
@@ -311,6 +313,7 @@ public final class QuestSystem {
         if (parent != null && parent.isActive()) {
             checkCompletion(parent);
         }
+        markDirty(quest.getPlayerId());
     }
 
     /**
@@ -338,6 +341,7 @@ public final class QuestSystem {
         if (parent != null && parent.isActive()) {
             failQuest(parent, "child_failed:" + quest.getDefinition().id());
         }
+        markDirty(quest.getPlayerId());
         return true;
     }
 
@@ -362,6 +366,7 @@ public final class QuestSystem {
             NeoForge.EVENT_BUS.post(new QuestEvents.QuestRemovedEvent(quest, player));
         }
         LogManager.serverInfo(TAG, "Quest '%s' removed (player=%s)", quest.getDefinition().id(), quest.getPlayerId());
+        markDirty(quest.getPlayerId());
     }
 
     private void removeChildFrom(QuestInstance parent, QuestInstance child) {
@@ -428,6 +433,7 @@ public final class QuestSystem {
     /** 星标置顶标记（UI 展开页操作） */
     public void setStarred(QuestInstance quest, boolean starred) {
         quest.setStarred(starred);
+        markDirty(quest.getPlayerId());
     }
 
     // ========== 内部 ==========
@@ -439,6 +445,67 @@ public final class QuestSystem {
             return null;
         }
         return server.getPlayerList().getPlayer(uuid);
+    }
+
+    // ========== 持久化支持 ==========
+
+    /** 全部玩家的根任务（只读，供 SavedData 序列化） */
+    public java.util.Map<UUID, List<QuestInstance>> getAllPlayerRoots() {
+        java.util.Map<UUID, List<QuestInstance>> snapshot = new java.util.HashMap<>();
+        for (java.util.Map.Entry<UUID, List<QuestInstance>> e : playerRootQuests.entrySet()) {
+            snapshot.put(e.getKey(), List.copyOf(e.getValue()));
+        }
+        return snapshot;
+    }
+
+    /** 从存档恢复所有玩家任务树（世界加载时调用） */
+    public void restoreAll(java.util.Map<UUID, List<net.minecraft.nbt.CompoundTag>> data) {
+        for (java.util.Map.Entry<UUID, List<net.minecraft.nbt.CompoundTag>> e : data.entrySet()) {
+            List<QuestInstance> roots = new ArrayList<>();
+            for (net.minecraft.nbt.CompoundTag t : e.getValue()) {
+                QuestInstance restored = restoreQuest(e.getKey(), t, null);
+                if (restored != null) {
+                    roots.add(restored);
+                }
+            }
+            if (!roots.isEmpty()) {
+                playerRootQuests.put(e.getKey(), roots);
+                LogManager.serverInfo(TAG, "Restored %d quest trees for player %s", roots.size(), e.getKey());
+            }
+        }
+    }
+
+    /** 递归重建单个任务实例（含子任务） */
+    private QuestInstance restoreQuest(UUID playerId, net.minecraft.nbt.CompoundTag t, QuestInstance parent) {
+        String defId = t.getString("defId");
+        QuestDefinition def = definitions.get(net.minecraft.resources.ResourceLocation.parse(defId));
+        if (def == null) {
+            LogManager.serverWarn(TAG, "Restore skipped: unknown definition '%s' (player=%s)", defId, playerId);
+            return null;
+        }
+        QuestInstance quest = new QuestInstance(def, playerId, parent, t.getString("giverId"));
+        quest.setState(QuestState.valueOf(t.getString("state")));
+        quest.setStarred(t.getBoolean("starred"));
+        net.minecraft.nbt.CompoundTag progress = t.getCompound("progress");
+        for (String key : progress.getAllKeys()) {
+            quest.setGoalProgress(key, progress.getFloat(key));
+        }
+        net.minecraft.nbt.ListTag children = t.getList("children", net.minecraft.nbt.Tag.TAG_COMPOUND);
+        for (int i = 0; i < children.size(); i++) {
+            QuestInstance child = restoreQuest(playerId, children.getCompound(i), quest);
+            if (child != null) {
+                quest.addChildInstance(child);
+            }
+        }
+        return quest;
+    }
+
+    /** 状态变化后标记存档需要保存（玩家所在世界） */
+    private void markDirty(UUID playerId) {
+        ServerPlayer player = findPlayer(playerId);
+        if (player != null && player.level() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            com.catoxide.catoxidesbattlerebuild.server.quest.QuestSavedData.get(serverLevel).setDirty();
+        }
     }
 
     /** 清空所有任务（世界重载/测试） */
