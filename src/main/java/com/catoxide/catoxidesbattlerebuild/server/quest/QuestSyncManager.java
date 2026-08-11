@@ -49,9 +49,8 @@ public final class QuestSyncManager {
         for (QuestInstance quest : questSystem.getPlayerQuests(player.getUUID())) {
             collect(quest, null, entries);
         }
-        if (!entries.isEmpty()) {
-            new QuestSyncPacket(entries).send(player.connection::send);
-        }
+        // 无条件发送（含空列表）：任务全消除后客户端缓存必须清空，否则 HUD 残留旧任务
+        new QuestSyncPacket(entries).send(player.connection::send);
     }
 
     /** 递归平铺任务树（parentId 关联父子；根任务 parentId 用空串——STRING_UTF8 不允许 null） */

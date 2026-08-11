@@ -110,8 +110,16 @@ public final class QuestSystem {
 
     /**
      * 发放任务（直接传定义）。
+     * <p>防重复：玩家已有该定义的激活实例时返回 null（拒绝重复发放）。
      */
     public QuestInstance giveQuest(ServerPlayer player, QuestDefinition def, String giverId) {
+        boolean hasActive = playerRootQuests.getOrDefault(player.getUUID(), List.of()).stream()
+                .anyMatch(q -> q.isActive() && q.getDefinition().id().equals(def.id()));
+        if (hasActive) {
+            LogManager.serverInfo(TAG, "giveQuest rejected: player {} already has active '{}'",
+                    player.getUUID(), def.id());
+            return null;
+        }
         QuestInstance root = createInstanceTree(player, def, null, giverId);
         playerRootQuests.computeIfAbsent(player.getUUID(), k -> new ArrayList<>()).add(root);
         for (IQuestGiver giver : def.givers()) {
