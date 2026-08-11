@@ -100,9 +100,9 @@ Write-Output "=== Jar contents ==="
 Write-Output "=== Done: $(Join-Path $root $OutJar) ==="
 
 # 6. Sync to game run directory (if present)
-# 游戏从 run/client 启动（build.gradle workingDirectory=run/client），ContentPackLoader
-# 扫描相对路径 contentpacks/ = run/client/contentpacks/（不是项目根 contentpacks/）。
-# 打包后自动复制到该目录，否则游戏加载不到新包。
+# Game runs from run/client (build.gradle workingDirectory); ContentPackLoader scans
+# relative 'contentpacks' = run/client/contentpacks, NOT project root contentpacks/.
+# Auto-copy built jar there so the game loads it.
 $runPackDir = Join-Path $root "run/client/contentpacks"
 if (Test-Path $runPackDir) {
     $dest = Join-Path $runPackDir (Split-Path -Leaf $outJarAbs)
@@ -111,4 +111,3 @@ if (Test-Path $runPackDir) {
 } else {
     Write-Output "=== Note: run/client/contentpacks not found, skipping run sync ==="
 }
-

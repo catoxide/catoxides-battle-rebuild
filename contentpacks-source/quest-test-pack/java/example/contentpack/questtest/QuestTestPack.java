@@ -145,10 +145,9 @@ public class QuestTestPack implements ContentPack {
                         questSystem.giveQuest(player, def.id(), "tick:" + def.id().getPath());
                     }
                 }
-                // 进度驱动（updateProgress 内部触发 checkCompletion → 完成/失败）
-                for (QuestInstance q : questSystem.getActiveQuestsSorted(uid, player.position())) {
-                    questSystem.updateProgress(q, "tick", 0f);
-                }
+                // 进度驱动：checkAllQuests 递归检查整棵树（含子任务）→
+                // 完成/失败条件被评估（ProximityGoal 到点即完成）
+                questSystem.checkAllQuests(player);
             }
         });
 

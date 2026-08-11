@@ -160,8 +160,27 @@ public final class QuestSystem {
     }
 
     /**
-     * 检查任务完成/失败条件（内容包更新进度后手动调用，或经 updateProgress 自动调用）。
+     * 检查玩家所有任务（递归整棵树，先子后父）。
+     * <p>内容包/驱动每 tick 调用此方法即可让所有任务（含子任务）完成/失败条件被评估——
+     * 仅遍历根任务（getActiveQuestsSorted）会漏掉子任务的完成检查。
      */
+    public void checkAllQuests(ServerPlayer player) {
+        List<QuestInstance> roots = playerRootQuests.getOrDefault(player.getUUID(), List.of());
+        for (QuestInstance root : roots) {
+            checkTree(root, player);
+        }
+    }
+
+    private void checkTree(QuestInstance quest, ServerPlayer player) {
+        for (QuestInstance child : quest.getChildInstances()) {
+            checkTree(child, player);
+        }
+        if (quest.isActive()) {
+            checkCompletion(quest);
+        }
+    }
+
+    /** 检查任务完成/失败条件（内容包更新进度后手动调用，或经 updateProgress 自动调用）。 */
     public void checkCompletion(QuestInstance quest) {
         if (quest == null || !quest.isActive()) {
             return;
