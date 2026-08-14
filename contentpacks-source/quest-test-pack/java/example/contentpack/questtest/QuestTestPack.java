@@ -71,7 +71,12 @@ public class QuestTestPack implements ContentPack {
             float radius = json.has("radius") ? json.get("radius").getAsFloat() : 10f;
             return new StartGiver(center, radius);
         });
-        LogManager.serverInfo(TAG, "Registered 'proximity' goal + 'proximity_giver' giver factories");
+        questSystem.registerGoalType("kill", json -> {
+            String entity = json.get("entity").getAsString();
+            float count = json.has("count") ? json.get("count").getAsFloat() : 1f;
+            return new KillGoal(entity, count);
+        });
+        LogManager.serverInfo(TAG, "Registered 'proximity'/'proximity_giver'/'kill' factories");
 
         // ===== 2. Java 构造的任务树：main（容器） + sub1 + sub2 =====
         Vec3 start = new Vec3(0, 64, 0);
@@ -119,6 +124,18 @@ public class QuestTestPack implements ContentPack {
         } catch (Exception e) {
             LogManager.serverError(TAG, "Failed to parse quests/quests.json: {}", e.getMessage(), e);
         }
+
+        // ===== 3b. 事件桥驱动的击杀任务（验证 QuestEventBridge → KillGoal 链路）=====
+        QuestDefinition killQuest = new QuestDefinition(
+                context.id("test_kill"),
+                Component.literal("僵尸猎手"),
+                Component.literal("击杀 2 只僵尸（事件桥驱动）"),
+                List.of(new StartGiver(start, 15f)),
+                List.of(new KillGoal("minecraft:zombie", 2f)),
+                List.of(), List.of(), List.of(),
+                null, 0f);
+        context.registerQuest(killQuest);
+        LogManager.serverInfo(TAG, "Registered kill quest: {}", killQuest.id());
 
         // ===== 4. 事件日志 =====
         NeoForge.EVENT_BUS.addListener((QuestEvents.QuestGivenEvent e) ->
