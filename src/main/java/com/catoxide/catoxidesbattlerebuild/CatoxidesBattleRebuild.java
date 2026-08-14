@@ -37,6 +37,8 @@ public class CatoxidesBattleRebuild {
         ModNetworkHandler.init();
         EntityBoneSystem.getInstance();
         DamageProcessor.getInstance();
+        // 战斗（穿深）配置：toml 可调（穿甲阈值/伤害因子）
+        com.catoxide.catoxidesbattlerebuild.core.combat.CombatConfig.register(modContainer);
         // 骨骼位置同步管理器（懒单例：必须主动初始化，否则事件监听不注册 → 客户端无骨骼数据）
         ServerBoneSyncManager.getInstance();
         // 任务状态同步管理器（懒单例：同上，否则客户端无任务数据）
