@@ -57,6 +57,11 @@ public class KillGoal implements IQuestGoal {
                 quest.getChildInstances().stream().flatMap(KillGoal::flatten));
     }
 
+    /** 递归展开任务树（根 + 所有后代），供其他 goal 复用 */
+    public static java.util.List<QuestInstance> flattenAll(QuestInstance quest) {
+        return flatten(quest).toList();
+    }
+
     @Override
     public String getType() {
         return "kill";

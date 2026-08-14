@@ -76,7 +76,12 @@ public class QuestTestPack implements ContentPack {
             float count = json.has("count") ? json.get("count").getAsFloat() : 1f;
             return new KillGoal(entity, count);
         });
-        LogManager.serverInfo(TAG, "Registered 'proximity'/'proximity_giver'/'kill' factories");
+        questSystem.registerGoalType("craft", json -> {
+            String item = json.get("item").getAsString();
+            float count = json.has("count") ? json.get("count").getAsFloat() : 1f;
+            return new CraftGoal(item, count);
+        });
+        LogManager.serverInfo(TAG, "Registered 'proximity'/'proximity_giver'/'kill'/'craft' factories");
 
         // ===== 2. Java 构造的任务树：main（容器） + sub1 + sub2 =====
         Vec3 start = new Vec3(0, 64, 0);
@@ -136,6 +141,18 @@ public class QuestTestPack implements ContentPack {
                 null, 0f);
         context.registerQuest(killQuest);
         LogManager.serverInfo(TAG, "Registered kill quest: {}", killQuest.id());
+
+        // ===== 3c. 合成任务（验证事件桥 ItemCraftedEvent → CraftGoal 链路）=====
+        QuestDefinition craftQuest = new QuestDefinition(
+                context.id("test_craft"),
+                Component.literal("工匠入门"),
+                Component.literal("合成 1 个工作台（事件桥驱动）"),
+                List.of(new StartGiver(start, 20f)),
+                List.of(new CraftGoal("minecraft:crafting_table", 1f)),
+                List.of(), List.of(), List.of(),
+                null, 0f);
+        context.registerQuest(craftQuest);
+        LogManager.serverInfo(TAG, "Registered craft quest: {}", craftQuest.id());
 
         // ===== 4. 事件日志 =====
         NeoForge.EVENT_BUS.addListener((QuestEvents.QuestGivenEvent e) ->
