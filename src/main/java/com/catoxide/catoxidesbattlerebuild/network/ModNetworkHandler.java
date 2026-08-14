@@ -37,6 +37,9 @@ public class ModNetworkHandler {
                 ModNetworkHandler::handleSyncBoneDataOnClient);
         registrar.playToClient(QuestSyncPacket.TYPE, QuestSyncPacket.STREAM_CODEC,
                 ModNetworkHandler::handleQuestSyncOnClient);
+        // 星标切换（客户端→服务端）
+        registrar.playToServer(QuestToggleStarPacket.TYPE, QuestToggleStarPacket.STREAM_CODEC,
+                ModNetworkHandler::handleQuestToggleStarOnServer);
     }
 
     private static void handleHitAttemptOnClient(HitAttemptPacket packet, IPayloadContext context) {
@@ -82,6 +85,34 @@ public class ModNetworkHandler {
             com.catoxide.catoxidesbattlerebuild.client.quest.ClientQuestCache.getInstance()
                     .update(context.player().getUUID(), packet.entries());
         });
+    }
+
+    private static void handleQuestToggleStarOnServer(QuestToggleStarPacket packet, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            net.minecraft.server.level.ServerPlayer player = (net.minecraft.server.level.ServerPlayer) context.player();
+            com.catoxide.catoxidesbattlerebuild.core.quest.QuestSystem qs =
+                    com.catoxide.catoxidesbattlerebuild.core.quest.QuestSystem.getInstance();
+            for (com.catoxide.catoxidesbattlerebuild.core.quest.QuestInstance root
+                    : qs.getPlayerQuests(player.getUUID())) {
+                for (com.catoxide.catoxidesbattlerebuild.core.quest.QuestInstance q : flattenAll(root)) {
+                    if (q.getDefinition().id().toString().equals(packet.questId())) {
+                        qs.setStarred(q, !q.isStarred());
+                        return;
+                    }
+                }
+            }
+        });
+    }
+
+    /** 递归展开任务树（根 + 所有后代） */
+    private static java.util.List<com.catoxide.catoxidesbattlerebuild.core.quest.QuestInstance> flattenAll(
+            com.catoxide.catoxidesbattlerebuild.core.quest.QuestInstance quest) {
+        java.util.List<com.catoxide.catoxidesbattlerebuild.core.quest.QuestInstance> list = new java.util.ArrayList<>();
+        list.add(quest);
+        for (com.catoxide.catoxidesbattlerebuild.core.quest.QuestInstance child : quest.getChildInstances()) {
+            list.addAll(flattenAll(child));
+        }
+        return list;
     }
 
     public static void init() {}

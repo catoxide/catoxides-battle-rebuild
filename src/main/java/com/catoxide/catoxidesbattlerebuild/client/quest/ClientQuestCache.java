@@ -48,4 +48,16 @@ public final class ClientQuestCache {
     public UUID getPlayerId() {
         return playerId;
     }
+
+    /** 本地预览星标切换（服务端确认后同步包会覆盖校正） */
+    public synchronized void applyStar(String questId, boolean starred) {
+        for (int i = 0; i < entries.size(); i++) {
+            QuestSyncPacket.QuestEntry e = entries.get(i);
+            if (e.questId().equals(questId)) {
+                entries.set(i, new QuestSyncPacket.QuestEntry(
+                        e.questId(), e.title(), e.description(), e.state(), starred, e.parentId()));
+                return;
+            }
+        }
+    }
 }
