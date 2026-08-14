@@ -45,7 +45,7 @@ public class QuestHUD {
         for (QuestSyncPacket.QuestEntry root : roots) {
             lines.add(new HudLine(formatQuest(root), colorOf(root)));
             for (QuestSyncPacket.QuestEntry child :
-                    ClientQuestCache.getInstance().getChildren(root.questId())) {
+                    ClientQuestCache.getInstance().getChildren(root.instanceId())) {
                 lines.add(new HudLine("  ▸ " + formatSub(child), COLOR_SUBTASK));
             }
         }

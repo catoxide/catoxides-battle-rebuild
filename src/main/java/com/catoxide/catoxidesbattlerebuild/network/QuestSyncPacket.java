@@ -20,26 +20,45 @@ public record QuestSyncPacket(List<QuestEntry> entries) implements CustomPacketP
     public static final Type<QuestSyncPacket> TYPE =
             new Type<>(CatoxidesBattleRebuildConstants.id("quest_sync"));
 
-    /** 平铺任务节点（客户端重建任务树 + HUD 显示） */
+    /** 平铺任务节点（客户端重建任务树 + HUD 显示）。
+     * <p>instanceId = 唯一实例 ID（同定义可多实例，靠它区分）；
+     * parentInstanceId = 父实例 ID（空串 = 根）；definitionId = 定义 id（显示/匹配用）。 */
     public record QuestEntry(
-            String questId,
+            String instanceId,
+            String definitionId,
             String title,
             String description,
             String state,
             boolean starred,
-            String parentId
+            String parentInstanceId
     ) {
     }
 
-    public static final StreamCodec<ByteBuf, QuestEntry> ENTRY_CODEC = StreamCodec.composite(
-            ByteBufCodecs.STRING_UTF8, QuestEntry::questId,
-            ByteBufCodecs.STRING_UTF8, QuestEntry::title,
-            ByteBufCodecs.STRING_UTF8, QuestEntry::description,
-            ByteBufCodecs.STRING_UTF8, QuestEntry::state,
-            ByteBufCodecs.BOOL, QuestEntry::starred,
-            ByteBufCodecs.STRING_UTF8, QuestEntry::parentId,
-            QuestEntry::new
-    );
+    /** 手写 codec：7 字段超出 StreamCodec.composite 的 6 参数上限 */
+    public static final StreamCodec<ByteBuf, QuestEntry> ENTRY_CODEC = new StreamCodec<>() {
+        @Override
+        public QuestEntry decode(ByteBuf buf) {
+            return new QuestEntry(
+                    ByteBufCodecs.STRING_UTF8.decode(buf),
+                    ByteBufCodecs.STRING_UTF8.decode(buf),
+                    ByteBufCodecs.STRING_UTF8.decode(buf),
+                    ByteBufCodecs.STRING_UTF8.decode(buf),
+                    ByteBufCodecs.STRING_UTF8.decode(buf),
+                    ByteBufCodecs.BOOL.decode(buf),
+                    ByteBufCodecs.STRING_UTF8.decode(buf));
+        }
+
+        @Override
+        public void encode(ByteBuf buf, QuestEntry entry) {
+            ByteBufCodecs.STRING_UTF8.encode(buf, entry.instanceId());
+            ByteBufCodecs.STRING_UTF8.encode(buf, entry.definitionId());
+            ByteBufCodecs.STRING_UTF8.encode(buf, entry.title());
+            ByteBufCodecs.STRING_UTF8.encode(buf, entry.description());
+            ByteBufCodecs.STRING_UTF8.encode(buf, entry.state());
+            ByteBufCodecs.BOOL.encode(buf, entry.starred());
+            ByteBufCodecs.STRING_UTF8.encode(buf, entry.parentInstanceId());
+        }
+    };
 
     public static final StreamCodec<ByteBuf, QuestSyncPacket> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.collection(ArrayList::new, ENTRY_CODEC),

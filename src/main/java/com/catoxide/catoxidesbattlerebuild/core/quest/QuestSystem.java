@@ -483,7 +483,9 @@ public final class QuestSystem {
             LogManager.serverWarn(TAG, "Restore skipped: unknown definition '%s' (player=%s)", defId, playerId);
             return null;
         }
-        QuestInstance quest = new QuestInstance(def, playerId, parent, t.getString("giverId"));
+        String instanceId = t.contains("instanceId") ? t.getString("instanceId")
+                : java.util.UUID.randomUUID().toString();
+        QuestInstance quest = new QuestInstance(instanceId, def, playerId, parent, t.getString("giverId"));
         quest.setState(QuestState.valueOf(t.getString("state")));
         quest.setStarred(t.getBoolean("starred"));
         net.minecraft.nbt.CompoundTag progress = t.getCompound("progress");

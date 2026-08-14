@@ -14,6 +14,8 @@ import java.util.UUID;
  */
 public class QuestInstance {
 
+    /** 唯一实例 ID（UUID 字符串）——同一任务定义可发放多个实例，靠它区分 */
+    private final String instanceId;
     private final QuestDefinition definition;
     private final UUID playerId;
     private QuestState state = QuestState.ACTIVE;
@@ -25,6 +27,13 @@ public class QuestInstance {
     private String giverId;
 
     QuestInstance(QuestDefinition definition, UUID playerId, QuestInstance parent, String giverId) {
+        this(java.util.UUID.randomUUID().toString(), definition, playerId, parent, giverId);
+    }
+
+    /** 恢复用构造（带指定 instanceId） */
+    QuestInstance(String instanceId, QuestDefinition definition, UUID playerId,
+                  QuestInstance parent, String giverId) {
+        this.instanceId = instanceId;
         this.definition = definition;
         this.playerId = playerId;
         this.parent = parent;
@@ -33,6 +42,11 @@ public class QuestInstance {
     }
 
     // ========== 查询 ==========
+
+    /** 唯一实例 ID（任务树节点标识，父子归属/客户端同步用） */
+    public String getInstanceId() {
+        return instanceId;
+    }
 
     public QuestDefinition getDefinition() {
         return definition;

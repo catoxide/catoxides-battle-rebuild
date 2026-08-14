@@ -95,7 +95,7 @@ public class ModNetworkHandler {
             for (com.catoxide.catoxidesbattlerebuild.core.quest.QuestInstance root
                     : qs.getPlayerQuests(player.getUUID())) {
                 for (com.catoxide.catoxidesbattlerebuild.core.quest.QuestInstance q : flattenAll(root)) {
-                    if (q.getDefinition().id().toString().equals(packet.questId())) {
+                    if (q.getInstanceId().equals(packet.instanceId())) {
                         qs.setStarred(q, !q.isStarred());
                         return;
                     }

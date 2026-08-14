@@ -53,17 +53,19 @@ public final class QuestSyncManager {
         new QuestSyncPacket(entries).send(player.connection::send);
     }
 
-    /** 递归平铺任务树（parentId 关联父子；根任务 parentId 用空串——STRING_UTF8 不允许 null） */
-    private static void collect(QuestInstance quest, String parentId, List<QuestSyncPacket.QuestEntry> out) {
+    /** 递归平铺任务树（instanceId 关联父子；根任务 parentInstanceId 用空串——STRING_UTF8 不允许 null） */
+    private static void collect(QuestInstance quest, String parentInstanceId,
+                                List<QuestSyncPacket.QuestEntry> out) {
         out.add(new QuestSyncPacket.QuestEntry(
+                quest.getInstanceId(),
                 quest.getDefinition().id().toString(),
                 quest.getDefinition().title().getString(),
                 quest.getDefinition().description().getString(),
                 quest.getState().name(),
                 quest.isStarred(),
-                parentId == null ? "" : parentId));
+                parentInstanceId == null ? "" : parentInstanceId));
         for (QuestInstance child : quest.getChildInstances()) {
-            collect(child, quest.getDefinition().id().toString(), out);
+            collect(child, quest.getInstanceId(), out);
         }
     }
 }

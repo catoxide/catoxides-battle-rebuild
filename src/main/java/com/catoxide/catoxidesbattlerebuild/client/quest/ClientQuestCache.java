@@ -35,14 +35,16 @@ public final class ClientQuestCache {
         return List.copyOf(entries);
     }
 
-    /** 根任务（parentId 为空串） */
+    /** 根任务（parentInstanceId 为空串） */
     public synchronized List<QuestSyncPacket.QuestEntry> getRootQuests() {
-        return entries.stream().filter(e -> e.parentId() == null || e.parentId().isEmpty()).toList();
+        return entries.stream()
+                .filter(e -> e.parentInstanceId() == null || e.parentInstanceId().isEmpty())
+                .toList();
     }
 
-    /** 子任务（parentId = 父 id） */
-    public synchronized List<QuestSyncPacket.QuestEntry> getChildren(String parentId) {
-        return entries.stream().filter(e -> parentId.equals(e.parentId())).toList();
+    /** 子任务（parentInstanceId = 父实例 ID） */
+    public synchronized List<QuestSyncPacket.QuestEntry> getChildren(String parentInstanceId) {
+        return entries.stream().filter(e -> parentInstanceId.equals(e.parentInstanceId())).toList();
     }
 
     public UUID getPlayerId() {
@@ -50,12 +52,13 @@ public final class ClientQuestCache {
     }
 
     /** 本地预览星标切换（服务端确认后同步包会覆盖校正） */
-    public synchronized void applyStar(String questId, boolean starred) {
+    public synchronized void applyStar(String instanceId, boolean starred) {
         for (int i = 0; i < entries.size(); i++) {
             QuestSyncPacket.QuestEntry e = entries.get(i);
-            if (e.questId().equals(questId)) {
+            if (e.instanceId().equals(instanceId)) {
                 entries.set(i, new QuestSyncPacket.QuestEntry(
-                        e.questId(), e.title(), e.description(), e.state(), starred, e.parentId()));
+                        e.instanceId(), e.definitionId(), e.title(), e.description(),
+                        e.state(), starred, e.parentInstanceId()));
                 return;
             }
         }

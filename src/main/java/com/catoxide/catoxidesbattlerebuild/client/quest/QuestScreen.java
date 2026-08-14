@@ -59,14 +59,14 @@ public class QuestScreen extends Screen {
         // 客户端 → 服务端星标切换（服务端持久化 + 同步回推）
         Minecraft mc = Minecraft.getInstance();
         if (mc.getConnection() != null) {
-            mc.getConnection().send(new QuestToggleStarPacket(selected.questId()));
+            mc.getConnection().send(new QuestToggleStarPacket(selected.instanceId()));
         }
         // 本地预览
         selected = new QuestSyncPacket.QuestEntry(
-                selected.questId(), selected.title(), selected.description(),
-                selected.state(), !selected.starred(), selected.parentId());
+                selected.instanceId(), selected.definitionId(), selected.title(), selected.description(),
+                selected.state(), !selected.starred(), selected.parentInstanceId());
         updateStarButton();
-        ClientQuestCache.getInstance().applyStar(selected.questId(), selected.starred());
+        ClientQuestCache.getInstance().applyStar(selected.instanceId(), selected.starred());
     }
 
     private void updateStarButton() {
@@ -127,7 +127,7 @@ public class QuestScreen extends Screen {
         graphics.drawString(this.font, "状态: " + stateCn(selected.state()), x, y, stateColor(selected.state()));
         y += 12;
         List<QuestSyncPacket.QuestEntry> children =
-                ClientQuestCache.getInstance().getChildren(selected.questId());
+                ClientQuestCache.getInstance().getChildren(selected.instanceId());
         if (!children.isEmpty()) {
             graphics.drawString(this.font, "子任务:", x, y, 0xFFFFFF);
             y += 12;

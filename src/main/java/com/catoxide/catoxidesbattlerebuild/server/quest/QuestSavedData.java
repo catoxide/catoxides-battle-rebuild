@@ -82,6 +82,7 @@ public class QuestSavedData extends SavedData {
 
     static CompoundTag serializeQuest(QuestInstance quest) {
         CompoundTag t = new CompoundTag();
+        t.putString("instanceId", quest.getInstanceId());
         t.putString("defId", quest.getDefinition().id().toString());
         t.putString("state", quest.getState().name());
         t.putBoolean("starred", quest.isStarred());
