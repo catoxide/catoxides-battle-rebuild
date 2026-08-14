@@ -94,8 +94,8 @@ public class QuestScreen extends Screen {
                 selected.state(), !selected.starred(), selected.parentInstanceId(), selected.location());
         updateStarButton();
         ClientQuestCache.getInstance().applyStar(selected.instanceId(), selected.starred());
-        // 刷新列表快照（★ 标记立刻反映到列表，不等同步包回推）
-        this.roots = ClientQuestCache.getInstance().getRootQuests();
+        // 刷新列表快照（★ 标记立刻反映 + 保持当前分区筛选，不等同步包回推）
+        refreshList();
     }
 
     private void updateStarButton() {
