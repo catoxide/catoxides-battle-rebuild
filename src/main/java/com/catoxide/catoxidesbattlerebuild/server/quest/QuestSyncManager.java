@@ -46,7 +46,15 @@ public final class QuestSyncManager {
     private void syncToPlayer(ServerPlayer player) {
         QuestSystem questSystem = QuestSystem.getInstance();
         List<QuestSyncPacket.QuestEntry> entries = new ArrayList<>();
+        // 按 UI 优先级排序收集根任务（星标>priority>距离>时间）——客户端 HUD top3 直接取前 N
+        for (QuestInstance quest : questSystem.getActiveQuestsSorted(player.getUUID(), player.position())) {
+            collect(quest, null, entries);
+        }
+        // 已完成/失败的也收集（O 菜单"已完成"分区需要）
         for (QuestInstance quest : questSystem.getPlayerQuests(player.getUUID())) {
+            if (quest.isActive()) {
+                continue;   // 已在上方收集
+            }
             collect(quest, null, entries);
         }
         // 无条件发送（含空列表）：任务全消除后客户端缓存必须清空，否则 HUD 残留旧任务
@@ -63,9 +71,19 @@ public final class QuestSyncManager {
                 quest.getDefinition().description().getString(),
                 quest.getState().name(),
                 quest.isStarred(),
-                parentInstanceId == null ? "" : parentInstanceId));
+                parentInstanceId == null ? "" : parentInstanceId,
+                formatLocation(quest)));
         for (QuestInstance child : quest.getChildInstances()) {
             collect(child, quest.getInstanceId(), out);
         }
+    }
+
+    /** 任务目标位置 → "x,y,z"（无则空串） */
+    private static String formatLocation(QuestInstance quest) {
+        net.minecraft.world.phys.Vec3 loc = quest.getDefinition().location();
+        if (loc == null) {
+            return "";
+        }
+        return String.format("%.0f,%.0f,%.0f", loc.x, loc.y, loc.z);
     }
 }

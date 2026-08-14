@@ -28,6 +28,7 @@ public class QuestScreen extends Screen {
     private int scrollOffset;
     private QuestSyncPacket.QuestEntry selected;
     private Button starButton;
+    private boolean showCompleted = false;   // false=未完成分区, true=已完成分区
 
     public QuestScreen() {
         super(Component.literal("任务"));
@@ -35,9 +36,17 @@ public class QuestScreen extends Screen {
 
     @Override
     protected void init() {
-        this.roots = ClientQuestCache.getInstance().getRootQuests();
+        refreshList();
         this.selected = null;
         this.scrollOffset = 0;
+
+        // 分区切换按钮：未完成 / 已完成
+        this.addRenderableWidget(Button.builder(Component.literal("未完成"), b -> switchSection(false))
+                .bounds(20, this.height - 30, 80, 20)
+                .build());
+        this.addRenderableWidget(Button.builder(Component.literal("已完成"), b -> switchSection(true))
+                .bounds(105, this.height - 30, 80, 20)
+                .build());
 
         // 关闭按钮
         this.addRenderableWidget(Button.builder(Component.literal("关闭"), b -> this.onClose())
@@ -52,6 +61,24 @@ public class QuestScreen extends Screen {
         this.addRenderableWidget(this.starButton);
     }
 
+    /** 切换分区并刷新列表 */
+    private void switchSection(boolean completed) {
+        this.showCompleted = completed;
+        this.selected = null;
+        this.scrollOffset = 0;
+        updateStarButton();
+        refreshList();
+    }
+
+    /** 按分区加载根任务列表（未完成=ACTIVE；已完成=COMPLETED+FAILED） */
+    private void refreshList() {
+        this.roots = ClientQuestCache.getInstance().getRootQuests().stream()
+                .filter(e -> showCompleted
+                        ? !"ACTIVE".equals(e.state())
+                        : "ACTIVE".equals(e.state()))
+                .toList();
+    }
+
     private void toggleStar() {
         if (selected == null) {
             return;
@@ -64,7 +91,7 @@ public class QuestScreen extends Screen {
         // 本地预览
         selected = new QuestSyncPacket.QuestEntry(
                 selected.instanceId(), selected.definitionId(), selected.title(), selected.description(),
-                selected.state(), !selected.starred(), selected.parentInstanceId());
+                selected.state(), !selected.starred(), selected.parentInstanceId(), selected.location());
         updateStarButton();
         ClientQuestCache.getInstance().applyStar(selected.instanceId(), selected.starred());
         // 刷新列表快照（★ 标记立刻反映到列表，不等同步包回推）
@@ -134,9 +161,16 @@ public class QuestScreen extends Screen {
             graphics.drawString(this.font, "子任务:", x, y, 0xFFFFFF);
             y += 12;
             for (QuestSyncPacket.QuestEntry child : children) {
-                graphics.drawString(this.font, "  ▸ " + child.title() + " " + stateCn(child.state()),
-                        x, y, stateColor(child.state()));
+                StringBuilder line = new StringBuilder("  ▸ " + child.title() + " " + stateCn(child.state()));
+                if (!child.location().isEmpty()) {
+                    line.append(" 📍(").append(child.location()).append(')');
+                }
+                graphics.drawString(this.font, line.toString(), x, y, stateColor(child.state()));
                 y += 11;
+                if (!child.description().isEmpty()) {
+                    graphics.drawString(this.font, "      ↳ " + child.description(), x, y, 0xAAAAAA);
+                    y += 11;
+                }
             }
         }
     }

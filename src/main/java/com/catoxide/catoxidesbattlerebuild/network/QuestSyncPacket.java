@@ -22,7 +22,8 @@ public record QuestSyncPacket(List<QuestEntry> entries) implements CustomPacketP
 
     /** 平铺任务节点（客户端重建任务树 + HUD 显示）。
      * <p>instanceId = 唯一实例 ID（同定义可多实例，靠它区分）；
-     * parentInstanceId = 父实例 ID（空串 = 根）；definitionId = 定义 id（显示/匹配用）。 */
+     * parentInstanceId = 父实例 ID（空串 = 根）；definitionId = 定义 id（显示/匹配用）；
+     * location = 任务目标位置（"x,y,z" 或空串，UI 显示目标）。 */
     public record QuestEntry(
             String instanceId,
             String definitionId,
@@ -30,11 +31,12 @@ public record QuestSyncPacket(List<QuestEntry> entries) implements CustomPacketP
             String description,
             String state,
             boolean starred,
-            String parentInstanceId
+            String parentInstanceId,
+            String location
     ) {
     }
 
-    /** 手写 codec：7 字段超出 StreamCodec.composite 的 6 参数上限 */
+    /** 手写 codec：8 字段超出 StreamCodec.composite 的 6 参数上限 */
     public static final StreamCodec<ByteBuf, QuestEntry> ENTRY_CODEC = new StreamCodec<>() {
         @Override
         public QuestEntry decode(ByteBuf buf) {
@@ -45,6 +47,7 @@ public record QuestSyncPacket(List<QuestEntry> entries) implements CustomPacketP
                     ByteBufCodecs.STRING_UTF8.decode(buf),
                     ByteBufCodecs.STRING_UTF8.decode(buf),
                     ByteBufCodecs.BOOL.decode(buf),
+                    ByteBufCodecs.STRING_UTF8.decode(buf),
                     ByteBufCodecs.STRING_UTF8.decode(buf));
         }
 
@@ -57,6 +60,7 @@ public record QuestSyncPacket(List<QuestEntry> entries) implements CustomPacketP
             ByteBufCodecs.STRING_UTF8.encode(buf, entry.state());
             ByteBufCodecs.BOOL.encode(buf, entry.starred());
             ByteBufCodecs.STRING_UTF8.encode(buf, entry.parentInstanceId());
+            ByteBufCodecs.STRING_UTF8.encode(buf, entry.location());
         }
     };
 

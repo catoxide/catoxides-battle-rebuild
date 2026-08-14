@@ -58,7 +58,7 @@ public final class ClientQuestCache {
             if (e.instanceId().equals(instanceId)) {
                 entries.set(i, new QuestSyncPacket.QuestEntry(
                         e.instanceId(), e.definitionId(), e.title(), e.description(),
-                        e.state(), starred, e.parentInstanceId()));
+                        e.state(), starred, e.parentInstanceId(), e.location()));
                 return;
             }
         }

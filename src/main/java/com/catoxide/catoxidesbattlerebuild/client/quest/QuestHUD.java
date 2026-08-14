@@ -35,17 +35,24 @@ public class QuestHUD {
         if (mc.player == null || mc.level == null || mc.options.hideGui) {
             return;
         }
-        List<QuestSyncPacket.QuestEntry> roots = ClientQuestCache.getInstance().getRootQuests();
+        // 主界面：只显示 3 个未完成根任务（服务端按星标>priority>距离排序，取前 3）；已完成淡出
+        List<QuestSyncPacket.QuestEntry> roots = ClientQuestCache.getInstance().getRootQuests().stream()
+                .filter(e -> "ACTIVE".equals(e.state()))
+                .limit(3)
+                .toList();
         if (roots.isEmpty()) {
             return;
         }
 
-        // 收集显示行：根 + 缩进子任务
+        // 收集显示行：根 + 缩进子任务（未完成）
         List<HudLine> lines = new ArrayList<>();
         for (QuestSyncPacket.QuestEntry root : roots) {
             lines.add(new HudLine(formatQuest(root), colorOf(root)));
             for (QuestSyncPacket.QuestEntry child :
                     ClientQuestCache.getInstance().getChildren(root.instanceId())) {
+                if (!"ACTIVE".equals(child.state())) {
+                    continue;
+                }
                 lines.add(new HudLine("  ▸ " + formatSub(child), COLOR_SUBTASK));
             }
         }
@@ -73,7 +80,12 @@ public class QuestHUD {
     }
 
     private static String formatSub(QuestSyncPacket.QuestEntry entry) {
-        return entry.title() + " " + stateCn(entry.state());
+        StringBuilder sb = new StringBuilder(entry.title());
+        if (!entry.location().isEmpty()) {
+            sb.append(" 📍(").append(entry.location()).append(')');
+        }
+        sb.append(' ').append(stateCn(entry.state()));
+        return sb.toString();
     }
 
     private static String stateCn(String state) {
