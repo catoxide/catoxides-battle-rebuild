@@ -54,8 +54,9 @@ public final class CombatConfig {
     /** 注册到 mod 容器（服务端配置，toml 落盘可改） */
     public static void register(net.neoforged.fml.ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.SERVER, SPEC, "catoxides-combat.toml");
+        // 注意：此处不能调用 *.get() —— config 尚未加载（加载在 FMLCommonSetup 之后），
+        // get() 会抛 IllegalStateException 导致 mod 实例创建失败。值在战斗时惰性读取。
         com.catoxide.catoxidesbattlerebuild.util.LogManager.serverInfo(TAG,
-                "Registered combat config (pen_threshold=%.1f, min_factor=%.2f, max_factor=%.2f)",
-                PENETRATION_THRESHOLD.get(), MIN_PENETRATION_FACTOR.get(), MAX_PENETRATION_FACTOR.get());
+                "Registered combat config (catoxides-combat.toml, values loaded lazily)");
     }
 }
