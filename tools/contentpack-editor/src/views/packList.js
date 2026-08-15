@@ -3,12 +3,14 @@
 // 暴露 window.PackList.init(onSelectPack)
 
 window.PackList = (function () {
+    const t = (k) => (window.I18n ? window.I18n.t(k) : k);
+    const tf = (k, p) => (window.I18n ? window.I18n.tf(k, p) : (k));
     let onSelectPack = null;
     let selectedDir = null;
 
     async function loadPacks() {
         const res = await window.api.listPacks();
-        if (!res.ok) { window.showError('加载包列表失败: ' + res.error); return; }
+        if (!res.ok) { window.showError(t('dyn.loadPacksFail') + res.error); return; }
         const listEl = document.getElementById('packList');
         listEl.innerHTML = '';
         const packs = res.data || [];
@@ -19,7 +21,7 @@ window.PackList = (function () {
                 <div class="li-title"></div>
                 <div class="li-sub"></div>`;
             item.querySelector('.li-title').textContent = pack.name;
-            item.querySelector('.li-sub').textContent = 'v' + pack.version + (pack.manifest['Module-Dependencies'] ? ' · 依赖:' + pack.manifest['Module-Dependencies'] : '');
+            item.querySelector('.li-sub').textContent = 'v' + pack.version + (pack.manifest['Module-Dependencies'] ? ' · dep:' + pack.manifest['Module-Dependencies'] : '');
             item.addEventListener('click', () => select(pack, item));
             listEl.appendChild(item);
         }
@@ -39,7 +41,7 @@ window.PackList = (function () {
 
     async function createPack() {
         const name = document.getElementById('npName').value.trim();
-        if (!name) { window.showError('包名（Module-Name）必填'); return; }
+        if (!name) { window.showError(t('dyn.packNameRequired')); return; }
         const data = {
             name,
             version: document.getElementById('npVersion').value.trim() || '0.1.0',
@@ -48,8 +50,8 @@ window.PackList = (function () {
             modRequires: document.getElementById('npModReq').value.trim(),
         };
         const res = await window.api.createPack(data);
-        if (!res.ok) { window.showError('创建失败: ' + res.error); return; }
-        window.showStatus(`包 "${name}" 创建成功`, true);
+        if (!res.ok) { window.showError(t('dyn.createPackFail') + res.error); return; }
+        window.showStatus(tf('dyn.packCreated', { name }), true);
         toggleNewPackForm(false);
         ['npName', 'npVersion', 'npRequires', 'npDeps', 'npModReq'].forEach((id) => {
             document.getElementById(id).value = '';

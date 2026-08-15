@@ -115,6 +115,18 @@
         // 布局交互（拖拽分隔条 / 左栏收起）
         initLayout();
 
+        // 语言初始化 + 切换（i18n.js 已在 views 之前加载）
+        const langSel = document.getElementById('langSelect');
+        if (window.I18n) {
+            langSel.value = window.I18n.getLang();
+            langSel.addEventListener('change', () => {
+                window.I18n.setLang(langSel.value);
+            });
+            window.I18n.applyDOM();
+        } else {
+            langSel.style.display = 'none';
+        }
+
         // 显示路径信息
         const pathsRes = await window.api.getPaths();
         if (pathsRes.ok) {

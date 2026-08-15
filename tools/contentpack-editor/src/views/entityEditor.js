@@ -3,6 +3,10 @@
 // 暴露 window.EntityEditor.open({ pack, entity, isNew }) / closeActiveTab()
 
 window.EntityEditor = (function () {
+    // i18n 兜底：window.I18n 已由 i18n.js 在 views 之前加载；此处仅为健壮性
+    const t = (k) => (window.I18n ? window.I18n.t(k) : k);
+    const tf = (k, p) => (window.I18n ? window.I18n.tf(k, p) : (k));
+
     // ===== 多标签状态 =====
     let tabs = [];              // [{ uid, pack, entity, healthConfig, model, selectedPartName, isNew }]
     let activeUid = null;
@@ -104,13 +108,13 @@ window.EntityEditor = (function () {
             const chip = document.createElement('div');
             chip.className = 'etab' + (tab.uid === activeUid ? ' active' : '');
             const label = document.createElement('span');
-            const name = tab.isNew ? '新实体' : (tab.entity.id || '未命名');
+            const name = tab.isNew ? t('dyn.newEntity') : (tab.entity.id || t('dyn.unnamed'));
             label.textContent = name + (tab.isNew ? ' *' : '');
             chip.appendChild(label);
             const close = document.createElement('button');
             close.className = 'etab-close';
             close.textContent = '×';
-            close.title = '关闭';
+            close.title = t('dyn.close');
             close.addEventListener('click', (e) => {
                 e.stopPropagation();
                 // 关闭非活跃标签：直接删（其内存状态已在离开时保存）
@@ -132,18 +136,18 @@ window.EntityEditor = (function () {
         document.getElementById('editorEmpty').classList.add('hidden');
         document.getElementById('editorContent').classList.remove('hidden');
         const title = document.getElementById('editorTitle');
-        const id = tab.entity.id || '(未命名)';
-        title.textContent = (tab.isNew ? '新建实体' : '编辑实体') + ' — ' + id;
+        const id = tab.entity.id || t('dyn.unnamed');
+        title.textContent = (tab.isNew ? t('dyn.newEntityTitle') : t('dyn.editEntity')) + ' — ' + id;
         // 暂存状态徽标
         const badge = document.getElementById('editorBadge');
         if (tab.isNew) {
-            badge.textContent = '新建（草稿）';
+            badge.textContent = t('dyn.newDraft');
         } else if (tab.entity._staged) {
-            badge.textContent = '草稿 ● 未导出';
+            badge.textContent = t('dyn.draftUnexported');
         } else if (tab.healthConfig && tab.healthConfig._staged) {
-            badge.textContent = '草稿 ● 未导出';
+            badge.textContent = t('dyn.draftUnexported');
         } else {
-            badge.textContent = '已导出';
+            badge.textContent = t('dyn.exported');
         }
         document.getElementById('statusBar').textContent = '';
         document.getElementById('buildOutput').style.display = 'none';
@@ -165,7 +169,7 @@ window.EntityEditor = (function () {
 
     async function getDefaultEntity() {
         const res = await window.api.getEntityDefaults();
-        if (!res.ok) { window.showError('获取默认实体失败: ' + res.error); return null; }
+        if (!res.ok) { window.showError(t('dyn.getDefaultsFail') + res.error); return null; }
         return JSON.parse(JSON.stringify(res.data));
     }
 
@@ -268,7 +272,7 @@ window.EntityEditor = (function () {
                 if (onClick) {
                     const btn = document.createElement('button');
                     btn.className = 'bn-add';
-                    btn.title = '添加到选中部位';
+                    btn.title = t('dyn.addToPart');
                     btn.textContent = '+';
                     btn.addEventListener('click', (e) => { e.stopPropagation(); onClick(node); });
                     div.appendChild(btn);
@@ -303,9 +307,9 @@ window.EntityEditor = (function () {
         const cfg = window.AppState.healthConfig || { parts: [] };
         const selPart = getSelPart();
         if (!cfg.parts.length) {
-            note.textContent = '尚无部位配置。先选择模型（模型与资源页签），再点"生成默认部位"。';
+            note.textContent = t('parts.noParts');
         } else {
-            note.textContent = '点击部位卡片选中，再从左侧骨骼树点 + 添加骨骼到该部位。';
+            note.textContent = t('parts.hint');
         }
         // 渲染骨骼树（来自当前模型）
         const model = window.AppState.model;
@@ -313,7 +317,7 @@ window.EntityEditor = (function () {
         if (model && model.tree) {
             renderBoneTree('partsBoneTree', model.tree, (node) => addBoneToSelectedPart(node.name));
         } else {
-            treeEl.innerHTML = '<div class="note" style="padding:8px">未解析模型。请在"模型与资源"页签选择模型文件。</div>';
+            treeEl.innerHTML = `<div class="note" style="padding:8px">${t('parts.noModel')}</div>`;
         }
 
         for (const part of cfg.parts) {
@@ -322,11 +326,11 @@ window.EntityEditor = (function () {
             card.dataset.partName = part.partName;
             card.innerHTML = `
                 <div class="part-head">
-                    <label>部位名 <input class="part-name-input f-part-name" value="${esc(part.partName)}"></label>
-                    <label>血量 <input class="num f-part-hp" type="number" step="0.5" min="0.5" value="${part.maxModuleHealth}"></label>
-                    <label>致死 <input class="f-part-fatal" type="checkbox" ${part.isFatal ? 'checked' : ''}></label>
-                    <label>传导 <input class="num f-part-tb" type="number" step="0.1" min="0" value="${part.transmissionToBase}"></label>
-                    <button class="btn ghost small f-part-del">删除部位</button>
+                    <label>${t('parts.name')} <input class="part-name-input f-part-name" value="${esc(part.partName)}"></label>
+                    <label>${t('parts.hp')} <input class="num f-part-hp" type="number" step="0.5" min="0.5" value="${part.maxModuleHealth}"></label>
+                    <label>${t('parts.fatal')} <input class="f-part-fatal" type="checkbox" ${part.isFatal ? 'checked' : ''}></label>
+                    <label>${t('parts.trans')} <input class="num f-part-tb" type="number" step="0.1" min="0" value="${part.transmissionToBase}"></label>
+                    <button class="btn ghost small f-part-del">${t('parts.del')}</button>
                 </div>
                 <div class="part-units"></div>`;
             const unitsBox = card.querySelector('.part-units');
@@ -358,10 +362,10 @@ window.EntityEditor = (function () {
         row.className = 'unit-row';
         row.innerHTML = `
             <span class="u-bone">${esc(unit.boneName)}</span>
-            <label>传导 <input class="u-num u-coeff" type="number" step="0.05" min="0" value="${unit.transmissionCoeff}"></label>
-            <label>装甲 <input class="u-num u-armor" type="number" step="0.5" min="0" value="${unit.armorValue}"></label>
-            <label>抗贯穿 <input class="u-num u-ap" type="number" step="0.5" min="0" value="${unit.antiPiercing}"></label>
-            <label>标签 <input class="u-tag u-tag-in" value="${esc(unit.collisionTag || '')}"></label>
+            <label>${t('parts.coeff')} <input class="u-num u-coeff" type="number" step="0.05" min="0" value="${unit.transmissionCoeff}"></label>
+            <label>${t('parts.armor')} <input class="u-num u-armor" type="number" step="0.5" min="0" value="${unit.armorValue}"></label>
+            <label>${t('parts.antiPierce')} <input class="u-num u-ap" type="number" step="0.5" min="0" value="${unit.antiPiercing}"></label>
+            <label>${t('parts.tag')} <input class="u-tag u-tag-in" value="${esc(unit.collisionTag || '')}"></label>
             <button class="btn ghost small u-del">×</button>`;
         row.querySelector('.u-coeff').addEventListener('change', (ev) => { unit.transmissionCoeff = parseFloat(ev.target.value) || 0; });
         row.querySelector('.u-armor').addEventListener('change', (ev) => { unit.armorValue = parseFloat(ev.target.value) || 0; });
@@ -378,18 +382,18 @@ window.EntityEditor = (function () {
         const cfg = window.AppState.healthConfig || { parts: [] };
         const selPart = getSelPart();
         if (!selPart) {
-            window.showError('请先点击选中一个部位，再点骨骼 + 按钮');
+            window.showError(t('dyn.selectPartFirst'));
             return;
         }
         // 检查重复
         for (const part of cfg.parts) {
             if (part.units.some((u) => u.boneName === boneName)) {
-                window.showError(`骨骼 ${boneName} 已分配到部位 ${part.partName}`);
+                window.showError(tf('dyn.boneDuplicated', { bone: boneName, part: part.partName }));
                 return;
             }
         }
         const part = cfg.parts.find((p) => p.partName === selPart);
-        if (!part) { window.showError('选中部位不存在'); return; }
+        if (!part) { window.showError(t('dyn.partMissing')); return; }
         part.units.push({
             boneName,
             transmissionCoeff: 1.0,
@@ -405,7 +409,7 @@ window.EntityEditor = (function () {
     function generateDefaultParts() {
         const model = window.AppState.model;
         if (!model || !model.bones || !model.bones.length) {
-            window.showError('请先在"模型与资源"页签选择/解析模型文件');
+            window.showError(t('dyn.modelRequired'));
             return;
         }
         const boneNames = model.bones.map((b) => b.name);
@@ -438,13 +442,13 @@ window.EntityEditor = (function () {
         }
         window.AppState.healthConfig = { parts };
         renderParts();
-        window.showStatus('已按模型骨骼生成默认部位分组', true);
+        window.showStatus(t('dyn.genPartsDone'), true);
     }
 
     // ===== 页签 4：动画状态机 =====
     async function loadTemplates(entity) {
         const res = await window.api.getStateMachineTemplates();
-        if (!res.ok) { window.showError('加载状态机模板失败: ' + res.error); return; }
+        if (!res.ok) { window.showError(t('dyn.loadTemplatesFail') + res.error); return; }
         const templates = res.data || {};
         const sel = document.getElementById('animTemplate');
         sel.innerHTML = '';
@@ -486,7 +490,7 @@ window.EntityEditor = (function () {
             const state = t.states.find((s) => s.key === input.dataset.key);
             if (state) input.value = state.anim;
         });
-        window.showStatus(`已应用模板 "${t.name}" 的默认动画名`, true);
+        window.showStatus(tf('dyn.templateApplied', { name: t.name }), true);
     }
 
     // ===== 收集表单 → 实体对象 =====
@@ -549,23 +553,23 @@ window.EntityEditor = (function () {
         const tab = activeTab();
         if (!tab) return;
         const entity = collectEntity();
-        if (!entity.id) { window.showError('id 必填'); return; }
+        if (!entity.id) { window.showError(t('common.idRequired')); return; }
         // 保存实体草稿（写入 app 暂存区，不碰正式包）
         const res = await window.api.saveEntity(tab.pack.dir, entity);
-        if (!res.ok) { window.showError('保存草稿失败: ' + res.error); return; }
+        if (!res.ok) { window.showError(t('common.saveFailed') + res.error); return; }
         // 保存/删除部位配置草稿
         const ns = entity.namespace || packNamespace(tab.pack);
         const cfg = window.AppState.healthConfig;
         if (cfg && cfg.parts && cfg.parts.length) {
             const hres = await window.api.saveHealth(tab.pack.dir, ns, entity.id, cfg);
-            if (!hres.ok) { window.showError('保存部位配置草稿失败: ' + hres.error); return; }
+            if (!hres.ok) { window.showError(t('common.saveFailed') + hres.error); return; }
         } else {
             await window.api.deleteHealth(tab.pack.dir, ns, entity.id);
         }
         tab.entity = entity;
         window.AppState.entity = entity;
-        document.getElementById('editorBadge').textContent = '已暂存 ● 未导出';
-        window.showStatus(`实体 "${entity.id}" 已保存为草稿（暂存区）。点「导出」写入正式包`, true);
+        document.getElementById('editorBadge').textContent = t('dyn.draftUnexported');
+        window.showStatus(tf('dyn.savedAsDraft', { id: entity.id }), true);
         // 刷新中栏实体列表（显示暂存标记）
         if (window.EntityList && window.EntityList.loadEntities) {
             window.EntityList.loadEntities(tab.pack.dir);
@@ -576,12 +580,12 @@ window.EntityEditor = (function () {
     async function exportStaged() {
         const tab = activeTab();
         if (!tab) return;
-        if (!confirm(`将把 "${tab.pack.name}" 的全部暂存修改导出到正式包（contentpacks-source/${tab.pack.name}/），并清空暂存区。\n\n确认导出？`)) return;
+        if (!confirm(tf('dyn.exportConfirm', { name: tab.pack.name }))) return;
         const res = await window.api.stagingExport(tab.pack.dir);
-        if (!res.ok) { window.showError('导出失败: ' + res.error); return; }
+        if (!res.ok) { window.showError(t('common.exportFailed') + res.error); return; }
         const data = res.data || {};
-        window.showStatus(`已导出 ${data.exported} 个文件到正式包，暂存区已回收`, true);
-        document.getElementById('editorBadge').textContent = '已导出';
+        window.showStatus(tf('dyn.exportedDone', { n: data.exported }), true);
+        document.getElementById('editorBadge').textContent = t('dyn.exported');
         // 刷新中栏
         if (window.EntityList && window.EntityList.loadEntities) {
             window.EntityList.loadEntities(tab.pack.dir);
@@ -595,24 +599,24 @@ window.EntityEditor = (function () {
         // 打包前提示：若有未导出的暂存，先提醒（打包基于正式包内容）
         const stagedRes = await window.api.stagingList(tab.pack.dir);
         if (stagedRes.ok && stagedRes.data && stagedRes.data.hasStaged) {
-            const go = confirm(`该包有 ${stagedRes.data.items.length} 个暂存修改未导出。\n打包会使用正式包内容（不含草稿）。\n\n是否先导出再打包？\n「确定」= 先导出再打包；「取消」= 跳过导出直接打包`);
+            const go = confirm(tf('dyn.buildStagedWarn', { n: stagedRes.data.items.length }));
             if (go) {
                 const expRes = await window.api.stagingExport(tab.pack.dir);
-                if (!expRes.ok) { window.showError('导出失败: ' + expRes.error); return; }
+                if (!expRes.ok) { window.showError(t('common.exportFailed') + expRes.error); return; }
             }
         }
         const outName = (tab.pack.name || 'pack') + '.jar';
         const outEl = document.getElementById('buildOutput');
         outEl.style.display = 'block';
-        outEl.textContent = '打包中… 调用 contentpacks-source/build-pack.ps1\n';
+        outEl.textContent = t('dyn.buildRunning') + '\n';
         const res = await window.api.buildPack({ packDir: tab.pack.dir, outJarName: outName });
         if (res.ok) {
             const data = res.data || {};
-            outEl.textContent = '=== 打包成功 ===\n' + (data.stdout || '');
-            window.showStatus(`打包完成 → contentpacks/${outName}`, true);
+            outEl.textContent = '=== Build OK ===\n' + (data.stdout || '');
+            window.showStatus(tf('dyn.buildDone', { name: outName }), true);
         } else {
-            outEl.textContent = '=== 打包失败 ===\n' + res.error;
-            window.showStatus('打包失败', false);
+            outEl.textContent = '=== Build Failed ===\n' + res.error;
+            window.showStatus(t('dyn.buildFail'), false);
         }
     }
 
@@ -641,10 +645,10 @@ window.EntityEditor = (function () {
             const res = await window.api.openModelFile();
             if (!res.ok) { if (res.error !== 'cancelled') window.showError(res.error); return; }
             const parseRes = await window.api.parseModelFile(res.data);
-            if (!parseRes.ok) { window.showError('解析模型失败: ' + parseRes.error); return; }
+            if (!parseRes.ok) { window.showError(t('dyn.parseModelFail') + parseRes.error); return; }
             const model = parseRes.data;
             window.AppState.model = model;
-            document.getElementById('modelNote').textContent = `已解析: ${model.identifier || model.fileName}（${model.bones.length} 骨骼）`;
+            document.getElementById('modelNote').textContent = tf('dyn.modelParsed', { id: model.identifier || model.fileName, n: model.bones.length });
             renderBoneTree('modelBoneTree', model.tree, null);
             // 自动建议 model.id
             if (!document.getElementById('eModelId').value.trim()) {
@@ -661,18 +665,18 @@ window.EntityEditor = (function () {
             const res = await window.api.openJarFile();
             if (!res.ok) { if (res.error !== 'cancelled') window.showError(res.error); return; }
             const listRes = await window.api.listModelsInJar(res.data);
-            if (!listRes.ok) { window.showError('读取 jar 失败: ' + listRes.error); return; }
+            if (!listRes.ok) { window.showError(t('dyn.readJarFail') + listRes.error); return; }
             const models = listRes.data || [];
-            if (!models.length) { window.showError('jar 中没有 spark_models'); return; }
-            const pick = prompt('选择要导入的模型（输入序号）:\n' + models.map((m, i) => `${i}: ${m}`).join('\n'), '0');
+            if (!models.length) { window.showError(t('dyn.jarNoModels')); return; }
+            const pick = prompt(tf('dyn.pickModelNum', { list: models.map((m, i) => `${i}: ${m}`).join('\n') }), '0');
             if (pick === null) return;
             const idx = parseInt(pick, 10);
-            if (isNaN(idx) || idx < 0 || idx >= models.length) { window.showError('无效序号'); return; }
+            if (isNaN(idx) || idx < 0 || idx >= models.length) { window.showError(t('dyn.invalidIndex')); return; }
             const parseRes = await window.api.parseModelFromJar(res.data, models[idx]);
-            if (!parseRes.ok) { window.showError('解析模型失败: ' + parseRes.error); return; }
+            if (!parseRes.ok) { window.showError(t('dyn.parseModelFail') + parseRes.error); return; }
             const model = parseRes.data;
             window.AppState.model = model;
-            document.getElementById('modelNote').textContent = `已从 jar 导入: ${models[idx]}（${model.bones.length} 骨骼）`;
+            document.getElementById('modelNote').textContent = tf('dyn.jarModelImported', { path: models[idx], n: model.bones.length });
             renderBoneTree('modelBoneTree', model.tree, null);
             if (!document.getElementById('eModelId').value.trim()) {
                 const parts = models[idx].split('/');
