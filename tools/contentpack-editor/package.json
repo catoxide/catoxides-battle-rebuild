@@ -25,5 +25,8 @@
     "win": {
       "target": "portable"
     }
+  },
+  "dependencies": {
+    "three": "^0.185.1"
   }
 }

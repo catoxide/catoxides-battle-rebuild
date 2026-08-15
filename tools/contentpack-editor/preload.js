@@ -38,6 +38,7 @@ const api = {
     parseModelFromJar: (jarPath, modelPathInJar) => ipcRenderer.invoke('model:parseFromJar', jarPath, modelPathInJar),
     listModelsInJar: (jarPath) => ipcRenderer.invoke('model:listInJar', jarPath),
     resolveModelFromId: (modelId, modelType) => ipcRenderer.invoke('model:resolveFromId', modelId, modelType),
+    readTexture: (textureId) => ipcRenderer.invoke('model:readTexture', textureId),
 
     // 文件对话框
     openModelFile: () => ipcRenderer.invoke('dialog:openModelFile'),

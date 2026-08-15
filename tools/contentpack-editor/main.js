@@ -432,6 +432,47 @@ ipcMain.handle('model:resolveFromId', async (event, modelId, modelType) => {
     }
 });
 
+// 读取贴图文件 → data URL（物品/武器缩略图用）
+// texture 形如 "zombie3pack:textures/entity/x.png" → 先在 contentpacks-source/*/assets/<ns>/ 找
+// 找不到再回退到主 mod 资源 src/main/resources/assets/<ns>/
+const textureCache = new Map();
+ipcMain.handle('model:readTexture', async (event, textureId) => {
+    try {
+        if (!textureId) return { ok: true, data: null };
+        if (textureCache.has(textureId)) return { ok: true, data: textureCache.get(textureId) };
+        const sep = textureId.indexOf(':');
+        const ns = sep >= 0 ? textureId.slice(0, sep) : 'catoxidesbattlerebuild';
+        const rest = sep >= 0 ? textureId.slice(sep + 1) : textureId; // textures/entity/x.png
+        const rel = path.join('assets', ns, rest);
+        const candidates = [];
+        // ① 各 contentpack 源目录
+        const sourceDir = PACKS_SOURCE_DIR;
+        if (sourceDir && fs.existsSync(sourceDir)) {
+            for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+                if (!entry.isDirectory()) continue;
+                candidates.push(path.join(sourceDir, entry.name, rel));
+            }
+        }
+        // ② 主 mod 资源（贴图可能直接内置在主 mod 里）
+        const mainAssets = path.join(ROOT, 'src', 'main', 'resources', 'assets', ns, rest);
+        candidates.push(mainAssets);
+        // ③ 已打包的 jar（contentpacks/*.jar 里的资源）——先不展开，靠前两种兜底
+        for (const file of candidates) {
+            if (fs.existsSync(file)) {
+                const buf = fs.readFileSync(file);
+                const ext = path.extname(file).toLowerCase().replace('.', '');
+                const mime = ext === 'png' ? 'image/png' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+                const dataUrl = `data:${mime};base64,${buf.toString('base64')}`;
+                textureCache.set(textureId, dataUrl);
+                return { ok: true, data: dataUrl };
+            }
+        }
+        return { ok: true, data: null };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
 // --- 文件对话框 ---
 ipcMain.handle('dialog:openModelFile', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
