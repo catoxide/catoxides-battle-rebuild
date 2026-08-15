@@ -49,10 +49,13 @@
 
   <div class="divider" id="divider1" title="拖拽调整宽度"></div>
 
-  <!-- 中栏：实体列表 -->
+  <!-- 中栏：内容列表（类型可切换，选项由已接入的 contentpack 扩展动态提供） -->
   <aside class="panel" id="panelEntity">
     <div class="panel-title">
-      <span><span data-i18n="entity.title">实体</span> <span id="packNameLabel" class="muted"></span></span>
+      <select id="contentTypeSelect" title="内容类型" style="width:auto; margin:0; max-width:110px">
+        <option value="entity" data-i18n="entity.title">实体</option>
+      </select>
+      <span id="packNameLabel" class="muted"></span>
       <button class="btn ghost small" id="btnNewEntity" disabled data-i18n="entity.new">+ 新建</button>
     </div>
     <div id="entityList" class="list"></div>

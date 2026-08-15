@@ -138,13 +138,17 @@
             document.getElementById('headerPaths').textContent = `源码: ${p.packsSourceDir}`;
         }
 
-        // 初始化左栏（包列表）→ 选中包 → 加载实体列表
+        // 初始化左栏（包列表）→ 选中包 → 加载当前类型列表
         window.PackList.init(async (pack) => {
             window.AppState.pack = pack;
             document.getElementById('packNameLabel').textContent = pack.name + ' v' + pack.version;
             document.getElementById('btnNewEntity').disabled = false;
-            await window.EntityList.loadEntities(pack.dir);
+            await loadContentList();
         });
+
+        // 中栏内容类型切换（选项由已接入的 contentpack 编辑器扩展动态提供；
+        // 目前仅 entity 内置，其余类型待 schema 驱动扩展后加入）
+        document.getElementById('contentTypeSelect').addEventListener('change', loadContentList);
 
         // 初始化中栏（实体列表）
         window.EntityList.init({
@@ -157,6 +161,16 @@
                 window.EntityEditor.open({ pack: window.AppState.pack, entity: null, isNew: true });
             },
         });
+
+        // 内容类型路由（当前仅 entity 有实现；新增类型时在此注册加载器）
+        async function loadContentList() {
+            const type = document.getElementById('contentTypeSelect').value;
+            window.AppState.contentType = type;
+            const pack = window.AppState.pack;
+            if (!pack) return;
+            document.getElementById('btnNewEntity').disabled = false;
+            await window.EntityList.loadEntities(pack.dir);
+        }
 
         // 自动加载包列表
         await window.PackList.loadPacks();
