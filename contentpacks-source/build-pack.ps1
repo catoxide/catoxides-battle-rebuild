@@ -18,16 +18,22 @@ Write-Output "=== Building contentpack jar ==="
 Write-Output "Source : $srcAbs"
 Write-Output "Output : $(Join-Path $root $OutJar)"
 
-# 1. Resolve entry class package path from MANIFEST Module-Entry
+# 1. Resolve entry class package path from MANIFEST Module-Entry (optional: 纯数据包可无入口类)
 $manifestPath = Join-Path $srcAbs "MANIFEST.MF"
 $manifestLines = Get-Content $manifestPath
 $entryLine = $manifestLines | Where-Object { $_ -match "^Module-Entry:" }
-if (-not $entryLine) { Write-Error "MANIFEST.MF missing Module-Entry"; exit 1 }
-$entryClass = ($entryLine -split ":", 2)[1].Trim()
-$lastDot = $entryClass.LastIndexOf(".")
-$pkgPath = $entryClass.Substring(0, $lastDot).Replace(".", "/")
-$className = $entryClass.Substring($lastDot + 1)
-$topPkg = $entryClass.Split(".")[0]
+$entryClass = $null
+$pkgPath = $null
+$topPkg = $null
+if ($entryLine) {
+    $entryClass = ($entryLine -split ":", 2)[1].Trim()
+    $lastDot = $entryClass.LastIndexOf(".")
+    $pkgPath = $entryClass.Substring(0, $lastDot).Replace(".", "/")
+    $className = $entryClass.Substring($lastDot + 1)
+    $topPkg = $entryClass.Split(".")[0]
+} else {
+    Write-Output "Note: MANIFEST has no Module-Entry (pure data pack, no Java code)"
+}
 
 # 2. Rebuild temp dir
 if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }
@@ -48,7 +54,7 @@ Get-ChildItem $srcAbs -Directory | ForEach-Object {
 }
 # 3b. Compile/collect entry classes: prefer independent compile (pack java/ sources), fallback main mod output
 $srcJava = Join-Path $srcAbs "java"
-$entryClasses = Join-Path $classes $pkgPath
+$entryClasses = if ($pkgPath) { Join-Path $classes $pkgPath } else { $null }
 if (Test-Path $srcJava) {
     # Independent compile: javac with main mod compile classpath (from writeCompileClasspath)
     $cpFile = Join-Path $root "build/runtime-classpath.txt"
@@ -64,17 +70,19 @@ if (Test-Path $srcJava) {
     if ($javaFiles.Count -eq 0) { Write-Error "No .java files in $srcJava"; exit 1 }
     & javac -encoding UTF-8 -cp $cp -d $classesOut $javaFiles
     if ($LASTEXITCODE -ne 0) { Write-Error "javac compile failed"; exit 1 }
-    $outPkg = Join-Path $classesOut $pkgPath
-    if (Test-Path $outPkg) {
-        Copy-Item (Join-Path $outPkg "*.class") (Join-Path $temp $pkgPath)
-    } else {
-        Write-Warning "Compiled entry package not found: $outPkg"
+    if ($pkgPath) {
+        $outPkg = Join-Path $classesOut $pkgPath
+        if (Test-Path $outPkg) {
+            Copy-Item (Join-Path $outPkg "*.class") (Join-Path $temp $pkgPath)
+        } else {
+            Write-Warning "Compiled entry package not found: $outPkg"
+        }
     }
     Write-Output "Compiled pack Java independently ($($javaFiles.Count) files)"
-} elseif (Test-Path $entryClasses) {
+} elseif ($entryClasses -and (Test-Path $entryClasses)) {
     # Fallback: collect from main mod build output (legacy mode)
     Copy-Item (Join-Path $entryClasses "*.class") (Join-Path $temp $pkgPath)
-} else {
+} elseif ($entryClasses) {
     Write-Warning "Entry classes not found: $entryClasses (run gradlew compileJava first)"
 }
 
@@ -83,7 +91,9 @@ $outJarAbs = Join-Path $root $OutJar
 Push-Location $temp
 try {
     # Collect top-level items: entry package + entities + all resource dirs (skip META-INF/classes-out/java, handled separately)
-    $topItems = @($topPkg, "entities")
+    $topItems = @()
+    if ($topPkg) { $topItems += $topPkg }
+    $topItems += "entities"
     Get-ChildItem $temp -Directory | ForEach-Object {
         if ($_.Name -ne "META-INF" -and $_.Name -ne "entities" -and $_.Name -ne $topPkg -and $_.Name -ne "classes-out" -and $_.Name -ne "java") {
             $topItems += $_.Name

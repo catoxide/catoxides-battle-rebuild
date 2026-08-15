@@ -38,6 +38,12 @@ run/
 **/src/generated/**/.cache/
 repo/
 !**/src/**/repo/
+
+### ContentPack Editor (tools/contentpack-editor) ###
+tools/contentpack-editor/node_modules/
+tools/contentpack-editor/dist/
+tools/contentpack-editor/release/
+
 Deprecated&References/
 
 ### Project Internal ###

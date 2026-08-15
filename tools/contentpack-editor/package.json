@@ -1,0 +1,28 @@
+{
+  "name": "contentpack-editor",
+  "version": "0.1.0",
+  "description": "Catoxide's Battle Rebuild - ContentPack 可视化编辑器（实体/部位/动画状态机）",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/core.test.js",
+    "pack": "electron-builder --win portable"
+  },
+  "author": "catoxide",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0"
+  },
+  "build": {
+    "appId": "com.catoxide.contentpack-editor",
+    "productName": "ContentPack Editor",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*"
+    ],
+    "win": {
+      "target": "portable"
+    }
+  }
+}
