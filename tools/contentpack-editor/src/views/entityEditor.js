@@ -25,6 +25,21 @@ window.EntityEditor = (function () {
         const ns = entity.namespace || packNamespace();
         window.AppState.healthConfig = await readHealthFor(ns, entity.id);
 
+        // 显示暂存状态（草稿优先于正式包）
+        const stagedRes = await window.api.stagingList(current.pack.dir);
+        const hasStaged = stagedRes.ok && stagedRes.data && stagedRes.data.hasStaged;
+        const badge = document.getElementById('editorBadge');
+        if (current.isNew) {
+            badge.textContent = '新建（草稿）';
+        } else if (entity._staged) {
+            badge.textContent = '草稿 ● 未导出';
+        } else if (hasStaged) {
+            const n = stagedRes.data.items.length;
+            badge.textContent = `已暂存 ${n} 项 ● 未导出`;
+        } else {
+            badge.textContent = '已导出';
+        }
+
         renderBasic(entity);
         renderModel(entity);
         renderParts();
@@ -408,26 +423,40 @@ window.EntityEditor = (function () {
         return e;
     }
 
-    // ===== 保存 =====
+    // ===== 保存到暂存区（草稿） =====
     async function save() {
         const entity = collectEntity();
         if (!entity.id) { window.showError('id 必填'); return; }
-        // 保存实体 JSON
+        // 保存实体草稿（写入 app 暂存区，不碰正式包）
         const res = await window.api.saveEntity(current.pack.dir, entity);
-        if (!res.ok) { window.showError('保存实体失败: ' + res.error); return; }
-        // 保存/删除部位配置
+        if (!res.ok) { window.showError('保存草稿失败: ' + res.error); return; }
+        // 保存/删除部位配置草稿
         const ns = entity.namespace || packNamespace();
         const cfg = window.AppState.healthConfig;
         if (cfg && cfg.parts && cfg.parts.length) {
             const hres = await window.api.saveHealth(current.pack.dir, ns, entity.id, cfg);
-            if (!hres.ok) { window.showError('保存部位配置失败: ' + hres.error); return; }
+            if (!hres.ok) { window.showError('保存部位配置草稿失败: ' + hres.error); return; }
         } else {
             await window.api.deleteHealth(current.pack.dir, ns, entity.id);
         }
         window.AppState.entity = entity;
-        document.getElementById('editorBadge').textContent = '已保存';
-        window.showStatus(`实体 "${entity.id}" 已保存（实体 + 部位配置）`, true);
-        // 刷新中栏实体列表
+        document.getElementById('editorBadge').textContent = '已暂存 ● 未导出';
+        window.showStatus(`实体 "${entity.id}" 已保存为草稿（暂存区）。点「导出」写入正式包`, true);
+        // 刷新中栏实体列表（显示暂存标记）
+        if (window.EntityList && window.EntityList.loadEntities) {
+            window.EntityList.loadEntities(current.pack.dir);
+        }
+    }
+
+    // ===== 导出全部暂存 → 正式包 → 回收 =====
+    async function exportStaged() {
+        if (!confirm(`将把 "${current.pack.name}" 的全部暂存修改导出到正式包（contentpacks-source/${current.pack.name}/），并清空暂存区。\n\n确认导出？`)) return;
+        const res = await window.api.stagingExport(current.pack.dir);
+        if (!res.ok) { window.showError('导出失败: ' + res.error); return; }
+        const data = res.data || {};
+        window.showStatus(`已导出 ${data.exported} 个文件到正式包，暂存区已回收`, true);
+        document.getElementById('editorBadge').textContent = '已导出';
+        // 刷新中栏
         if (window.EntityList && window.EntityList.loadEntities) {
             window.EntityList.loadEntities(current.pack.dir);
         }
@@ -435,6 +464,15 @@ window.EntityEditor = (function () {
 
     // ===== 打包 =====
     async function build() {
+        // 打包前提示：若有未导出的暂存，先提醒（打包基于正式包内容）
+        const stagedRes = await window.api.stagingList(current.pack.dir);
+        if (stagedRes.ok && stagedRes.data && stagedRes.data.hasStaged) {
+            const go = confirm(`该包有 ${stagedRes.data.items.length} 个暂存修改未导出。\n打包会使用正式包内容（不含草稿）。\n\n是否先导出再打包？\n「确定」= 先导出再打包；「取消」= 跳过导出直接打包`);
+            if (go) {
+                const expRes = await window.api.stagingExport(current.pack.dir);
+                if (!expRes.ok) { window.showError('导出失败: ' + expRes.error); return; }
+            }
+        }
         const outName = (current.pack.name || 'pack') + '.jar';
         const outEl = document.getElementById('buildOutput');
         outEl.style.display = 'block';
@@ -453,6 +491,7 @@ window.EntityEditor = (function () {
     // ===== 事件绑定 =====
     function bindEvents() {
         document.getElementById('btnSave').addEventListener('click', save);
+        document.getElementById('btnExport').addEventListener('click', exportStaged);
         document.getElementById('btnBuild').addEventListener('click', build);
         document.getElementById('btnAddBehavior').addEventListener('click', () => {
             const box = document.getElementById('behaviorsBox');

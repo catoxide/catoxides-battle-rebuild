@@ -27,6 +27,12 @@ window.EntityList = (function () {
                 </div>`;
             item.querySelector('.li-title').textContent = ent.displayName || ent.id;
             item.querySelector('.li-sub').textContent = ent.namespace ? (ent.namespace + ':' + ent.id) : ('catoxidesbattlerebuild:' + ent.id);
+            if (ent.staged) {
+                const tag = document.createElement('span');
+                tag.className = 'li-tag';
+                tag.textContent = '草稿';
+                item.querySelector('.li-title').appendChild(tag);
+            }
             item.querySelector('.act-edit').addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (handlers.onSelect) handlers.onSelect(currentPackDir, ent);

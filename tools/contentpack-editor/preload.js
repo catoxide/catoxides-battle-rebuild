@@ -26,6 +26,13 @@ const api = {
     saveHealth: (packDir, namespace, entityId, config) => ipcRenderer.invoke('health:save', packDir, namespace, entityId, config),
     deleteHealth: (packDir, namespace, entityId) => ipcRenderer.invoke('health:delete', packDir, namespace, entityId),
 
+    // 暂存区（草稿）
+    stagingList: (packDir) => ipcRenderer.invoke('staging:list', packDir),
+    stagingAll: () => ipcRenderer.invoke('staging:all'),
+    stagingExport: (packDir) => ipcRenderer.invoke('staging:export', packDir),
+    stagingDiscard: (packDir) => ipcRenderer.invoke('staging:discard', packDir),
+    stagingGetRoot: () => ipcRenderer.invoke('staging:getRoot'),
+
     // 模型解析
     parseModelFile: (filePath) => ipcRenderer.invoke('model:parseFile', filePath),
     parseModelFromJar: (jarPath, modelPathInJar) => ipcRenderer.invoke('model:parseFromJar', jarPath, modelPathInJar),

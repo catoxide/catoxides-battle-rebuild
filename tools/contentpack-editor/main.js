@@ -15,6 +15,7 @@ const ModelParser = require('./src/core/modelParser');
 const EntitySchema = require('./src/core/entitySchema');
 const HealthConfig = require('./src/core/healthConfig');
 const StateMachine = require('./src/core/stateMachine');
+const Staging = require('./src/core/staging');
 
 // ==================== 项目根解析（支持打包后 exe 运行） ====================
 // 优先级：① 内部配置（userData/config.json）→ ② 自动向上探测 contentpacks-source/
@@ -211,9 +212,28 @@ ipcMain.handle('pack:saveManifest', async (event, packDir, manifest) => {
 });
 
 // --- 实体 ---
+// 工具函数：packDir 的包名（用于暂存区隔离）
+function packNameOf(packDir) {
+    return path.basename(packDir);
+}
+
 ipcMain.handle('entity:list', async (event, packDir) => {
     try {
+        // 合并：正式包实体 + 暂存区实体（暂存优先，避免重复）
         const entities = EntitySchema.listEntities(packDir);
+        const staged = Staging.listStaged(packNameOf(packDir)).filter((i) => i.kind === 'entity');
+        const stagedIds = new Set(staged.map((i) => i.id));
+        for (const s of staged) {
+            if (!entities.some((e) => e.id === s.id)) {
+                const stagedEntity = Staging.readStagedEntity(packNameOf(packDir), s.id);
+                if (stagedEntity) {
+                    entities.push({ id: s.id, namespace: stagedEntity.namespace || '', displayName: stagedEntity.displayName || s.id, file: '(staged)', staged: true });
+                }
+            } else {
+                const e = entities.find((x) => x.id === s.id);
+                if (e) e.staged = true;
+            }
+        }
         return { ok: true, data: entities };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
@@ -222,6 +242,11 @@ ipcMain.handle('entity:list', async (event, packDir) => {
 
 ipcMain.handle('entity:read', async (event, packDir, id) => {
     try {
+        // 暂存优先：有草稿读草稿，否则读正式包
+        const staged = Staging.readStagedEntity(packNameOf(packDir), id);
+        if (staged) {
+            return { ok: true, data: Object.assign({}, staged, { _staged: true }) };
+        }
         const entity = EntitySchema.readEntity(packDir, id);
         return { ok: true, data: entity };
     } catch (e) {
@@ -231,8 +256,14 @@ ipcMain.handle('entity:read', async (event, packDir, id) => {
 
 ipcMain.handle('entity:save', async (event, packDir, entityJson) => {
     try {
-        const result = EntitySchema.saveEntity(packDir, entityJson);
-        return { ok: true, data: result };
+        // 校验（复用 EntitySchema 的校验逻辑）
+        const { valid, errors } = EntitySchema.validateEntity(entityJson);
+        if (!valid) {
+            return { ok: false, error: '实体校验失败:\n' + errors.join('\n') };
+        }
+        // 写入暂存区（不直接写正式包）
+        const result = Staging.stageEntity(packNameOf(packDir), entityJson);
+        return { ok: true, data: Object.assign({}, result, { staged: true }) };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
     }
@@ -240,7 +271,9 @@ ipcMain.handle('entity:save', async (event, packDir, entityJson) => {
 
 ipcMain.handle('entity:delete', async (event, packDir, id) => {
     try {
+        // 删除正式包 + 暂存区
         const result = EntitySchema.deleteEntity(packDir, id);
+        Staging.removeStagedEntity(packNameOf(packDir), id);
         return { ok: true, data: result };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
@@ -250,6 +283,11 @@ ipcMain.handle('entity:delete', async (event, packDir, id) => {
 // --- 部位配置 ---
 ipcMain.handle('health:read', async (event, packDir, namespace, entityId) => {
     try {
+        // 暂存优先
+        const staged = Staging.readStagedHealthConfig(packNameOf(packDir), namespace, entityId);
+        if (staged) {
+            return { ok: true, data: Object.assign({}, staged, { _staged: true }) };
+        }
         const config = HealthConfig.readHealthConfig(packDir, namespace, entityId);
         return { ok: true, data: config };
     } catch (e) {
@@ -259,8 +297,14 @@ ipcMain.handle('health:read', async (event, packDir, namespace, entityId) => {
 
 ipcMain.handle('health:save', async (event, packDir, namespace, entityId, config) => {
     try {
-        const result = HealthConfig.saveHealthConfig(packDir, namespace, entityId, config);
-        return { ok: true, data: result };
+        // 校验
+        const { valid, errors } = HealthConfig.validateHealthConfig(config);
+        if (!valid) {
+            return { ok: false, error: '部位配置校验失败:\n' + errors.join('\n') };
+        }
+        // 写入暂存区
+        const result = Staging.stageHealthConfig(packNameOf(packDir), namespace, entityId, config);
+        return { ok: true, data: Object.assign({}, result, { staged: true }) };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
     }
@@ -269,7 +313,55 @@ ipcMain.handle('health:save', async (event, packDir, namespace, entityId, config
 ipcMain.handle('health:delete', async (event, packDir, namespace, entityId) => {
     try {
         const result = HealthConfig.deleteHealthConfig(packDir, namespace, entityId);
+        Staging.removeStagedEntity(packNameOf(packDir), entityId);
         return { ok: true, data: result };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+// --- 暂存区（草稿） ---
+ipcMain.handle('staging:list', async (event, packDir) => {
+    try {
+        const items = Staging.listStaged(packNameOf(packDir));
+        return { ok: true, data: { packName: packNameOf(packDir), items, hasStaged: items.length > 0 } };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('staging:all', async () => {
+    try {
+        const packs = Staging.listAllStagedPacks();
+        return { ok: true, data: packs };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+// 导出某包全部暂存 → 正式包 → 回收
+ipcMain.handle('staging:export', async (event, packDir) => {
+    try {
+        const result = Staging.exportStaged(packNameOf(packDir), packDir);
+        return { ok: true, data: result };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+// 丢弃某包全部暂存
+ipcMain.handle('staging:discard', async (event, packDir) => {
+    try {
+        const result = Staging.discardStaged(packNameOf(packDir));
+        return { ok: true, data: result };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('staging:getRoot', async () => {
+    try {
+        return { ok: true, data: Staging.getStagingRoot() };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
     }
@@ -375,6 +467,8 @@ ipcMain.handle('core:getEntityDefaults', () => ({
 
 // ==================== 启动 ====================
 app.whenReady().then(() => {
+    // 初始化暂存区（app 私有目录，独立运行）
+    Staging.initStaging(app.getPath('userData'));
     // 尝试解析项目根（配置优先 → 自动探测）；失败时窗口内引导用户选择
     const root = tryResolveProjectRoot();
     if (root) applyProjectRoot(root);
@@ -382,6 +476,39 @@ app.whenReady().then(() => {
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
+});
+
+// 关闭前：若有暂存草稿则提示（丢弃/保留）
+app.on('before-quit', (event) => {
+    try {
+        const stagedPacks = Staging.listAllStagedPacks();
+        if (stagedPacks.length > 0 && mainWindow) {
+            const total = stagedPacks.reduce((s, p) => s + p.items.length, 0);
+            event.preventDefault();
+            const choice = dialog.showMessageBoxSync(mainWindow, {
+                type: 'warning',
+                title: '未导出的草稿',
+                message: `有 ${total} 个暂存修改未导出（${stagedPacks.map((p) => p.packName).join(', ')}）`,
+                detail: '「保留草稿」下次打开还能继续编辑；「丢弃」将删除全部暂存。\n导出请在各包的"导出"按钮操作。',
+                buttons: ['保留草稿', '丢弃并退出', '取消'],
+                defaultId: 0,
+                cancelId: 2,
+            });
+            if (choice === 0) {
+                // 保留草稿：退出，不清暂存
+                app.exit(0);
+            } else if (choice === 1) {
+                // 丢弃：清空暂存后退出
+                for (const p of stagedPacks) {
+                    Staging.discardStaged(p.packName);
+                }
+                app.exit(0);
+            }
+            // choice === 2（取消）：留在应用
+        }
+    } catch (e) {
+        // 提示失败不阻塞退出
+    }
 });
 
 app.on('window-all-closed', () => {

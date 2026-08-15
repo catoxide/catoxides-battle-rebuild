@@ -77,6 +77,17 @@ body {
 .list-item:hover { background: var(--card); }
 .list-item.active { background: var(--acc); color: #1e1e2e; }
 .list-item .li-title { font-size: 13px; font-weight: 600; }
+.list-item .li-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 400;
+  background: var(--warn);
+  color: #1e1e2e;
+  border-radius: 8px;
+  padding: 0 6px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
 .list-item .li-sub { font-size: 11px; opacity: .7; }
 .list-item .li-actions { display: flex; gap: 6px; margin-top: 4px; }
 .list-item.active .li-sub { opacity: .8; }
