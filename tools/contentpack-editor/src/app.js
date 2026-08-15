@@ -36,6 +36,10 @@
         const pathsRes = await window.api.getPaths();
         if (pathsRes.ok) {
             const p = pathsRes.data;
+            if (p.needProjectRoot) {
+                await setupProjectRoot();
+                return;
+            }
             document.getElementById('headerPaths').textContent = `源码: ${p.packsSourceDir}`;
         }
 
@@ -61,6 +65,28 @@
 
         // 自动加载包列表
         await window.PackList.loadPacks();
+    }
+
+    // 项目根引导：应用内提示 → 选目录 → 生效后重载界面
+    async function setupProjectRoot() {
+        const bar = document.getElementById('statusBar');
+        if (bar) {
+            bar.className = 'status err';
+            bar.textContent = '未找到项目目录。请选择项目根（含 contentpacks-source 的目录）。';
+        }
+        const res = await window.api.pickProjectRoot();
+        if (!res.ok) {
+            if (res.error === 'cancelled') {
+                window.showError('未选择项目目录，编辑器不可用。点击此处重试 →');
+                document.querySelector('#statusBar').style.cursor = 'pointer';
+                document.querySelector('#statusBar').addEventListener('click', () => location.reload());
+            } else {
+                window.showError('设置项目根失败: ' + res.error);
+            }
+            return;
+        }
+        window.showStatus('项目目录已设置，加载中…', true);
+        location.reload();
     }
 
     document.addEventListener('DOMContentLoaded', init);

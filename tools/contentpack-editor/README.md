@@ -7,12 +7,20 @@
 
 ## 1. 一键启动
 
-**方式一（推荐）：双击** `tools/contentpack-editor/start.bat`
+**方式一（推荐）：双击 exe（打包版）**
+
+`dist/ContentPack Editor.exe` 单文件便携版，双击即用，无需安装。
+
+- **放到项目目录里双击**（项目根或任意子目录）：自动找到 `contentpacks-source/`，零配置
+- 放别处双击：首次弹一次目录选择（选项目根），之后记住，也是零配置
+- 打包命令：`npm run pack`（产出 `dist/ContentPack Editor.exe`）
+
+**方式二（开发版）：双击** `start.bat`
 
 - 首次运行会自动安装依赖（约 1-2 分钟，需要网络）
 - 之后双击直接打开编辑器窗口
 
-**方式二：命令行**
+**方式三：命令行**
 
 ```powershell
 cd tools\contentpack-editor

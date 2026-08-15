@@ -6,6 +6,9 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
+// 显式设置应用名：打包后 portable exe 的默认 userData 名可能退化为 "Electron"
+app.setName('ContentPack Editor');
+
 // ==================== 核心库（纯 JS，可被 node 测试） ====================
 const ManifestLib = require('./src/core/manifest');
 const ModelParser = require('./src/core/modelParser');
@@ -13,11 +16,84 @@ const EntitySchema = require('./src/core/entitySchema');
 const HealthConfig = require('./src/core/healthConfig');
 const StateMachine = require('./src/core/stateMachine');
 
-// 项目根（editor 目录的上级的上级）
-const ROOT = path.resolve(__dirname, '..', '..');
-const PACKS_SOURCE_DIR = path.join(ROOT, 'contentpacks-source');
-const PACKS_OUT_DIR = path.join(ROOT, 'contentpacks');
-const BUILD_SCRIPT = path.join(ROOT, 'contentpacks-source', 'build-pack.ps1');
+// ==================== 项目根解析（支持打包后 exe 运行） ====================
+// 优先级：① 内部配置（userData/config.json）→ ② 自动向上探测 contentpacks-source/
+//        → ③ 均失败则窗口内弹对话框选择（app:setProjectRoot 保存）
+// 打包为 portable 单文件 exe 后 __dirname 指向 asar 内部，不能用它定位项目根。
+let ROOT = null;
+let PACKS_SOURCE_DIR = null;
+let PACKS_OUT_DIR = null;
+let BUILD_SCRIPT = null;
+
+function configFilePath() {
+    return path.join(app.getPath('userData'), 'config.json');
+}
+
+function readConfig() {
+    try {
+        const file = configFilePath();
+        if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf-8'));
+    } catch {}
+    return {};
+}
+
+function saveConfig(partial) {
+    try {
+        const cfg = Object.assign(readConfig(), partial);
+        fs.mkdirSync(app.getPath('userData'), { recursive: true });
+        fs.writeFileSync(configFilePath(), JSON.stringify(cfg, null, 2), 'utf-8');
+    } catch (e) {
+        console.error('[config] save failed:', e.message);
+    }
+}
+
+/** 从某目录向上探测，找含 contentpacks-source 的项目根 */
+function detectProjectRootFrom(startDir) {
+    let dir = startDir;
+    for (let i = 0; i < 8; i++) {
+        if (!dir) break;
+        if (fs.existsSync(path.join(dir, 'contentpacks-source')) &&
+            fs.existsSync(path.join(dir, 'contentpacks'))) {
+            return dir;
+        }
+        const parent = path.dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+    }
+    return null;
+}
+
+/** 尝试解析项目根（配置优先，其次探测）；返回 null 表示需要用户选择 */
+function tryResolveProjectRoot() {
+    // ① 配置
+    const cfg = readConfig();
+    if (cfg.projectRoot && fs.existsSync(path.join(cfg.projectRoot, 'contentpacks-source'))) {
+        return cfg.projectRoot;
+    }
+    // ② 自动探测：exe 实际目录（portable 版会设 PORTABLE_EXECUTABLE_DIR）/ exe 所在目录 / 当前工作目录
+    //    portable 单文件 exe 运行时 cwd 会被解压 stub 重置，PORTABLE_EXECUTABLE_DIR 才是用户放置 exe 的真实位置
+    const candidates = [
+        process.env.PORTABLE_EXECUTABLE_DIR,
+        path.dirname(process.execPath),
+        process.cwd(),
+        __dirname,
+    ].filter(Boolean);
+    for (const c of candidates) {
+        const found = detectProjectRootFrom(c);
+        if (found) {
+            saveConfig({ projectRoot: found });
+            return found;
+        }
+    }
+    return null;
+}
+
+function applyProjectRoot(root) {
+    ROOT = root;
+    PACKS_SOURCE_DIR = path.join(ROOT, 'contentpacks-source');
+    PACKS_OUT_DIR = path.join(ROOT, 'contentpacks');
+    BUILD_SCRIPT = path.join(ROOT, 'contentpacks-source', 'build-pack.ps1');
+}
 
 let mainWindow = null;
 
@@ -41,18 +117,50 @@ function createWindow() {
 // ==================== IPC 处理器 ====================
 // 每个 handler 返回 { ok, data|error }，渲染进程统一处理
 
-ipcMain.handle('app:getPaths', () => ({
-    ok: true,
-    data: {
-        packsSourceDir: PACKS_SOURCE_DIR,
-        packsOutDir: PACKS_OUT_DIR,
-        root: ROOT,
-    },
-}));
+ipcMain.handle('app:getPaths', () => {
+    if (!ROOT) {
+        return { ok: true, data: { needProjectRoot: true, packsSourceDir: null, packsOutDir: null, root: null } };
+    }
+    return {
+        ok: true,
+        data: { packsSourceDir: PACKS_SOURCE_DIR, packsOutDir: PACKS_OUT_DIR, root: ROOT },
+    };
+});
+
+// 用户选择项目根（应用内对话框 → 保存到内部配置 → 生效）
+ipcMain.handle('app:setProjectRoot', async (event, rootDir) => {
+    try {
+        if (!rootDir || !fs.existsSync(path.join(rootDir, 'contentpacks-source'))) {
+            return { ok: false, error: '所选目录不是有效的项目根（缺少 contentpacks-source）' };
+        }
+        applyProjectRoot(rootDir);
+        saveConfig({ projectRoot: rootDir });
+        return { ok: true, data: { packsSourceDir: PACKS_SOURCE_DIR, packsOutDir: PACKS_OUT_DIR, root: ROOT } };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+// 弹目录选择框（渲染进程触发，选项目根）
+ipcMain.handle('app:pickProjectRoot', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        title: '选择项目根目录（含 contentpacks-source 的目录）',
+        properties: ['openDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) return { ok: false, error: 'cancelled' };
+    const dir = result.filePaths[0];
+    if (!fs.existsSync(path.join(dir, 'contentpacks-source'))) {
+        return { ok: false, error: '所选目录不是有效的项目根（缺少 contentpacks-source）' };
+    }
+    applyProjectRoot(dir);
+    saveConfig({ projectRoot: dir });
+    return { ok: true, data: { packsSourceDir: PACKS_SOURCE_DIR, packsOutDir: PACKS_OUT_DIR, root: ROOT } };
+});
 
 // --- 包管理 ---
 ipcMain.handle('pack:list', async () => {
     try {
+        if (!ROOT) return { ok: false, error: '尚未设置项目根目录' };
         const packs = ManifestLib.scanPacks(PACKS_SOURCE_DIR);
         return { ok: true, data: packs };
     } catch (e) {
@@ -62,6 +170,7 @@ ipcMain.handle('pack:list', async () => {
 
 ipcMain.handle('pack:create', async (event, { name, version, requires, deps, modRequires }) => {
     try {
+        if (!ROOT) return { ok: false, error: '尚未设置项目根目录' };
         const dir = path.join(PACKS_SOURCE_DIR, name);
         if (fs.existsSync(dir)) {
             return { ok: false, error: `目录已存在: ${dir}` };
@@ -266,6 +375,9 @@ ipcMain.handle('core:getEntityDefaults', () => ({
 
 // ==================== 启动 ====================
 app.whenReady().then(() => {
+    // 尝试解析项目根（配置优先 → 自动探测）；失败时窗口内引导用户选择
+    const root = tryResolveProjectRoot();
+    if (root) applyProjectRoot(root);
     createWindow();
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();

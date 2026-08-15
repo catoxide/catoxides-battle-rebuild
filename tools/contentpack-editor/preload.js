@@ -6,6 +6,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 const api = {
     // 路径信息
     getPaths: () => ipcRenderer.invoke('app:getPaths'),
+    setProjectRoot: (rootDir) => ipcRenderer.invoke('app:setProjectRoot', rootDir),
+    pickProjectRoot: () => ipcRenderer.invoke('app:pickProjectRoot'),
 
     // 包管理
     listPacks: () => ipcRenderer.invoke('pack:list'),
