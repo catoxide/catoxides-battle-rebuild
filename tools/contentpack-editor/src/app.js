@@ -30,8 +30,91 @@
         }
     };
 
+    // ===== 布局交互：可拖拽分隔条 + 左栏收起/展开 =====
+    const LAYOUT_KEY = 'contentpack-editor.layout';
+
+    function loadLayout() {
+        try { return JSON.parse(localStorage.getItem(LAYOUT_KEY)) || {}; } catch { return {}; }
+    }
+    function saveLayout(partial) {
+        const cur = loadLayout();
+        localStorage.setItem(LAYOUT_KEY, JSON.stringify(Object.assign(cur, partial)));
+    }
+
+    function initLayout() {
+        const layout = loadLayout();
+        const packPanel = document.getElementById('panelPack');
+        const entityPanel = document.getElementById('panelEntity');
+        const expandBtn = document.getElementById('btnExpandPack');
+        const collapseBtn = document.getElementById('btnCollapsePack');
+
+        // 恢复保存的宽度
+        if (layout.packWidth) packPanel.style.width = layout.packWidth + 'px';
+        if (layout.entityWidth) entityPanel.style.width = layout.entityWidth + 'px';
+        // 恢复收起状态
+        if (layout.packCollapsed) {
+            packPanel.classList.add('collapsed');
+            document.body.classList.add('pack-collapsed');
+        }
+
+        // 左栏收起/展开
+        collapseBtn.addEventListener('click', () => {
+            packPanel.classList.add('collapsed');
+            document.body.classList.add('pack-collapsed');
+            saveLayout({ packCollapsed: true });
+        });
+        expandBtn.addEventListener('click', () => {
+            packPanel.classList.remove('collapsed');
+            document.body.classList.remove('pack-collapsed');
+            saveLayout({ packCollapsed: false });
+        });
+
+        // 分隔条拖拽：通用逻辑
+        function makeDivider(dividerId, targetPanel, key, minW, maxW) {
+            const divider = document.getElementById(dividerId);
+            const panel = document.getElementById(targetPanel);
+            let startX = 0, startW = 0;
+
+            divider.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                startX = e.clientX;
+                startW = panel.offsetWidth;
+                document.body.classList.add('dragging');
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+
+            function onMove(e) {
+                const dx = e.clientX - startX;
+                let w = startW + dx;
+                if (w < minW) w = minW;
+                if (w > maxW) w = maxW;
+                panel.style.width = w + 'px';
+                panel.classList.remove('collapsed');
+                if (key === 'packWidth') {
+                    document.body.classList.remove('pack-collapsed');
+                    saveLayout({ packCollapsed: false, packWidth: w });
+                } else {
+                    saveLayout({ entityWidth: w });
+                }
+            }
+            function onUp() {
+                document.body.classList.remove('dragging');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            }
+        }
+
+        // divider1 拖左栏宽度（60~500px），divider2 拖中栏宽度（80~500px）
+        makeDivider('divider1', 'panelPack', 'packWidth', 60, 500);
+        makeDivider('divider2', 'panelEntity', 'entityWidth', 80, 500);
+    }
+
     // ===== 启动 =====
     async function init() {
+        // 布局交互（拖拽分隔条 / 左栏收起）
+        initLayout();
+
         // 显示路径信息
         const pathsRes = await window.api.getPaths();
         if (pathsRes.ok) {

@@ -49,9 +49,42 @@ body {
   min-height: 0;
   overflow: hidden;
 }
-#panelPack { width: 260px; border-right: 1px solid var(--border); flex-shrink: 0; }
-#panelEntity { width: 240px; border-right: 1px solid var(--border); flex-shrink: 0; }
+#panelPack { width: 260px; flex-shrink: 0; transition: width .12s ease; }
+#panelPack.collapsed { width: 0; }
+#panelEntity { width: 240px; flex-shrink: 0; transition: width .12s ease; }
 .editor-panel { flex: 1; padding: 12px 16px; overflow-y: auto; }
+
+/* 可拖拽分隔条 */
+.divider {
+  flex-shrink: 0;
+  width: 5px;
+  cursor: col-resize;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  transition: background .12s;
+}
+.divider:hover { background: var(--acc); opacity: .6; }
+body.dragging { cursor: col-resize; user-select: none; }
+body.dragging .divider { background: var(--acc); opacity: .8; }
+
+/* 面板标题栏动作区（收起按钮） */
+.title-actions { display: flex; gap: 4px; align-items: center; }
+.title-actions .btn { padding: 2px 6px; font-size: 11px; }
+
+/* 收起后的展开按钮（悬于左缘） */
+#btnExpandPack {
+  position: fixed;
+  left: 0;
+  top: 120px;
+  z-index: 100;
+  padding: 6px 4px;
+  font-size: 12px;
+  border-radius: 0 6px 6px 0;
+  display: none;
+}
+body.pack-collapsed #panelPack.collapsed { width: 0; }
+body.pack-collapsed #btnExpandPack { display: block; }
 
 .panel-title {
   display: flex;

@@ -14,11 +14,17 @@
 </header>
 
 <div class="app-body">
+  <!-- 左栏收起后的展开按钮（固定定位） -->
+  <button class="btn" id="btnExpandPack" title="展开内容包列表">▶</button>
+
   <!-- 左栏：包列表 -->
   <aside class="panel" id="panelPack">
     <div class="panel-title">
       <span>内容包</span>
-      <button class="btn ghost small" id="btnNewPack">+ 新建</button>
+      <div class="title-actions">
+        <button class="btn ghost small" id="btnNewPack">+ 新建</button>
+        <button class="btn ghost small" id="btnCollapsePack" title="收起">◀</button>
+      </div>
     </div>
     <div id="newPackForm" class="hidden">
       <input id="npName" placeholder="包名 (Module-Name)">
@@ -34,6 +40,8 @@
     <div id="packList" class="list"></div>
   </aside>
 
+  <div class="divider" id="divider1" title="拖拽调整宽度"></div>
+
   <!-- 中栏：实体列表 -->
   <aside class="panel" id="panelEntity">
     <div class="panel-title">
@@ -42,6 +50,8 @@
     </div>
     <div id="entityList" class="list"></div>
   </aside>
+
+  <div class="divider" id="divider2" title="拖拽调整宽度"></div>
 
   <!-- 右栏：实体编辑器 -->
   <main class="panel editor-panel" id="panelEditor">
