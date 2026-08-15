@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>ContentPack Editor</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="app-header">
+  <h1>ContentPack Editor</h1>
+  <span class="sub" id="headerPaths"></span>
+</header>
+
+<div class="app-body">
+  <!-- 左栏：包列表 -->
+  <aside class="panel" id="panelPack">
+    <div class="panel-title">
+      <span>内容包</span>
+      <button class="btn ghost small" id="btnNewPack">+ 新建</button>
+    </div>
+    <div id="newPackForm" class="hidden">
+      <input id="npName" placeholder="包名 (Module-Name)">
+      <input id="npVersion" placeholder="版本 (默认 0.1.0)">
+      <input id="npRequires" placeholder="Module-Requires">
+      <input id="npDeps" placeholder="Module-Dependencies (逗号分隔)">
+      <input id="npModReq" placeholder="Module-Mod-Requires (逗号分隔)">
+      <div class="row">
+        <button class="btn small" id="npConfirm">创建</button>
+        <button class="btn ghost small" id="npCancel">取消</button>
+      </div>
+    </div>
+    <div id="packList" class="list"></div>
+  </aside>
+
+  <!-- 中栏：实体列表 -->
+  <aside class="panel" id="panelEntity">
+    <div class="panel-title">
+      <span>实体 <span id="packNameLabel" class="muted"></span></span>
+      <button class="btn ghost small" id="btnNewEntity" disabled>+ 新建</button>
+    </div>
+    <div id="entityList" class="list"></div>
+  </aside>
+
+  <!-- 右栏：实体编辑器 -->
+  <main class="panel editor-panel" id="panelEditor">
+    <div class="editor-empty" id="editorEmpty">
+      请选择或新建一个内容包，然后选择/新建实体。
+    </div>
+
+    <div id="editorContent" class="hidden">
+      <div class="editor-header">
+        <span class="editor-title" id="editorTitle"></span>
+        <span class="editor-badge" id="editorBadge"></span>
+        <div class="editor-actions">
+          <button class="btn" id="btnSave">保存实体</button>
+          <button class="btn accent" id="btnBuild">打包</button>
+        </div>
+      </div>
+
+      <div class="tabs" id="editorTabs">
+        <button class="tab active" data-tab="basic">基本信息</button>
+        <button class="tab" data-tab="model">模型与资源</button>
+        <button class="tab" data-tab="parts">部位配置</button>
+        <button class="tab" data-tab="anim">动画状态机</button>
+      </div>
+
+      <!-- 页签 1：基本信息 -->
+      <div class="tab-page active" id="tab-basic">
+        <div class="card">
+          <h2>标识</h2>
+          <div class="grid2">
+            <div><label>id（必填，实体注册名）</label><input id="eId"></div>
+            <div><label>namespace（缺省挂主 mod）</label><input id="eNs" placeholder="留空 = catoxidesbattlerebuild"></div>
+            <div><label>displayName</label><input id="eDn"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>碰撞箱</h2>
+          <div class="grid2">
+            <div><label>width</label><input id="eW" type="number" step="0.1" min="0.1"></div>
+            <div><label>height</label><input id="eH" type="number" step="0.1" min="0.1"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>属性</h2>
+          <div class="grid2">
+            <div><label>maxHealth</label><input id="eMaxHp" type="number" step="0.5" min="0.5"></div>
+            <div><label>attackDamage</label><input id="eAtk" type="number" step="0.5" min="0"></div>
+            <div><label>movementSpeed</label><input id="eSpeed" type="number" step="0.01" min="0"></div>
+            <div><label>followRange</label><input id="eFollow" type="number" step="0.5" min="0"></div>
+            <div><label>armor</label><input id="eArmor" type="number" step="0.5" min="0"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>行为组件</h2>
+          <div id="behaviorsBox"></div>
+          <button class="btn ghost small" id="btnAddBehavior">+ 添加行为</button>
+        </div>
+      </div>
+
+      <!-- 页签 2：模型与资源 -->
+      <div class="tab-page" id="tab-model">
+        <div class="card">
+          <h2>模型</h2>
+          <div class="grid2">
+            <div><label>model.type</label>
+              <select id="eModelType">
+                <option value="entity">entity</option>
+                <option value="item">item</option>
+              </select>
+            </div>
+            <div><label>model.id（如 ns:model）</label><input id="eModelId"></div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="btn ghost small" id="btnPickModel">选择本地模型文件…</button>
+            <button class="btn ghost small" id="btnPickJar">从 jar 导入模型…</button>
+            <span class="note" id="modelNote"></span>
+          </div>
+          <div id="modelBoneTree" class="bone-tree"></div>
+        </div>
+        <div class="card">
+          <h2>贴图</h2>
+          <div><label>texture（如 ns:textures/entity/x.png）</label><input id="eTexture"></div>
+        </div>
+        <div class="card">
+          <h2>音效（ResourceLocation，留空 = 无）</h2>
+          <div class="grid2">
+            <div><label>ambient</label><input id="eS1"></div>
+            <div><label>hurt</label><input id="eS2"></div>
+            <div><label>death</label><input id="eS3"></div>
+            <div><label>step</label><input id="eS4"></div>
+            <div><label>swing</label><input id="eS5"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 页签 3：部位配置 -->
+      <div class="tab-page" id="tab-parts">
+        <div class="row">
+          <button class="btn ghost small" id="btnGenParts">生成默认部位（按模型骨骼分组）</button>
+          <button class="btn ghost small" id="btnAddPart">+ 添加部位</button>
+          <span class="note" id="partsNote"></span>
+        </div>
+        <div class="parts-layout">
+          <div class="bone-tree-panel">
+            <div class="panel-title"><span>模型骨骼树</span></div>
+            <div id="partsBoneTree" class="bone-tree"></div>
+          </div>
+          <div class="parts-list" id="partsList"></div>
+        </div>
+      </div>
+
+      <!-- 页签 4：动画状态机 -->
+      <div class="tab-page" id="tab-anim">
+        <div class="card">
+          <h2>状态机模板</h2>
+          <div class="row">
+            <select id="animTemplate" style="max-width:260px"></select>
+            <button class="btn ghost small" id="btnApplyTemplate">应用模板动画名</button>
+          </div>
+          <p class="note" id="templateDesc"></p>
+        </div>
+        <div class="card">
+          <h2>状态 → 动画名</h2>
+          <p class="note">状态判定由主 mod 写死（determineAnimationState），你只需为每个状态填动画名。
+             动画名对应 spark_animations/entity/&lt;ns&gt;/&lt;name&gt;/&lt;动画名&gt;.json 的文件名。</p>
+          <table class="anim-table">
+            <thead><tr><th>状态</th><th>含义</th><th>动画名</th></tr></thead>
+            <tbody id="animTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="status" id="statusBar"></div>
+      <pre class="out" id="buildOutput"></pre>
+    </div>
+  </main>
+</div>
+
+<script src="views/packList.js"></script>
+<script src="views/entityList.js"></script>
+<script src="views/entityEditor.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
