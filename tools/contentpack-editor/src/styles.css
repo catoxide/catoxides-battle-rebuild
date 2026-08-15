@@ -137,6 +137,45 @@ textarea { font-family: Consolas, monospace; resize: vertical; min-height: 60px;
 .btn.small { padding: 4px 10px; font-size: 12px; }
 .btn.danger { background: var(--err); color: #1e1e2e; }
 
+/* ===== 多标签栏 ===== */
+.editor-tabs-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  min-height: 30px;
+}
+.etab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.etab:hover { background: var(--card2); }
+.etab.active {
+  background: var(--acc);
+  color: #1e1e2e;
+  border-color: var(--acc);
+  font-weight: 600;
+}
+.etab-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: .7;
+}
+.etab-close:hover { opacity: 1; color: var(--err); }
+
 /* ===== 编辑器 ===== */
 .editor-empty {
   height: 100%;

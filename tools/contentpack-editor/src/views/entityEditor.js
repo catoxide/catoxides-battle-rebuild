@@ -1,78 +1,189 @@
-// entityEditor.js - 右栏：实体编辑器（4 页签）
+// entityEditor.js - 右栏：实体编辑器（多标签页，每标签 4 页签）
 // 依赖 window.api、window.showError / window.showStatus / window.AppState（app.js 定义）
-// 暴露 window.EntityEditor.open({ pack, entity, isNew })
+// 暴露 window.EntityEditor.open({ pack, entity, isNew }) / closeActiveTab()
 
 window.EntityEditor = (function () {
-    let current = { pack: null, entity: null, isNew: false };
+    // ===== 多标签状态 =====
+    let tabs = [];              // [{ uid, pack, entity, healthConfig, model, selectedPartName, isNew }]
+    let activeUid = null;
+    let uidCounter = 0;
 
-    // ===== 打开编辑器 =====
+    function activeTab() {
+        return tabs.find((t) => t.uid === activeUid) || null;
+    }
+
+    // ===== 打开/聚焦一个实体标签 =====
+    // ctx = { pack, entity, isNew }
     async function open(ctx) {
-        current.pack = ctx.pack;
-        current.entity = ctx.entity || null;
-        current.isNew = !!ctx.isNew;
+        const pack = ctx.pack;
+        const isNew = !!ctx.isNew;
+        const ent = ctx.entity || null;
 
+        // 已有实体的编辑：若已打开同实体标签则聚焦
+        if (!isNew && ent && ent.id) {
+            const existing = tabs.find((t) => t.pack.dir === pack.dir && t.entity && t.entity.id === ent.id && !t.isNew);
+            if (existing) {
+                await activateTab(existing.uid);
+                return;
+            }
+        }
+        // 新建标签
+        await newTab(pack, ent, isNew);
+    }
+
+    async function newTab(pack, ent, isNew) {
+        const uid = ++uidCounter;
+        const entity = ent || await getDefaultEntity();
+        if (!entity) return;
+        // 新建时清空 id（避免默认 example_mob 冲突），保存时要求填
+        if (isNew) entity.id = '';
+        const ns = entity.namespace || packNamespace(pack);
+        const healthConfig = (!isNew && entity.id) ? await readHealthFor(pack, ns, entity.id) : { parts: [] };
+        const tab = {
+            uid,
+            pack,
+            entity,
+            healthConfig,
+            model: null,
+            selectedPartName: null,
+            isNew,
+        };
+        tabs.push(tab);
+        await activateTab(uid);
+    }
+
+    async function activateTab(uid) {
+        const tab = tabs.find((t) => t.uid === uid);
+        if (!tab) return;
+
+        // 若已有活跃标签：先把当前表单写回它
+        if (activeUid && activeUid !== uid) {
+            const cur = activeTab();
+            if (cur) collectInto(cur);
+        }
+        activeUid = uid;
+
+        // 同步 AppState（渲染函数全部读 AppState，零改动）
+        window.AppState.pack = tab.pack;
+        window.AppState.entity = tab.entity;
+        window.AppState.healthConfig = tab.healthConfig;
+        window.AppState.model = tab.model;
+
+        renderTabBar();
+        renderEditorFrame(tab);
+        renderAll(tab);
+    }
+
+    function closeActiveTab() {
+        if (!activeUid) return;
+        const idx = tabs.findIndex((t) => t.uid === activeUid);
+        if (idx === -1) return;
+        const tab = tabs[idx];
+        // 把当前表单写回（避免丢改动）
+        collectInto(tab);
+        tabs.splice(idx, 1);
+        // 激活相邻标签
+        if (tabs.length === 0) {
+            activeUid = null;
+            window.AppState.entity = null;
+            window.AppState.healthConfig = { parts: [] };
+            window.AppState.model = null;
+            document.getElementById('editorContent').classList.add('hidden');
+            document.getElementById('editorEmpty').classList.remove('hidden');
+            return;
+        }
+        const next = tabs[Math.min(idx, tabs.length - 1)];
+        activateTab(next.uid);
+    }
+
+    // ===== 标签栏渲染 =====
+    function renderTabBar() {
+        const bar = document.getElementById('editorTabsBar');
+        bar.innerHTML = '';
+        for (const tab of tabs) {
+            const chip = document.createElement('div');
+            chip.className = 'etab' + (tab.uid === activeUid ? ' active' : '');
+            const label = document.createElement('span');
+            const name = tab.isNew ? '新实体' : (tab.entity.id || '未命名');
+            label.textContent = name + (tab.isNew ? ' *' : '');
+            chip.appendChild(label);
+            const close = document.createElement('button');
+            close.className = 'etab-close';
+            close.textContent = '×';
+            close.title = '关闭';
+            close.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // 关闭非活跃标签：直接删（其内存状态已在离开时保存）
+                if (tab.uid === activeUid) {
+                    closeActiveTab();
+                } else {
+                    tabs = tabs.filter((t) => t.uid !== tab.uid);
+                    renderTabBar();
+                }
+            });
+            chip.appendChild(close);
+            chip.addEventListener('click', () => activateTab(tab.uid));
+            bar.appendChild(chip);
+        }
+    }
+
+    // ===== 编辑器框架（标题/徽标/显示状态） =====
+    function renderEditorFrame(tab) {
         document.getElementById('editorEmpty').classList.add('hidden');
         document.getElementById('editorContent').classList.remove('hidden');
-        document.getElementById('editorTitle').textContent = (current.isNew ? '新建实体' : '编辑实体') +
-            (current.entity ? ' — ' + (current.entity.id || '') : '');
-        document.getElementById('editorBadge').textContent = current.isNew ? '未保存' : ('v' + (current.pack.version || ''));
-
-        const entity = current.entity || await getDefaultEntity();
-        if (!entity) return;
-        window.AppState.entity = entity;
-
-        // 部位配置：从文件读取（已有实体）或留空（新实体）
-        const ns = entity.namespace || packNamespace();
-        window.AppState.healthConfig = await readHealthFor(ns, entity.id);
-
-        // 显示暂存状态（草稿优先于正式包）
-        const stagedRes = await window.api.stagingList(current.pack.dir);
-        const hasStaged = stagedRes.ok && stagedRes.data && stagedRes.data.hasStaged;
+        const title = document.getElementById('editorTitle');
+        const id = tab.entity.id || '(未命名)';
+        title.textContent = (tab.isNew ? '新建实体' : '编辑实体') + ' — ' + id;
+        // 暂存状态徽标
         const badge = document.getElementById('editorBadge');
-        if (current.isNew) {
+        if (tab.isNew) {
             badge.textContent = '新建（草稿）';
-        } else if (entity._staged) {
+        } else if (tab.entity._staged) {
             badge.textContent = '草稿 ● 未导出';
-        } else if (hasStaged) {
-            const n = stagedRes.data.items.length;
-            badge.textContent = `已暂存 ${n} 项 ● 未导出`;
+        } else if (tab.healthConfig && tab.healthConfig._staged) {
+            badge.textContent = '草稿 ● 未导出';
         } else {
             badge.textContent = '已导出';
         }
-
-        renderBasic(entity);
-        renderModel(entity);
-        renderParts();
-        renderAnim(entity);
-        loadTemplates(entity);
-
         document.getElementById('statusBar').textContent = '';
         document.getElementById('buildOutput').style.display = 'none';
+    }
+
+    // ===== 渲染全部页签（从 AppState 读） =====
+    function renderAll(tab) {
+        renderBasic(tab.entity);
+        renderModel(tab.entity);
+        renderParts();
+        loadTemplates(tab.entity);
         switchTab('basic');
     }
 
-    function packNamespace() {
-        const name = current.pack && current.pack.name;
+    function packNamespace(pack) {
+        const name = pack && pack.name;
         return name ? name.replace(/-/g, '_') : 'mypack';
     }
 
     async function getDefaultEntity() {
         const res = await window.api.getEntityDefaults();
         if (!res.ok) { window.showError('获取默认实体失败: ' + res.error); return null; }
-        const e = JSON.parse(JSON.stringify(res.data));
-        // 用包名做缺省 namespace 建议
-        e.namespace = packNamespace();
-        // 模型 id 建议
-        const ns = e.namespace;
-        const hint = document.getElementById('modelNote');
-        return e;
+        return JSON.parse(JSON.stringify(res.data));
     }
 
-    async function readHealthFor(ns, entityId) {
+    async function readHealthFor(pack, ns, entityId) {
         if (!entityId) return { parts: [] };
-        const res = await window.api.readHealth(current.pack.dir, ns, entityId);
+        const res = await window.api.readHealth(pack.dir, ns, entityId);
         if (res.ok && res.data) return res.data;
         return { parts: [] };
+    }
+
+    /** 把当前 DOM 表单写回指定 tab（切换/关闭前调用） */
+    function collectInto(tab) {
+        if (!tab || !tab.entity) return;
+        const e = collectEntity();
+        tab.entity = e;
+        // 同时更新 AppState 里的 entity（若就是当前活跃 tab）
+        if (tab.uid === activeUid) window.AppState.entity = e;
+        return e;
     }
 
     // ===== 页签切换 =====
@@ -175,13 +286,22 @@ window.EntityEditor = (function () {
     }
 
     // ===== 页签 3：部位配置 =====
-    let selectedPartName = null;
+    // selectedPartName 改为每个 tab 独立状态（存于 tab.selectedPartName）
+    function getSelPart() {
+        const t = activeTab();
+        return t ? t.selectedPartName : null;
+    }
+    function setSelPart(v) {
+        const t = activeTab();
+        if (t) t.selectedPartName = v;
+    }
 
     function renderParts() {
         const listEl = document.getElementById('partsList');
         listEl.innerHTML = '';
         const note = document.getElementById('partsNote');
         const cfg = window.AppState.healthConfig || { parts: [] };
+        const selPart = getSelPart();
         if (!cfg.parts.length) {
             note.textContent = '尚无部位配置。先选择模型（模型与资源页签），再点"生成默认部位"。';
         } else {
@@ -198,7 +318,7 @@ window.EntityEditor = (function () {
 
         for (const part of cfg.parts) {
             const card = document.createElement('div');
-            card.className = 'part-card' + (part.partName === selectedPartName ? ' selected' : '');
+            card.className = 'part-card' + (part.partName === selPart ? ' selected' : '');
             card.dataset.partName = part.partName;
             card.innerHTML = `
                 <div class="part-head">
@@ -220,12 +340,12 @@ window.EntityEditor = (function () {
             card.querySelector('.f-part-tb').addEventListener('change', (ev) => { part.transmissionToBase = parseFloat(ev.target.value) || 0; });
             card.querySelector('.f-part-del').addEventListener('click', () => {
                 cfg.parts = cfg.parts.filter((p) => p !== part);
-                if (selectedPartName === part.partName) selectedPartName = null;
+                if (getSelPart() === part.partName) setSelPart(null);
                 renderParts();
             });
             card.addEventListener('click', (ev) => {
                 if (ev.target.closest('.unit-row') || ev.target.closest('.f-part-del')) return;
-                selectedPartName = part.partName;
+                setSelPart(part.partName);
                 listEl.querySelectorAll('.part-card').forEach((c) => c.classList.remove('selected'));
                 card.classList.add('selected');
             });
@@ -256,7 +376,8 @@ window.EntityEditor = (function () {
 
     function addBoneToSelectedPart(boneName) {
         const cfg = window.AppState.healthConfig || { parts: [] };
-        if (!selectedPartName) {
+        const selPart = getSelPart();
+        if (!selPart) {
             window.showError('请先点击选中一个部位，再点骨骼 + 按钮');
             return;
         }
@@ -267,7 +388,7 @@ window.EntityEditor = (function () {
                 return;
             }
         }
-        const part = cfg.parts.find((p) => p.partName === selectedPartName);
+        const part = cfg.parts.find((p) => p.partName === selPart);
         if (!part) { window.showError('选中部位不存在'); return; }
         part.units.push({
             boneName,
@@ -425,59 +546,66 @@ window.EntityEditor = (function () {
 
     // ===== 保存到暂存区（草稿） =====
     async function save() {
+        const tab = activeTab();
+        if (!tab) return;
         const entity = collectEntity();
         if (!entity.id) { window.showError('id 必填'); return; }
         // 保存实体草稿（写入 app 暂存区，不碰正式包）
-        const res = await window.api.saveEntity(current.pack.dir, entity);
+        const res = await window.api.saveEntity(tab.pack.dir, entity);
         if (!res.ok) { window.showError('保存草稿失败: ' + res.error); return; }
         // 保存/删除部位配置草稿
-        const ns = entity.namespace || packNamespace();
+        const ns = entity.namespace || packNamespace(tab.pack);
         const cfg = window.AppState.healthConfig;
         if (cfg && cfg.parts && cfg.parts.length) {
-            const hres = await window.api.saveHealth(current.pack.dir, ns, entity.id, cfg);
+            const hres = await window.api.saveHealth(tab.pack.dir, ns, entity.id, cfg);
             if (!hres.ok) { window.showError('保存部位配置草稿失败: ' + hres.error); return; }
         } else {
-            await window.api.deleteHealth(current.pack.dir, ns, entity.id);
+            await window.api.deleteHealth(tab.pack.dir, ns, entity.id);
         }
+        tab.entity = entity;
         window.AppState.entity = entity;
         document.getElementById('editorBadge').textContent = '已暂存 ● 未导出';
         window.showStatus(`实体 "${entity.id}" 已保存为草稿（暂存区）。点「导出」写入正式包`, true);
         // 刷新中栏实体列表（显示暂存标记）
         if (window.EntityList && window.EntityList.loadEntities) {
-            window.EntityList.loadEntities(current.pack.dir);
+            window.EntityList.loadEntities(tab.pack.dir);
         }
     }
 
     // ===== 导出全部暂存 → 正式包 → 回收 =====
     async function exportStaged() {
-        if (!confirm(`将把 "${current.pack.name}" 的全部暂存修改导出到正式包（contentpacks-source/${current.pack.name}/），并清空暂存区。\n\n确认导出？`)) return;
-        const res = await window.api.stagingExport(current.pack.dir);
+        const tab = activeTab();
+        if (!tab) return;
+        if (!confirm(`将把 "${tab.pack.name}" 的全部暂存修改导出到正式包（contentpacks-source/${tab.pack.name}/），并清空暂存区。\n\n确认导出？`)) return;
+        const res = await window.api.stagingExport(tab.pack.dir);
         if (!res.ok) { window.showError('导出失败: ' + res.error); return; }
         const data = res.data || {};
         window.showStatus(`已导出 ${data.exported} 个文件到正式包，暂存区已回收`, true);
         document.getElementById('editorBadge').textContent = '已导出';
         // 刷新中栏
         if (window.EntityList && window.EntityList.loadEntities) {
-            window.EntityList.loadEntities(current.pack.dir);
+            window.EntityList.loadEntities(tab.pack.dir);
         }
     }
 
     // ===== 打包 =====
     async function build() {
+        const tab = activeTab();
+        if (!tab) return;
         // 打包前提示：若有未导出的暂存，先提醒（打包基于正式包内容）
-        const stagedRes = await window.api.stagingList(current.pack.dir);
+        const stagedRes = await window.api.stagingList(tab.pack.dir);
         if (stagedRes.ok && stagedRes.data && stagedRes.data.hasStaged) {
             const go = confirm(`该包有 ${stagedRes.data.items.length} 个暂存修改未导出。\n打包会使用正式包内容（不含草稿）。\n\n是否先导出再打包？\n「确定」= 先导出再打包；「取消」= 跳过导出直接打包`);
             if (go) {
-                const expRes = await window.api.stagingExport(current.pack.dir);
+                const expRes = await window.api.stagingExport(tab.pack.dir);
                 if (!expRes.ok) { window.showError('导出失败: ' + expRes.error); return; }
             }
         }
-        const outName = (current.pack.name || 'pack') + '.jar';
+        const outName = (tab.pack.name || 'pack') + '.jar';
         const outEl = document.getElementById('buildOutput');
         outEl.style.display = 'block';
         outEl.textContent = '打包中… 调用 contentpacks-source/build-pack.ps1\n';
-        const res = await window.api.buildPack({ packDir: current.pack.dir, outJarName: outName });
+        const res = await window.api.buildPack({ packDir: tab.pack.dir, outJarName: outName });
         if (res.ok) {
             const data = res.data || {};
             outEl.textContent = '=== 打包成功 ===\n' + (data.stdout || '');
@@ -520,7 +648,8 @@ window.EntityEditor = (function () {
             renderBoneTree('modelBoneTree', model.tree, null);
             // 自动建议 model.id
             if (!document.getElementById('eModelId').value.trim()) {
-                const ns = document.getElementById('eNs').value.trim() || packNamespace();
+                const tab = activeTab();
+                const ns = document.getElementById('eNs').value.trim() || (tab ? packNamespace(tab.pack) : 'mypack');
                 const fileName = model.fileName || 'model';
                 const base = fileName.replace(/\.json$/, '');
                 document.getElementById('eModelId').value = `${ns}:${base}`;
@@ -548,7 +677,8 @@ window.EntityEditor = (function () {
             if (!document.getElementById('eModelId').value.trim()) {
                 const parts = models[idx].split('/');
                 const base = parts[parts.length - 1].replace(/\.json$/, '');
-                const ns = parts.length >= 3 ? parts[2] : packNamespace();
+                const tab = activeTab();
+                const ns = parts.length >= 3 ? parts[2] : (tab ? packNamespace(tab.pack) : 'mypack');
                 document.getElementById('eModelId').value = `${ns}:${base}`;
             }
             renderParts();
@@ -565,7 +695,7 @@ window.EntityEditor = (function () {
                 units: [],
             });
             window.AppState.healthConfig = cfg;
-            selectedPartName = cfg.parts[cfg.parts.length - 1].partName;
+            setSelPart(cfg.parts[cfg.parts.length - 1].partName);
             renderParts();
         });
 
@@ -595,5 +725,5 @@ window.EntityEditor = (function () {
     // 初始化事件绑定（模块加载时执行一次）
     bindEvents();
 
-    return { open };
+    return { open, closeActiveTab };
 })();
