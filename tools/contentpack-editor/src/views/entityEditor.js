@@ -43,12 +43,18 @@ window.EntityEditor = (function () {
         if (isNew) entity.id = '';
         const ns = entity.namespace || packNamespace(pack);
         const healthConfig = (!isNew && entity.id) ? await readHealthFor(pack, ns, entity.id) : { parts: [] };
+        // 自动预加载模型：从实体 model.id 解析骨骼树（无需手动点按钮）
+        let model = null;
+        if (entity.model && entity.model.id) {
+            const mres = await window.api.resolveModelFromId(entity.model.id, entity.model.type || 'entity');
+            if (mres.ok && mres.data) model = mres.data;
+        }
         const tab = {
             uid,
             pack,
             entity,
             healthConfig,
-            model: null,
+            model,
             selectedPartName: null,
             isNew,
         };
@@ -250,8 +256,17 @@ window.EntityEditor = (function () {
         document.getElementById('eS3').value = s.death || '';
         document.getElementById('eS4').value = s.step || '';
         document.getElementById('eS5').value = s.swing || '';
-        document.getElementById('modelNote').textContent = '';
-        document.getElementById('modelBoneTree').innerHTML = '';
+        // 显示已自动预加载的模型（若有）
+        const model = window.AppState.model;
+        const note = document.getElementById('modelNote');
+        const tree = document.getElementById('modelBoneTree');
+        if (model && model.bones) {
+            note.textContent = tf('dyn.modelParsed', { id: model.identifier || model.fileName, n: model.bones.length }) + '（自动预加载）';
+            renderBoneTree('modelBoneTree', model.tree, null);
+        } else {
+            note.textContent = '';
+            tree.innerHTML = '';
+        }
     }
 
     // 渲染骨骼树（模型解析后）

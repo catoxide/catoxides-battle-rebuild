@@ -397,6 +397,41 @@ ipcMain.handle('model:listInJar', async (event, jarPath) => {
     }
 });
 
+// --- 模型自动预加载（根据实体的 model.id 在整个 contentpacks-source 查找） ---
+// model.id 形如 "zombie3pack:modular_zombie_3"（type=entity → spark_models/entity/<ns>/<name>.json）
+// 带内存缓存：同一模型 id 只解析一次
+const modelCache = new Map();
+
+ipcMain.handle('model:resolveFromId', async (event, modelId, modelType) => {
+    try {
+        if (!modelId) return { ok: true, data: null, cached: false };
+        if (modelCache.has(modelId)) {
+            return { ok: true, data: modelCache.get(modelId), cached: true };
+        }
+        // 拆 ns:name
+        const sep = modelId.indexOf(':');
+        const ns = sep >= 0 ? modelId.slice(0, sep) : 'catoxidesbattlerebuild';
+        const name = sep >= 0 ? modelId.slice(sep + 1) : modelId;
+        const type = modelType || 'entity';
+        // 在所有包的 spark_models/<type>/<ns>/<name>.json 下找
+        const sourceDir = PACKS_SOURCE_DIR;
+        if (!sourceDir || !fs.existsSync(sourceDir)) return { ok: true, data: null, cached: false };
+        const rel = path.join('spark_models', type, ns, name + '.json');
+        for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+            if (!entry.isDirectory()) continue;
+            const file = path.join(sourceDir, entry.name, rel);
+            if (fs.existsSync(file)) {
+                const model = ModelParser.parseModelFile(file);
+                modelCache.set(modelId, model);
+                return { ok: true, data: model, cached: false };
+            }
+        }
+        return { ok: true, data: null, cached: false };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
 // --- 文件对话框 ---
 ipcMain.handle('dialog:openModelFile', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {

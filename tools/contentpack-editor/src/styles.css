@@ -107,6 +107,20 @@ body.pack-collapsed #btnExpandPack { display: block; }
   margin-bottom: 3px;
   border: 1px solid transparent;
 }
+.list-item .li-main {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.list-item .li-thumb {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  background: var(--card2);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.list-item .li-text { min-width: 0; }
 .list-item:hover { background: var(--card); }
 .list-item.active { background: var(--acc); color: #1e1e2e; }
 .list-item .li-title { font-size: 13px; font-weight: 600; }
