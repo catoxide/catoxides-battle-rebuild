@@ -56,6 +56,17 @@ public final class ContentPackLoader {
     private ContentPackLoader() {}
 
     /**
+     * 外部 jar 库注册表：<库名, jar 文件>。
+     * <p>从扫描目录的 {@code _libs/<库名>/} 子目录收集（或直接 {@code _libs/<库名>.jar}）。
+     * 库 jar 不被打包、不被当作 contentpack 注册、不注册为 mod——仅作为类加载闭包的一部分。
+     */
+    private static final Map<String, File> LIBRARIES = new LinkedHashMap<>();
+
+    public static Map<String, File> getLibraries() {
+        return LIBRARIES;
+    }
+
+    /**
      * 扫描目录并加载所有 ContentPack
      * <p>在主 mod 构造函数中调用，完成整个加载流程。
      *
@@ -69,7 +80,7 @@ public final class ContentPackLoader {
 
         List<ScannablePack> discovered = new ArrayList<>();
 
-        // Step 1: 扫描所有目录
+        // Step 1: 扫描所有目录（同时收集 _libs/ 下的外部 jar 库）
         for (String dirPath : scanDirs) {
             scanDirectory(dirPath, hostVersion, discovered);
         }
@@ -133,10 +144,33 @@ public final class ContentPackLoader {
         File[] jars = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".jar"));
         if (jars == null || jars.length == 0) {
             LogManager.serverDebug(TAG, "No .jar files found in '%s'", dirPath);
-            return;
+        } else {
+            LogManager.serverInfo(TAG, "Scanning %d .jar file(s) in %s", jars.length, dirPath);
         }
 
-        LogManager.serverInfo(TAG, "Scanning %d .jar file(s) in %s", jars.length, dirPath);
+        // 先收集 _libs/ 子目录下的外部 jar 库（不当作 contentpack，仅入类加载闭包）
+        File libsDir = new File(dir, "_libs");
+        if (libsDir.exists() && libsDir.isDirectory()) {
+            for (File libEntry : libsDir.listFiles()) {
+                if (libEntry.isDirectory()) {
+                    // _libs/<库名>/xxx.jar —— 取子目录内第一个 jar
+                    File[] libJars = libEntry.listFiles((d, name) -> name.toLowerCase().endsWith(".jar"));
+                    if (libJars != null && libJars.length > 0) {
+                        LIBRARIES.put(libEntry.getName(), libJars[0]);
+                        LogManager.serverInfo(TAG, "  [lib] %s -> %s", libEntry.getName(), libJars[0].getName());
+                    }
+                } else if (libEntry.getName().toLowerCase().endsWith(".jar")) {
+                    // _libs/<库名>.jar
+                    String libName = libEntry.getName().substring(0, libEntry.getName().length() - 4);
+                    LIBRARIES.put(libName, libEntry);
+                    LogManager.serverInfo(TAG, "  [lib] %s -> %s", libName, libEntry.getName());
+                }
+            }
+        }
+
+        if (jars == null || jars.length == 0) {
+            return;
+        }
 
         for (File jar : jars) {
             ContentPackManifest manifest = ContentPackManifest.fromJar(jar);
@@ -259,6 +293,8 @@ public final class ContentPackLoader {
      * 计算插件的【可见闭包】：自身 jar + 所有可达依赖插件的 jar（BFS，环安全）。
      * <p>顺序：自身优先（child-first 语义——同名类时自己的赢），随后按 BFS 层级加入依赖。
      * 声明了依赖但未扫描到的包只跳过（软性，不阻止加载）。
+     * <p>另外把 Module-Lib-Requires 声明的外部 jar 库（来自 contentpacks/_libs/）加入闭包——
+     * 库 jar 提供类与资源，不注册、不初始化，仅类加载可见。
      */
     private static List<File> computeClosure(ContentPackManifest manifest,
                                              Map<String, File> jarByName,
@@ -274,6 +310,19 @@ public final class ContentPackLoader {
         visited.add(manifest.moduleName());
         queue.addAll(manifest.dependencyNames());
 
+        // 库依赖：把声明的外部 jar 库加入闭包（缺失时警告，不阻止加载）
+        for (String libName : manifest.libNames()) {
+            File libJar = LIBRARIES.get(libName);
+            if (libJar != null) {
+                closure.add(libJar);
+                LogManager.serverInfo(TAG, "ContentPack '%s' linked library jar: %s -> %s",
+                        manifest.moduleName(), libName, libJar.getName());
+            } else {
+                LogManager.serverWarn(TAG, "ContentPack '%s' declares library '%s' but no matching jar found in _libs/ (skip)",
+                        manifest.moduleName(), libName);
+            }
+        }
+
         while (!queue.isEmpty()) {
             String dep = queue.poll();
             if (!visited.add(dep)) {
@@ -285,6 +334,11 @@ public final class ContentPackLoader {
                 ContentPackManifest depManifest = manifestByName.get(dep);
                 if (depManifest != null) {
                     queue.addAll(depManifest.dependencyNames());
+                    // 传递库依赖：依赖包声明的库，对依赖者可见
+                    for (String libName : depManifest.libNames()) {
+                        File libJar = LIBRARIES.get(libName);
+                        if (libJar != null) closure.add(libJar);
+                    }
                 }
             }
         }
