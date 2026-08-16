@@ -23,6 +23,7 @@ import java.util.zip.ZipFile;
  * Module-Type: contentpack
  * Module-Entry: com.example.mypack.CustomZombiesPack
  * Module-Dependencies: mission-core, gun-framework   (可选, contentpack 间依赖)
+ * Module-Lib-Requires: jade, spark-core              (可选, 外部 jar 库依赖: 加入类加载闭包, 不打包不注册mod)
  * Module-Mod-Requires: sable>=2.0.3                  (可选, 硬依赖的外部 mod, 缺失则跳过本包)
  * Module-Mod-Optional: lso>=2.4.5                    (可选, 软依赖的外部 mod, 缺失仅警告)
  * </pre>
@@ -33,6 +34,7 @@ public record ContentPackManifest(
         String moduleRequires,
         String moduleEntry,
         String moduleDependencies,
+        String moduleLibRequires,
         String moduleModRequires,
         String moduleModOptional
 ) {
@@ -43,6 +45,7 @@ public record ContentPackManifest(
     private static final String ATTR_TYPE = "Module-Type";
     private static final String ATTR_ENTRY = "Module-Entry";
     private static final String ATTR_DEPENDENCIES = "Module-Dependencies";
+    private static final String ATTR_LIB_REQUIRES = "Module-Lib-Requires";
     private static final String ATTR_MOD_REQUIRES = "Module-Mod-Requires";
     private static final String ATTR_MOD_OPTIONAL = "Module-Mod-Optional";
     private static final String EXPECTED_TYPE = "contentpack";
@@ -92,6 +95,7 @@ public record ContentPackManifest(
         String requires = attrs.getValue(ATTR_REQUIRES);
         String entry = attrs.getValue(ATTR_ENTRY);
         String dependencies = attrs.getValue(ATTR_DEPENDENCIES);
+        String libRequires = attrs.getValue(ATTR_LIB_REQUIRES);
         String modRequires = attrs.getValue(ATTR_MOD_REQUIRES);
         String modOptional = attrs.getValue(ATTR_MOD_OPTIONAL);
 
@@ -110,13 +114,16 @@ public record ContentPackManifest(
         if (dependencies != null && !dependencies.trim().isEmpty()) {
             LogManager.serverDebug("ContentPack", "  pack dependencies: %s", dependencies);
         }
+        if (libRequires != null && !libRequires.trim().isEmpty()) {
+            LogManager.serverDebug("ContentPack", "  lib requires: %s", libRequires);
+        }
         if (modRequires != null && !modRequires.trim().isEmpty()) {
             LogManager.serverDebug("ContentPack", "  mod requires: %s", modRequires);
         }
         if (modOptional != null && !modOptional.trim().isEmpty()) {
             LogManager.serverDebug("ContentPack", "  mod optional: %s", modOptional);
         }
-        return new ContentPackManifest(name, version, requires, entry, dependencies, modRequires, modOptional);
+        return new ContentPackManifest(name, version, requires, entry, dependencies, libRequires, modRequires, modOptional);
     }
 
     /**
@@ -130,6 +137,25 @@ public record ContentPackManifest(
         }
         List<String> result = new ArrayList<>();
         for (String s : moduleDependencies.split(",")) {
+            String trimmed = s.trim();
+            if (!trimmed.isEmpty()) {
+                result.add(trimmed);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 解析声明的外部 jar 库名列表（Module-Lib-Requires，逗号分隔）。
+     * <p>这些库 jar 位于 contentpacks/_libs/<库名>/ 下，由加载器收集进类加载闭包——
+     * 不被打包进本 contentpack，也不作为 mod 注册，仅提供类与资源。
+     */
+    public List<String> libNames() {
+        if (moduleLibRequires == null || moduleLibRequires.trim().isEmpty()) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (String s : moduleLibRequires.split(",")) {
             String trimmed = s.trim();
             if (!trimmed.isEmpty()) {
                 result.add(trimmed);
