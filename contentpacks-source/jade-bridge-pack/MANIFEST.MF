@@ -1,7 +1,0 @@
-Manifest-Version: 1.0
-Module-Name: jade-bridge-pack
-Module-Version: 0.1.0
-Module-Requires: catoxidesbattlerebuild>=0.2.0
-Module-Type: contentpack
-Module-Entry: example.contentpack.jadebridge.JadeBridgePack
-Module-Lib-Requires: jade

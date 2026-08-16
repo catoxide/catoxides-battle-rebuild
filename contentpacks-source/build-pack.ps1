@@ -64,6 +64,27 @@ if (Test-Path $srcJava) {
     }
     $mainClasses = Join-Path $root "build/classes/java/main"
     $cp = "$mainClasses;$((Get-Content $cpFile -Raw).Trim())"
+    # 附加 Module-Lib-Requires 声明的外部库 jar（来自 contentpacks-source/_libs/<库名>/）
+    # 库 jar 在编译期与运行期都可见：contentpack 代码可 import 库的 API（如 snownee.jade.*）
+    $libLine = $manifestLines | Where-Object { $_ -match "^Module-Lib-Requires:" }
+    if ($libLine) {
+        $libNames = (($libLine -split ":", 2)[1].Trim() -split ",")
+        foreach ($libName in $libNames) {
+            $libName = $libName.Trim()
+            if (-not $libName) { continue }
+            $libJars = Get-ChildItem (Join-Path $srcAbs "_libs/$libName") -Filter "*.jar" -ErrorAction SilentlyContinue
+            if (-not $libJars) {
+                # 也尝试在 contentpacks-source/_libs/ 全局找
+                $libJars = Get-ChildItem (Join-Path $root "contentpacks-source/_libs/$libName") -Filter "*.jar" -ErrorAction SilentlyContinue
+            }
+            if ($libJars) {
+                $cp += ";" + $libJars[0].FullName
+                Write-Output "  [lib-cp] $libName -> $($libJars[0].Name)"
+            } else {
+                Write-Warning "  [lib-cp] library '$libName' not found (javac may fail if code imports it)"
+            }
+        }
+    }
     $classesOut = Join-Path $temp "classes-out"
     New-Item -ItemType Directory -Force -Path $classesOut | Out-Null
     $javaFiles = @(Get-ChildItem $srcJava -Recurse -Filter "*.java" | ForEach-Object { $_.FullName })
