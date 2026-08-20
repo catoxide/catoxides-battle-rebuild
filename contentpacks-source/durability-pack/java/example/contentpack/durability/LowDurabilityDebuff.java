@@ -1,16 +1,15 @@
-package com.catoxide.catoxidesbattlerebuild.core.durability;
+package example.contentpack.durability;
 
-import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
+import com.catoxide.catoxidesbattlerebuild.core.durability.DurabilitySupport;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 
 /**
- * 低耐久属性损失（武器系统 2.系统）。
+ * 低耐久属性衰减（武器系统 2.系统）。
  * <p>可变耐久武器（经 {@link DurabilitySupport} 注册）在耐久低时攻击伤害衰减：
  * <pre>
  * 耐久 ≥50%  → ×1.0（正常）
@@ -20,13 +19,12 @@ import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
  * </pre>
  * 阈值/衰减因子后续可迁移 toml 配置（同 durability-pack 模式）。
  */
-@EventBusSubscriber(modid = CatoxidesBattleRebuildConstants.MODID)
 public class LowDurabilityDebuff {
 
-    private static final String TAG = "LowDurability";
+    private static final String TAG = "LowDurabilityDebuff";
 
     @SubscribeEvent
-    public static void onLivingIncomingDamage(LivingIncomingDamageEvent event) {
+    public void onLivingIncomingDamage(LivingIncomingDamageEvent event) {
         Entity attacker = event.getSource().getDirectEntity();
         if (!(attacker instanceof LivingEntity living)) {
             return;

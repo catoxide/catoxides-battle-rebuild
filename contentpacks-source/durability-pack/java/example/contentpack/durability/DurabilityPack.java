@@ -22,6 +22,8 @@ import java.util.List;
  */
 public class DurabilityPack implements ContentPack {
 
+    private ContentPackContext context;
+
     @Override
     public String getId() {
         return "durability_pack";
@@ -39,6 +41,7 @@ public class DurabilityPack implements ContentPack {
 
     @Override
     public void register(ContentPackContext context) {
+        this.context = context;
         // 注册配置（ModConfigSpec → toml，游戏内可编辑 + reload 生效）
         context.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON,
                 DurabilityConfig.SPEC, "durability-pack-common");
@@ -69,5 +72,10 @@ public class DurabilityPack implements ContentPack {
         com.catoxide.catoxidesbattlerebuild.core.durability.DurabilityDegradationRegistry
                 .register(new DegradationHandler());
         LogManager.serverInfo("DurabilityPack", "Degradation handler registered (Mending/Anvil/Crafting)");
+
+        // 注册低耐久衰减事件监听器（game bus：LivingIncomingDamageEvent 是游戏事件）
+        LowDurabilityDebuff debuff = new LowDurabilityDebuff();
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(debuff::onLivingIncomingDamage);
+        LogManager.serverInfo("DurabilityPack", "Low durability debuff registered");
     }
 }
