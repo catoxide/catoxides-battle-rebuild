@@ -9,7 +9,7 @@
 
 **方式一（推荐）：双击 exe（打包版）**
 
-`dist/ContentPack Editor.exe` 单文件便携版，双击即用，无需安装。
+`dist/ContentPack Editor 0.2.0.exe` 单文件便携版，双击即用，无需安装。
 
 - **放到项目目录里双击**（项目根或任意子目录）：自动找到 `contentpacks-source/`，零配置
 - 放别处双击：首次弹一次目录选择（选项目根），之后记住，也是零配置
@@ -104,13 +104,18 @@ npm start
    - **片段与拼图**：每个片段 = 一个原版结构模板（尺寸 + boxFills 整块填充 + fillBlocks 单方块 + jigsaw 块表：x/y/z、name、pool、target、joint、orientation 12 值、finalState、优先级）
    - **模板池**：池 → 元素（引用片段 + weight 1-150 + projection rigid/terrain_matching）+ fallback
    - **放置规则**：random_spread（spacing/separation/salt/frequency）+ 可选互斥区
-   - **3D 预览（双模式）**：
+   - **3D 预览（双模式，方块级体素 + 真实贴图）**：
       - **拼合生长（默认）**：按原版 jigsaw 规则把多个片段**自由拼合成整栋建筑**——从 startPool 随机抽起点，每个 jigsaw 按其 pool 抽模板，按 name/反向朝向/旋转匹配后放置，直到达到「最大片段」上限（`structureGrowth.js` 纯函数模拟，rng 可注入）。看**多片段自由组合的对准**是否合理；**🎲 重新生长** = 用新随机数再长一遍；图例显示每类片段实际放置次数 ×N，状态行「生长：N 片段 · M 个死端」（死端 = 无匹配目标 / 位置重叠）
       - **并排查看**：各片段并排摆放，看单个片段本体
-      - 交互：左键拖拽 = 轨道旋转、右键或 Shift+左键拖拽 = 平移、滚轮 = 缩放、**重置视角 = 固定角落**；图层开关（方块 / jigsaw 标记 / 网格）随时可关；右侧图例 = 每个片段单独显隐；自动旋转开关
+       - 渲染：**方块级体素**（boxFills/fillBlocks 展开为逐方块体素，`voxel.js`）+ **真实方块贴图**（从本地 `数据集/1.21.1/client/assets` 读取，不随包分发；缺失回退灰盒）
+       - **体素编辑**：左键点选方块（显示 id）→ 编辑栏换块 / **笔刷** 3×3 刷 / **切片** 隐藏 y>N / **清除编辑** 恢复定义
+       - **拼合诊断**（🩺 检查可生成性）：随机生长 N 次（默认 50）统计成功率 / 片段数分布 / 死端原因 / **体素重叠** / 占地尺寸；死端位置以**红色幽灵盒**标在 3D 中（图层可开关）
+      - 交互：左键拖拽 = 轨道旋转、右键或 Shift+左键拖拽 = 平移、滚轮 = 缩放、**重置视角 = 固定角落**；图层开关（方块 / jigsaw 标记 / 网格 / 幽灵盒）随时可关；右侧图例 = 每个片段单独显隐；自动旋转开关
+    - **结构导航**（片段与拼图页签内）：结构 → 片段 → jigsaw（契约徽标 ✓/⚠/✗）/ 池 → 元素 的多级折叠树，一眼看清整栋建筑的连接关系与问题点；jigsaw 行点击看详情，片段行内直接圈地
+    - **圈地读取**：「⛏ 圈地读取 (.nbt)」把游戏/工具导出的结构模板 .nbt 直接导入为新片段（或片段卡片上的「⛏ 圈地」替换该片段）——自动判别小端/大端，兼容 1.20.x 旧格式，jigsaw 方块实体数据完整保留
 3. **保存草稿 → 导出（暂存→包）→ 打包**（与实体同一套暂存体系）
 4. **导出原版数据**（结构编辑器独有按钮）：把当前蓝图**机械映射**为原版 4 类文件写入包目录：
-   - `assets/<ns>/structures/<piece>.nbt`（模板，jigsaw 写 nbtData 方块实体）
+   - `data/<ns>/structure/<piece>.nbt`（模板，**1.21.1 路径：data 目录 + structure 单数**，已对照原版 jar 验证；jigsaw 数据写 blocks[].nbt）
    - `data/<ns>/worldgen/template_pool/<pool>.json`
    - `data/<ns>/worldgen/structure/<structureId>.json`
    - `data/<ns>/worldgen/structure_set/<structureId>_set.json`
@@ -119,7 +124,8 @@ npm start
    示例包：`contentpacks-source/structure-example-pack/`（大厅+塔+自链走廊）。
 
 > 契约字段与取值严格对齐原版 1.21.1（`src/core/structureSchema.js`，保存/导出时全字段校验，
-> 非法值如基岩版 terrainAdaptation 会直接报错）。1.21.2+ 模板路径变化时只需改 `vanillaExport.js` 一处。
+> 非法值如基岩版 terrainAdaptation 会直接报错）。NBT 为 type-first 条目 + gzip + 小端 + DataVersion 3465，
+> 与 nbtlib 字节级 oracle 交叉验证（`test/fixtures/oracle-*.nbt`）。模板路径常量集中在 `vanillaExport.js` 一处。
 
 ---
 
@@ -130,7 +136,7 @@ npm start
 | 实体定义 | `entities/<id>.json` | `MobDefinitionParser` |
 | 部位配置 | `assets/<ns>/health_config/<id>.json` | `EntityBoneHealthConfig.load()` |
 | 结构蓝图（源格式） | `structures/<structureId>/blueprint.json` | 编辑器「导出原版数据」的输入 |
-| 结构模板 | `assets/<ns>/structures/<piece>.nbt` | 原版结构模板加载器 |
+| 结构模板 | `data/<ns>/structure/<piece>.nbt` | 原版结构模板加载器 |
 | 模板池 / 结构 / 结构集合 | `data/<ns>/worldgen/...` | 原版 worldgen 注册表（jigsaw 引擎） |
 | 打包产物 | `contentpacks/<包名>.jar` | `ContentPackLoader` |
 
@@ -152,8 +158,8 @@ npm start
 
 - 技术栈：Electron（Node + 原生 JS，无框架）+ Three.js（3D 预览，本地捆绑 `src/lib/three.module.js`）
 - 与主 mod 通信：纯文件契约（JSON/NBT），语言完全解耦
-- 已内置内容类型：实体（4 页签）、建筑结构（5 页签，含 3D 预览）
-- 后续规划：拖拽分配骨骼、schema 驱动（内容包贡献编辑页面）、loottable 模块、3D 预览增强（片段连接关系图 / 真实方块贴图）
+- 已内置内容类型：实体（4 页签）、建筑结构（5 页签，含 3D 体素预览 / 体素编辑 / 拼合诊断 / 结构导航 / 圈地读取）
+- 后续规划：拖拽分配骨骼、schema 驱动（内容包贡献编辑页面）、loottable 模块、游戏内圈地桥接（见 `design/STRUCTURE_BRIDGE_FEASIBILITY.md`）
 
 ---
 
@@ -171,13 +177,17 @@ tools/contentpack-editor/
 │   ├── app.js             # 全局状态 + 启动
 │   ├── core/              # 纯逻辑库（可独立测试）
 │   │   ├── structureSchema.js   # 建筑结构契约（原版对齐）+ 校验
-│   │   ├── nbt.js               # 小端 gzip NBT 读写（结构模板）
-│   │   ├── vanillaExport.js     # blueprint → 原版 4 类 jigsaw 数据文件
-│   │   └── structureGrowth.js   # 原版 jigsaw 生长模拟（纯函数，拼合预览用）
+│   │   ├── nbt.js               # 小端 gzip NBT 读写（type-first 条目，LE/BE 可选）
+│   │   ├── vanillaExport.js     # blueprint → 原版 4 类 jigsaw 数据文件（1.21.1 路径）
+│   │   ├── structureGrowth.js   # 原版 jigsaw 生长模拟（纯函数，拼合预览用）
+│   │   ├── regionImport.js      # 圈地读取：.nbt 结构模板 → 片段（LE/BE 自适应 + 旧格式）
+│   │   ├── structureDiagnostics.js # 拼合诊断（生长统计/重叠/契约检查，纯函数）
+│   │   ├── voxel.js             # boxFills/fillBlocks → 方块级体素（含 r0-r3 旋转）
+│   │   └── mcAssets.js          # 方块状态/贴图索引（读本地数据集，不重分发）
 │   ├── lib/
 │   │   ├── three.module.js      # Three.js（捆绑，3D 预览用）
 │   │   └── structurePreview.js  # 建筑结构 3D 预览（轨道相机/平移/拼合生长/图层/显隐）
 │   └── views/             # 视图组件（packList/entityList/entityEditor/structureList/structureEditor）
 ├── .scratch/              # 临时脚本（gitignore，不进版本库）
-└── test/                  # 测试（npm test = core.test.js + structure.test.js + structureGrowth.test.js）
+└── test/                  # 测试（npm test = nbt/core/structure/growth/diagnostics/voxel/regionImport 共 138 断言）
 ```
