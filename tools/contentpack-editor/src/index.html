@@ -260,6 +260,42 @@
           </div>
           <div id="structTree" class="struct-tree"></div>
         </div>
+        <!-- P9：单片 3D 编辑 = 片段编辑本体（选中片段 → 独立 3D 视图 + 笔刷/剖切） -->
+        <div class="card" id="pieceEditCard" style="margin-bottom:10px">
+          <div class="row" style="justify-content:space-between; margin-bottom:6px">
+            <h3 style="margin:0" data-i18n="structure.piece3d.title">🧱 片段 3D 编辑</h3>
+            <span class="note" data-i18n="structure.3d.hint">左键拖拽 = 旋转 · 右键/Shift拖拽 = 平移 · 滚轮 = 缩放</span>
+          </div>
+          <div class="row struct-toolbar" id="structEditBar">
+            <select id="selEditPiece" data-i18n-title="structure.3d.piecePh"></select>
+            <select id="selEditTool" title="">
+              <option value="none" data-i18n="structure.3d.edit.toolNone">工具：无（仅拖动）</option>
+              <option value="inspect" data-i18n="structure.3d.edit.toolInspect">工具：点选读取</option>
+              <option value="paint" data-i18n="structure.3d.edit.toolPaint">工具：笔刷</option>
+              <option value="erase" data-i18n="structure.3d.edit.toolErase">工具：擦除(空气)</option>
+              <option value="placeholder" data-i18n="structure.3d.edit.toolPlaceholder">工具：占位符 #empty</option>
+            </select>
+            <button class="btn ghost small" id="btnBlockJigsaw" data-i18n-title="structure.3d.edit.jigsawBtnTip">🧩 <span data-i18n="structure.3d.edit.jigsawBtn">拼图方块</span></button>
+            <button class="btn ghost small" id="btnBlockVoid" data-i18n-title="structure.3d.edit.voidBtnTip">⬚ <span data-i18n="structure.3d.edit.voidBtn">结构空位</span></button>
+            <div class="block-search" id="blockSearchWrap">
+              <input id="inpEditBlock" value="minecraft:stone_bricks" style="width:210px" data-i18n-ph="structure.3d.edit.searchPh" placeholder="搜索方块（ID 子串）…">
+              <div id="blockSearchList" class="block-search-list"></div>
+            </div>
+            <span class="note" id="blockSourceNote"></span>
+            <label class="chk" data-i18n="structure.3d.edit.brushSize">笔刷</label>
+            <select id="selBrushSize"><option>1</option><option selected>3</option><option>5</option></select>
+            <label class="chk" data-i18n-title="structure.3d.edit.sliceTip"> <span data-i18n="structure.3d.edit.slice">剖切</span></label>
+            <select id="selSliceAxis">
+              <option value="off" data-i18n="structure.3d.edit.sliceOff">关</option>
+              <option value="x">X</option><option value="y">Y</option><option value="z">Z</option>
+            </select>
+            <input id="inpSliceI" type="range" min="0" max="7" value="0" style="width:110px">
+            <span class="note" id="sliceILabel">0</span>
+            <button class="btn ghost small" id="btnEditUndo" data-i18n="structure.3d.edit.undo">撤销编辑</button>
+            <span class="note" id="editInfo"></span>
+          </div>
+          <div id="piece3dWrap"><canvas id="pieceCanvas" width="800" height="420"></canvas></div>
+        </div>
         <div id="piecesContainer"></div>
       </div>
 
@@ -299,9 +335,7 @@
           <select id="sel3dMode" title="">
             <option value="growth" data-i18n="structure.3d.modeGrowth">拼合生长</option>
             <option value="side" data-i18n="structure.3d.modeSide">并排查看</option>
-            <option value="piece" data-i18n="structure.3d.modePiece">单片编辑</option>
           </select>
-          <select id="sel3dPiece" style="display:none" data-i18n-title="structure.3d.piecePh"></select>
           <button class="btn ghost small" id="btn3dRegrow" title="">🎲 <span data-i18n="structure.3d.regrow">重新生长</span></button>
           <label class="chk" data-i18n="structure.3d.maxPieces">最大片段</label><input id="inp3dMax" type="number" min="1" max="128" value="24" style="width:64px">
           <button class="btn ghost small" id="btn3dReset" data-i18n="structure.3d.reset">重置视角</button>
@@ -315,33 +349,6 @@
           <span class="note" style="margin-left:auto;opacity:.55">v0.2</span>
         </div>
         <div class="card" id="diagReport" style="display:none; margin-top:8px"></div>
-        <div class="row struct-toolbar" id="structEditBar" style="display:none">
-          <select id="selEditTool" title="">
-            <option value="none" data-i18n="structure.3d.edit.toolNone">工具：无（仅拖动）</option>
-            <option value="inspect" data-i18n="structure.3d.edit.toolInspect">工具：点选读取</option>
-            <option value="paint" data-i18n="structure.3d.edit.toolPaint">工具：笔刷</option>
-            <option value="erase" data-i18n="structure.3d.edit.toolErase">工具：擦除(空气)</option>
-            <option value="placeholder" data-i18n="structure.3d.edit.toolPlaceholder">工具：占位符 #empty</option>
-          </select>
-          <button class="btn ghost small" id="btnBlockJigsaw" data-i18n-title="structure.3d.edit.jigsawBtnTip">🧩 <span data-i18n="structure.3d.edit.jigsawBtn">拼图方块</span></button>
-          <button class="btn ghost small" id="btnBlockVoid" data-i18n-title="structure.3d.edit.voidBtnTip">⬚ <span data-i18n="structure.3d.edit.voidBtn">结构空位</span></button>
-          <div class="block-search" id="blockSearchWrap">
-            <input id="inpEditBlock" value="minecraft:stone_bricks" style="width:210px" data-i18n-ph="structure.3d.edit.searchPh" placeholder="搜索方块（ID 子串）…">
-            <div id="blockSearchList" class="block-search-list"></div>
-          </div>
-          <span class="note" id="blockSourceNote"></span>
-          <label class="chk" data-i18n="structure.3d.edit.brushSize">笔刷</label>
-          <select id="selBrushSize"><option>1</option><option selected>3</option><option>5</option></select>
-          <label class="chk" data-i18n-title="structure.3d.edit.sliceTip"> <span data-i18n="structure.3d.edit.slice">剖切</span></label>
-          <select id="selSliceAxis">
-            <option value="off" data-i18n="structure.3d.edit.sliceOff">关</option>
-            <option value="x">X</option><option value="y">Y</option><option value="z">Z</option>
-          </select>
-          <input id="inpSliceI" type="range" min="0" max="7" value="0" style="width:110px">
-          <span class="note" id="sliceILabel">0</span>
-          <button class="btn ghost small" id="btnEditUndo" data-i18n="structure.3d.edit.undo">撤销编辑</button>
-          <span class="note" id="editInfo"></span>
-        </div>
         <div class="struct-3d-layout">
           <div id="struct3dWrap"><canvas id="structCanvas" width="800" height="520"></canvas></div>
           <div class="struct-legend">

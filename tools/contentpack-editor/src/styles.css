@@ -383,6 +383,13 @@ code { background: #45475a; padding: 1px 5px; border-radius: 4px; font-size: 12p
 }
 #structCanvas { width: 100%; height: 520px; display: block; cursor: grab; touch-action: none; }
 #structCanvas:active { cursor: grabbing; }
+/* P9 片段 3D 编辑画布（片段与拼图页签） */
+#piece3dWrap {
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  background: #1e1e2e; line-height: 0;
+}
+#pieceCanvas { width: 100%; height: 420px; display: block; cursor: grab; touch-action: none; }
+#pieceCanvas:active { cursor: grabbing; }
 .struct-hud { user-select: none; }
 .struct-legend {
   background: var(--card); border: 1px solid var(--border); border-radius: 10px;

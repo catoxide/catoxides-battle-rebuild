@@ -90,9 +90,9 @@ window.StructureEditor = (function () {
         renderLegend(tab);
         schedulePreviewUpdate(tab);
         if (window.applyEditorVisibility) window.applyEditorVisibility();
-        // 竞态修复：用户可能在结构还在异步加载时就点了 3D 页签
-        //（那时 activeTab() 还是 null，预览没拿到数据）→ 这里补跑一次 3D 初始化
-        if (activeStab === '3d') switchTab('3d');
+        // 竞态修复：用户可能在结构还在异步加载时就点了 3D/片段页签
+        //（那时 activeTab() 还是 null，预览没拿到数据）→ 这里补跑一次初始化
+        if (activeStab === '3d' || activeStab === 'pieces') switchTab(activeStab);
     }
 
     function closeActiveTab() {
@@ -102,6 +102,7 @@ window.StructureEditor = (function () {
         const idx = tabs.findIndex((x) => x.uid === activeUid);
         tabs.splice(idx, 1);
         stopPreview();
+        if (ppv) ppv.stop();
         if (tabs.length === 0) {
             activeUid = null;
             document.getElementById('structureEditorContent').classList.add('hidden');
@@ -218,6 +219,7 @@ window.StructureEditor = (function () {
                     </h3>
                     <div class="row">
                         <button class="btn ghost small pc-eye" title="${t('structure.3d.pieceHide')}">👁</button>
+                        <button class="btn ghost small pc-3d" title="${t('structure.piece3d.btnTip')}">🧱 ${t('structure.piece3d.btn')}</button>
                         <button class="btn ghost small pc-region" title="${t('structure.pieceRegionTitle')}">⛏ ${t('structure.pieceRegion')}</button>
                         <button class="btn ghost small pc-del" style="color:var(--err)">${t('dyn.delete')}</button>
                     </div>
@@ -263,6 +265,27 @@ window.StructureEditor = (function () {
                 renderLegend(tab);
                 schedulePreviewUpdate(tab);
             });
+            // P9：🧱 → 在上方 3D 编辑区打开该片段
+            card.querySelector('.pc-3d').addEventListener('click', () => {
+                const tab = activeTab();
+                const name = (card.querySelector('.pc-name').value || '').trim();
+                if (!name) return;
+                const sel = document.getElementById('selEditPiece');
+                if ([...sel.options].some((o) => o.value === name)) sel.value = name;
+                const cardEl = document.getElementById('pieceEditCard');
+                if (cardEl) cardEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                (async () => {
+                    const p2 = await ensurePiecePreview();
+                    if (!p2) return;
+                    p2.start();
+                    if (tab) {
+                        p2.setSlice(null);
+                        document.getElementById('selSliceAxis').value = 'off';
+                        document.getElementById('inpSliceI').value = '0';
+                        updatePiecePreview(tab);
+                    }
+                })();
+            });
             card.querySelector('.pc-region').addEventListener('click', () => importRegionIntoPiece(activeTab(), p));
             card.querySelector('.pc-eye').addEventListener('click', () => {
                 const tab = activeTab();
@@ -298,6 +321,8 @@ window.StructureEditor = (function () {
             wireAllRows(card);
             box.appendChild(card);
         }
+        // P9：片段列表变化 → 同步 3D 编辑区下拉
+        syncPieceSelect({ bp });
         function bxFillChanged() {
             const tab = activeTab();
             collectInto(tab);
@@ -660,6 +685,8 @@ window.StructureEditor = (function () {
     let pv = null;
     let previewPromise = null;
     let previewTimer = null;
+    let ppv = null;              // P9 片段 3D 编辑预览器（片段与拼图页签，#pieceCanvas）
+    let ppvPromise = null;
 
     async function ensurePreview() {
         if (pv) return pv;
@@ -678,6 +705,24 @@ window.StructureEditor = (function () {
         return previewPromise;
     }
 
+    /** P9 片段 3D 编辑预览器（独立画布/实例，与结构预览互不干扰） */
+    async function ensurePiecePreview() {
+        if (ppv) return ppv;
+        if (!ppvPromise) {
+            ppvPromise = import('../lib/structurePreview.js').then((mod) => {
+                const canvas = document.getElementById('pieceCanvas');
+                ppv = mod.createStructurePreview(canvas);
+                window.__piecePreview = ppv; // 调试/测试钩子
+                return ppv;
+            }).catch((e) => {
+                console.error('片段 3D 编辑模块加载失败:', e);
+                showError(t('structure.3d.fail') + ' ' + e.message);
+                return null;
+            });
+        }
+        return ppvPromise;
+    }
+
     /** 运行 jigsaw 生长模拟（window.StructureGrowth，见 core/structureGrowth.js） */
     function runGrowth(bp) {
         const G = window.StructureGrowth;
@@ -694,15 +739,15 @@ window.StructureEditor = (function () {
         return document.getElementById('sel3dMode').value;
     }
 
-    /** P9 当前选中的片段（单片编辑模式） */
+    /** P9 当前选中的片段（片段 3D 编辑） */
     function getSelectedPiece(tab) {
-        const sel = document.getElementById('sel3dPiece');
+        const sel = document.getElementById('selEditPiece');
         const pieces = (tab && tab.bp && tab.bp.pieces) || [];
         return pieces.find((p) => p.name === sel.value) || pieces[0] || null;
     }
-    /** 同步片段下拉（保留当前选择） */
+    /** 同步片段下拉（保留当前选择；片段增删/改名后调用） */
     function syncPieceSelect(tab) {
-        const sel = document.getElementById('sel3dPiece');
+        const sel = document.getElementById('selEditPiece');
         const pieces = (tab && tab.bp && tab.bp.pieces) || [];
         const cur = sel.value;
         sel.innerHTML = '';
@@ -713,10 +758,6 @@ window.StructureEditor = (function () {
             sel.appendChild(o);
         }
         if (pieces.some((p) => p.name === cur)) sel.value = cur;
-        const inPieceMode = previewMode() === 'piece';
-        sel.style.display = inPieceMode ? '' : 'none';
-        // 编辑栏只在单片编辑模式出现（笔刷/点选/剖切 = 对单个片段的编辑）
-        document.getElementById('structEditBar').style.display = inPieceMode ? '' : 'none';
     }
     /** 剖切滑块范围跟随所选片段的尺寸 */
     function syncSliceControl(tab) {
@@ -733,27 +774,22 @@ window.StructureEditor = (function () {
         document.getElementById('sliceILabel').textContent = slider.value;
     }
     function sliceChange() {
-        if (!pv) return;
+        if (!ppv) return;
         const tab = activeTab();
         syncSliceControl(tab);
         const axis = document.getElementById('selSliceAxis').value;
         const i = parseInt(document.getElementById('inpSliceI').value, 10) || 0;
-        if (axis === 'off') pv.setSlice(null);
-        else pv.setSlice({ axis, index: i });
+        if (axis === 'off') ppv.setSlice(null);
+        else ppv.setSlice({ axis, index: i });
     }
 
-    /** 刷新 3D 预览（拼合生长 / 并排 / 单片编辑），tab._growth 缓存生长结果 */
+    /** 刷新结构 3D 预览（3D 页签：拼合生长 / 并排），tab._growth 缓存生长结果 */
     function updatePreview(tab, regrow = false) {
         if (!pv || !tab) return;
         if (activeStab !== '3d') return;
         collectInto(tab);
-        syncPieceSelect(tab);
         if (previewMode() === 'side') {
             pv.setBlueprint(tab.bp, { hiddenPieces: tab.hiddenPieces });
-        } else if (previewMode() === 'piece') {
-            const piece = getSelectedPiece(tab);
-            if (piece) pv.setPiece(piece);
-            syncSliceControl(tab);
         } else {
             if (regrow || !tab._growth) tab._growth = runGrowth(tab.bp);
             const g = tab._growth;
@@ -766,6 +802,29 @@ window.StructureEditor = (function () {
             }
         }
         renderLegend(tab);
+    }
+
+    /** P9 编辑状态提示（片段 3D 编辑区） */
+    function updateEditInfo() {
+        const el = document.getElementById('editInfo');
+        if (!el) return;
+        if (!ppv || !ppv.debugStats) { el.textContent = ''; return; }
+        const st = ppv.debugStats();
+        el.textContent = st.editedPieces.length
+            ? tf('structure.3d.edit.edited', { n: st.editedPieces.length, p: st.editedPieces.join(', ') })
+            : t('structure.3d.edit.noEdit');
+    }
+
+    /** P9 刷新片段 3D 编辑（片段与拼图页签：选中片段 → 独立 3D 视图） */
+    function updatePiecePreview(tab) {
+        if (!ppv || !tab) return;
+        if (activeStab !== 'pieces') return;
+        collectInto(tab);
+        syncPieceSelect(tab);
+        const piece = getSelectedPiece(tab);
+        if (piece) ppv.setPiece(piece);
+        syncSliceControl(tab);
+        updateEditInfo();
     }
 
     /** P5 死端幽灵盒（受 chk3dGhosts 开关控制） */
@@ -781,11 +840,14 @@ window.StructureEditor = (function () {
     function schedulePreviewUpdate(tab) {
         clearTimeout(previewTimer);
         previewTimer = setTimeout(() => {
-            if (activeStab !== '3d') return;
             const t2 = activeTab();
             if (!t2) return;
-            t2._growth = null; // 数据变了 → 重新生长
-            updatePreview(t2);
+            if (activeStab === '3d') {
+                t2._growth = null; // 数据变了 → 重新生长
+                updatePreview(t2);
+            } else if (activeStab === 'pieces') {
+                updatePiecePreview(t2);
+            }
         }, 250);
     }
 
@@ -846,19 +908,23 @@ window.StructureEditor = (function () {
                 p.setLayer('grid', document.getElementById('chk3dGrid').checked);
                 p.setAutoRotate(document.getElementById('chk3dRotate').checked);
                 p.start();
-                if (window.loadBlockIdList) window.loadBlockIdList();
-                if (document.getElementById('editInfo')) {
-                    const st = p.debugStats ? p.debugStats() : { editedPieces: [] };
-                    document.getElementById('editInfo').textContent = st.editedPieces.length
-                        ? tf('structure.3d.edit.edited', { n: st.editedPieces.length, p: st.editedPieces.join(', ') })
-                        : t('structure.3d.edit.noEdit');
-                }
                 const tab = activeTab();
                 if (tab) updatePreview(tab);
             })();
-        } else {
-            stopPreview();
+        } else if (name === 'pieces') {
+            // P9 片段 3D 编辑：进入页签 → 实例化片段预览器并加载选中片段
+            (async () => {
+                const p = await ensurePiecePreview();
+                if (!p) return;
+                p.start();
+                if (window.loadBlockIdList) window.loadBlockIdList();
+                const tab = activeTab();
+                if (tab) updatePiecePreview(tab);
+            })();
         }
+        // 不在的页签停掉对应预览器（省渲染循环）
+        if (name !== '3d') stopPreview();
+        if (name !== 'pieces' && ppv) ppv.stop();
         void prev;
     }
 
@@ -868,17 +934,25 @@ window.StructureEditor = (function () {
      * jigsaw 位置受保护；占位符 #* 原样保留（导出时转 air）
      */
     function applyVoxelEdits(tab) {
-        if (!pv || !tab || !window.Voxel || !window.Voxel.mergePieceEdits) return 0;
-        const st = pv.debugStats ? pv.debugStats() : { editedPieces: [] };
+        if (!tab || !window.Voxel || !window.Voxel.mergePieceEdits) return 0;
+        // P9 起编辑主要发生在片段 3D 编辑（ppv）；pv（结构预览）保留兼容
+        const previews = [ppv, pv].filter(Boolean);
+        if (!previews.length) return 0;
         let n = 0;
         const pieces = tab.bp.pieces || [];
-        for (const name of st.editedPieces) {
-            const i = pieces.findIndex((p) => p.name === name);
-            if (i < 0) continue;
-            const map = pv.getPieceVoxelMap(name);
-            if (!map) continue;
-            const merged = window.Voxel.mergePieceEdits(pieces[i], map);
-            if (merged !== pieces[i]) { pieces[i] = merged; n++; }
+        const seen = new Set();
+        for (const p of previews) {
+            const st = p.debugStats ? p.debugStats() : { editedPieces: [] };
+            for (const name of st.editedPieces) {
+                if (seen.has(name)) continue;
+                seen.add(name);
+                const i = pieces.findIndex((x) => x.name === name);
+                if (i < 0) continue;
+                const map = p.getPieceVoxelMap(name);
+                if (!map) continue;
+                const merged = window.Voxel.mergePieceEdits(pieces[i], map);
+                if (merged !== pieces[i]) { pieces[i] = merged; n++; }
+            }
         }
         return n;
     }
@@ -1026,14 +1100,14 @@ window.StructureEditor = (function () {
             const tab = activeTab();
             if (tab && activeStab === '3d') updatePreview(tab);
         });
-        // P9 单片编辑：切换片段 → 重建单片视图
-        document.getElementById('sel3dPiece').addEventListener('change', () => {
+        // P9 片段 3D 编辑：切换片段 → 重建单片视图（重置剖切）
+        document.getElementById('selEditPiece').addEventListener('change', () => {
             const tab = activeTab();
-            if (tab && activeStab === '3d' && previewMode() === 'piece') {
-                if (pv) pv.setSlice(null);
+            if (tab && activeStab === 'pieces') {
+                if (ppv) ppv.setSlice(null);
                 document.getElementById('selSliceAxis').value = 'off';
                 document.getElementById('inpSliceI').value = '0';
-                updatePreview(tab);
+                updatePiecePreview(tab);
             }
         });
         document.getElementById('btn3dRegrow').addEventListener('click', () => {
@@ -1105,32 +1179,24 @@ window.StructureEditor = (function () {
                 ${errLine}`;
         }
 
-        // ===== 3D 体素编辑（P3） =====
-        const editInfoEl = document.getElementById('editInfo');
-        function updateEditInfo() {
-            if (!pv || !pv.debugStats) { editInfoEl.textContent = ''; return; }
-            const st = pv.debugStats();
-            editInfoEl.textContent = st.editedPieces.length
-                ? tf('structure.3d.edit.edited', { n: st.editedPieces.length, p: st.editedPieces.join(', ') })
-                : t('structure.3d.edit.noEdit');
-        }
+        // ===== 3D 体素编辑（P9：片段 3D 编辑画布 #pieceCanvas；updateEditInfo 在模块作用域） =====
         function brushSize() { return parseInt(document.getElementById('selBrushSize').value, 10) || 1; }
 
         // 单击（非拖拽）→ 应用当前工具；与轨道拖拽共存（移动>4px 或时长>450ms 视为拖拽）
-        const canvas = document.getElementById('structCanvas');
+        const canvas = document.getElementById('pieceCanvas');
         let editDown = null;
         canvas.addEventListener('pointerdown', (e) => {
             if (e.button === 0) editDown = { x: e.clientX, y: e.clientY, t: Date.now() };
         });
         canvas.addEventListener('pointerup', (e) => {
-            if (!editDown || !pv) { editDown = null; return; }
+            if (!editDown || !ppv) { editDown = null; return; }
             const moved = Math.hypot(e.clientX - editDown.x, e.clientY - editDown.y);
             const dt = Date.now() - editDown.t;
             editDown = null;
             if (e.button !== 0 || moved > 4 || dt > 450) return;
             const tool = document.getElementById('selEditTool').value;
             if (tool === 'none') return;
-            const pick = pv.pickVoxel(e.clientX, e.clientY);
+            const pick = ppv.pickVoxel(e.clientX, e.clientY);
             if (!pick) return;
             const inp = document.getElementById('inpEditBlock');
             const blockId = (inp.value || '').trim() || 'minecraft:stone_bricks';
@@ -1139,13 +1205,13 @@ window.StructureEditor = (function () {
                 showStatus(tf('structure.3d.edit.picked', { id: pick.blockId, p: pick.piece }), true);
             } else {
                 const bid = tool === 'erase' ? 'minecraft:air' : (tool === 'placeholder' ? '#empty' : blockId);
-                pv.brushVoxel(pick, bid, brushSize()).then(() => updateEditInfo());
+                ppv.brushVoxel(pick, bid, brushSize()).then(() => updateEditInfo());
             }
         });
         document.getElementById('selEditTool').addEventListener('change', updateEditInfo);
         document.getElementById('btnEditUndo').addEventListener('click', () => {
-            if (!pv) return;
-            pv.clearEdits().then(() => {
+            if (!ppv) return;
+            ppv.clearEdits().then(() => {
                 updateEditInfo();
                 showStatus(t('structure.3d.edit.undoDone'), true);
             });
