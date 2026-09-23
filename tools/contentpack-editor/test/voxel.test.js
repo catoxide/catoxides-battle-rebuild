@@ -71,5 +71,78 @@ console.log('=== 5. 写回 ===');
     ok('toFillBlocks 字段', fb[0].x === 0 && fb[0].y === 0 && fb[0].z === 0 && fb[0].block === 'minecraft:stone');
 }
 
+console.log('=== 6. 剖切（P9 cutOf）===');
+{
+    // 5x1x1 长条 x=0..4，全部 stone；(2,0,0) 换成 dirt 标记切片层
+    const p = {
+        name: 't', size: [5, 1, 1],
+        boxFills: [{ from: [0, 0, 0], to: [4, 0, 0], block: 'minecraft:stone' }],
+        fillBlocks: [{ x: 2, y: 0, z: 0, block: 'minecraft:dirt' }],
+    };
+    const m = V.expandPiece(p);
+    // 相机在 +x 侧：隐藏 x>2，保留 x<=2（含切片层 x=2）
+    const cutPos = V.cutOf(m, { axis: 'x', index: 2 }, 1);
+    ok('camSide+1 隐藏 x>2（剩 0,1,2）', cutPos.size === 3, 'got ' + cutPos.size);
+    ok('切片层恒显示', cutPos.has('2,0,0'));
+    // 相机在 -x 侧：隐藏 x<2，保留 x>=2（2,3,4）
+    const cutNeg = V.cutOf(m, { axis: 'x', index: 2 }, -1);
+    ok('camSide-1 隐藏 x<2（剩 2,3,4）', cutNeg.size === 3, 'got ' + cutNeg.size);
+    ok('切片层在负侧也显示', cutNeg.has('2,0,0'));
+    // null → 原表引用
+    ok('null slice 返回原表', V.cutOf(m, null, 1) === m);
+    // y 轴：2 层高
+    const p2 = { name: 't', size: [1, 3, 1], boxFills: [{ from: [0, 0, 0], to: [0, 2, 0], block: 'minecraft:stone' }], fillBlocks: [] };
+    const cutY = V.cutOf(V.expandPiece(p2), { axis: 'y', index: 1 }, -1);
+    ok('y 轴切片保留 y>=1（2 层）', cutY.size === 2, 'got ' + cutY.size);
+}
+
+console.log('=== 7. 编辑写回（P9 mergePieceEdits）===');
+{
+    // 7a. 无差异 → 同引用
+    const p = {
+        name: 't', size: [2, 1, 1],
+        boxFills: [{ from: [0, 0, 0], to: [1, 0, 0], block: 'minecraft:stone' }],
+        fillBlocks: [],
+        jigsaws: [],
+    };
+    ok('无差异返回同引用', V.mergePieceEdits(p, V.expandPiece(p)) === p);
+
+    // 7b. 差异只落 fillBlocks 区域（新增块）→ boxFills 保留
+    const m1 = V.expandPiece(p);
+    m1.set('0,1,0', 'minecraft:planks');
+    const r1 = V.mergePieceEdits(p, m1);
+    ok('新增块 → boxFills 保留', r1 !== p && r1.boxFills.length === 1, JSON.stringify(r1.boxFills));
+    ok('新增块进 fillBlocks', r1.fillBlocks.length === 1 && r1.fillBlocks[0].block === 'minecraft:planks' && r1.fillBlocks[0].y === 1);
+
+    // 7c. 差异触及 boxFills（改色）→ 整片扁平化
+    const m2 = V.expandPiece(p);
+    m2.set('0,0,0', 'minecraft:dirt');
+    const r2 = V.mergePieceEdits(p, m2);
+    ok('触及 boxFills → 扁平化 boxFills=[]', r2 !== p && r2.boxFills.length === 0);
+    ok('扁平化后 fillBlocks 完整（2 块，1 改色）', r2.fillBlocks.length === 2, JSON.stringify(r2.fillBlocks));
+    const dirt = r2.fillBlocks.find((b) => b.x === 0 && b.y === 0);
+    ok('改色生效', dirt && dirt.block === 'minecraft:dirt');
+
+    // 7d. 删除 boxFills 内的块（air）→ 扁平化且少 1 块
+    const m3 = V.expandPiece(p);
+    m3.delete('1,0,0');
+    const r3 = V.mergePieceEdits(p, m3);
+    ok('删 boxFills 块 → 扁平化剩 1 块', r3.boxFills.length === 0 && r3.fillBlocks.length === 1, JSON.stringify(r3.fillBlocks));
+
+    // 7e. jigsaw 位置保护
+    const pJ = {
+        name: 't', size: [2, 1, 1],
+        boxFills: [{ from: [0, 0, 0], to: [1, 0, 0], block: 'minecraft:stone' }],
+        fillBlocks: [],
+        jigsaws: [{ x: 1, y: 0, z: 0, name: 'j', target: 't', pool: 'p', orientation: 'up' }],
+    };
+    // boxFill 覆盖 (1,0,0) 但 jigsaw 也在那 → 展开时 fillBlocks 无该位（expandPiece 不排 jigsaw，
+    // 契约层校验冲突；此处验证 merge 不会把 jigsaw 位置写进 fillBlocks）
+    const mJ = V.expandPiece(pJ);
+    mJ.set('1,0,0', 'minecraft:planks');
+    const rJ = V.mergePieceEdits(pJ, mJ);
+    ok('jigsaw 位置不被写入', !rJ.fillBlocks.some((b) => b.x === 1 && b.y === 0 && b.z === 0 && b.block === 'minecraft:planks'), JSON.stringify(rJ.fillBlocks));
+}
+
 console.log('\n体素测试: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

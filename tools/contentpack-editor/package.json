@@ -5,7 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node test/nbt.test.js && node test/core.test.js && node test/structure.test.js && node test/structureGrowth.test.js && node test/structureDiagnostics.test.js && node test/voxel.test.js && node test/regionImport.test.js",
+    "test": "node test/nbt.test.js && node test/core.test.js && node test/structure.test.js && node test/structureGrowth.test.js && node test/structureDiagnostics.test.js && node test/voxel.test.js && node test/regionImport.test.js && node test/mcBlocks.test.js",
     "pack": "electron-builder --win portable"
   },
   "author": "catoxide",

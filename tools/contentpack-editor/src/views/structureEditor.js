@@ -694,13 +694,66 @@ window.StructureEditor = (function () {
         return document.getElementById('sel3dMode').value;
     }
 
-    /** 刷新 3D 预览（拼合生长 / 并排），tab._growth 缓存生长结果 */
+    /** P9 当前选中的片段（单片编辑模式） */
+    function getSelectedPiece(tab) {
+        const sel = document.getElementById('sel3dPiece');
+        const pieces = (tab && tab.bp && tab.bp.pieces) || [];
+        return pieces.find((p) => p.name === sel.value) || pieces[0] || null;
+    }
+    /** 同步片段下拉（保留当前选择） */
+    function syncPieceSelect(tab) {
+        const sel = document.getElementById('sel3dPiece');
+        const pieces = (tab && tab.bp && tab.bp.pieces) || [];
+        const cur = sel.value;
+        sel.innerHTML = '';
+        for (const p of pieces) {
+            const o = document.createElement('option');
+            o.value = p.name;
+            o.textContent = p.name + '  (' + (p.size || [0, 0, 0]).join('×') + ')';
+            sel.appendChild(o);
+        }
+        if (pieces.some((p) => p.name === cur)) sel.value = cur;
+        const inPieceMode = previewMode() === 'piece';
+        sel.style.display = inPieceMode ? '' : 'none';
+        // 编辑栏只在单片编辑模式出现（笔刷/点选/剖切 = 对单个片段的编辑）
+        document.getElementById('structEditBar').style.display = inPieceMode ? '' : 'none';
+    }
+    /** 剖切滑块范围跟随所选片段的尺寸 */
+    function syncSliceControl(tab) {
+        const axisSel = document.getElementById('selSliceAxis');
+        const slider = document.getElementById('inpSliceI');
+        const piece = getSelectedPiece(tab);
+        const axis = axisSel.value;
+        if (piece && axis !== 'off') {
+            const [w, h, d] = piece.size || [1, 1, 1];
+            const max = Math.max(0, (axis === 'x' ? w : axis === 'y' ? h : d) - 1);
+            slider.max = String(max);
+            if (+slider.value > max) slider.value = String(max);
+        }
+        document.getElementById('sliceILabel').textContent = slider.value;
+    }
+    function sliceChange() {
+        if (!pv) return;
+        const tab = activeTab();
+        syncSliceControl(tab);
+        const axis = document.getElementById('selSliceAxis').value;
+        const i = parseInt(document.getElementById('inpSliceI').value, 10) || 0;
+        if (axis === 'off') pv.setSlice(null);
+        else pv.setSlice({ axis, index: i });
+    }
+
+    /** 刷新 3D 预览（拼合生长 / 并排 / 单片编辑），tab._growth 缓存生长结果 */
     function updatePreview(tab, regrow = false) {
         if (!pv || !tab) return;
         if (activeStab !== '3d') return;
         collectInto(tab);
+        syncPieceSelect(tab);
         if (previewMode() === 'side') {
             pv.setBlueprint(tab.bp, { hiddenPieces: tab.hiddenPieces });
+        } else if (previewMode() === 'piece') {
+            const piece = getSelectedPiece(tab);
+            if (piece) pv.setPiece(piece);
+            syncSliceControl(tab);
         } else {
             if (regrow || !tab._growth) tab._growth = runGrowth(tab.bp);
             const g = tab._growth;
@@ -810,21 +863,22 @@ window.StructureEditor = (function () {
     }
 
     /**
-     * 把 3D 体素编辑（点选/笔刷）写回蓝图片段：
-     * 被编辑过的片段 → fillBlocks（逐块）+ boxFills 清空；占位符 #* 原样保留（导出时转 air）
+     * 把 3D 体素编辑（点选/笔刷）写回蓝图片段（P9 起用 Voxel.mergePieceEdits）：
+     * 差异写 fillBlocks（覆盖/删除）；差异触及 boxFills 区域才整片扁平化；
+     * jigsaw 位置受保护；占位符 #* 原样保留（导出时转 air）
      */
     function applyVoxelEdits(tab) {
-        if (!pv || !tab || !window.Voxel) return 0;
+        if (!pv || !tab || !window.Voxel || !window.Voxel.mergePieceEdits) return 0;
         const st = pv.debugStats ? pv.debugStats() : { editedPieces: [] };
         let n = 0;
+        const pieces = tab.bp.pieces || [];
         for (const name of st.editedPieces) {
-            const piece = (tab.bp.pieces || []).find((p) => p.name === name);
-            if (!piece) continue;
+            const i = pieces.findIndex((p) => p.name === name);
+            if (i < 0) continue;
             const map = pv.getPieceVoxelMap(name);
             if (!map) continue;
-            piece.boxFills = [];
-            piece.fillBlocks = window.Voxel.toFillBlocks(map);
-            n++;
+            const merged = window.Voxel.mergePieceEdits(pieces[i], map);
+            if (merged !== pieces[i]) { pieces[i] = merged; n++; }
         }
         return n;
     }
@@ -972,6 +1026,16 @@ window.StructureEditor = (function () {
             const tab = activeTab();
             if (tab && activeStab === '3d') updatePreview(tab);
         });
+        // P9 单片编辑：切换片段 → 重建单片视图
+        document.getElementById('sel3dPiece').addEventListener('change', () => {
+            const tab = activeTab();
+            if (tab && activeStab === '3d' && previewMode() === 'piece') {
+                if (pv) pv.setSlice(null);
+                document.getElementById('selSliceAxis').value = 'off';
+                document.getElementById('inpSliceI').value = '0';
+                updatePreview(tab);
+            }
+        });
         document.getElementById('btn3dRegrow').addEventListener('click', () => {
             const tab = activeTab();
             if (tab) { tab._growth = null; updatePreview(tab, true); }
@@ -1087,34 +1151,67 @@ window.StructureEditor = (function () {
             });
         });
 
-        // 3D 切片
-        function clipChange() {
-            if (!pv) return;
-            const axis = document.getElementById('selClipAxis').value;
-            if (axis === 'off') { pv.setClip(null); return; }
-            const dir = parseInt(document.getElementById('selClipDir').value, 10) === -1 ? -1 : 1;
-            const th = parseInt(document.getElementById('inpClipT').value, 10) || 0;
-            pv.setClip({ axis, dir, threshold: th });
-        }
-        document.getElementById('selClipAxis').addEventListener('change', clipChange);
-        document.getElementById('selClipDir').addEventListener('change', clipChange);
-        document.getElementById('inpClipT').addEventListener('input', clipChange);
+        // P9 剖切（编辑切片）：轴 + 层索引；pv.setClip（阈值切面）保留给 API/E2E
+        document.getElementById('selSliceAxis').addEventListener('change', sliceChange);
+        document.getElementById('inpSliceI').addEventListener('input', sliceChange);
 
-        // 方块 ID 建议列表（vanilla 方块，懒加载一次）
+        // ===== P10 方块选择器：固定快捷按钮（结构独有方块）+ 实时搜索 =====
+        const blockInp = document.getElementById('inpEditBlock');
+        const blockListEl = document.getElementById('blockSearchList');
+        let blockIds = [];
+        let blockMeta = null;
         let blockListLoaded = false;
-        window.loadBlockIdList = async function loadBlockIdList() {
-            if (blockListLoaded || !window.api || !window.api.mcBlockList) return;
-            const res = await window.api.mcBlockList();
+
+        window.loadBlockIdList = async function loadBlockIdList(force) {
+            if (!window.api || !window.api.mcBlockList) return;
+            if (blockListLoaded && !force) return;
+            const res = await window.api.mcBlockList({ force: !!force });
             if (!res.ok || !Array.isArray(res.data)) return;
-            const dl = document.getElementById('blockIdList');
-            dl.innerHTML = '';
-            for (const id of res.data) {
-                const o = document.createElement('option');
-                o.value = id;
-                dl.appendChild(o);
-            }
+            blockIds = res.data;
+            blockMeta = res.meta || null;
             blockListLoaded = true;
+            const note = document.getElementById('blockSourceNote');
+            if (note) note.textContent = blockMeta
+                ? tf('structure.3d.edit.blockSource', { n: blockIds.length, v: blockMeta.vanilla, m: blockMeta.mods })
+                : '';
         };
+
+        function setEditBlock(id) {
+            blockInp.value = id;
+            blockListEl.style.display = 'none';
+            blockListEl.innerHTML = '';
+        }
+        // 结构独有方块：固定快捷入口（不经过搜索）
+        document.getElementById('btnBlockJigsaw').addEventListener('click', () => setEditBlock('minecraft:jigsaw'));
+        document.getElementById('btnBlockVoid').addEventListener('click', () => setEditBlock('minecraft:structure_void'));
+
+        function hideBlockList() { blockListEl.style.display = 'none'; blockListEl.innerHTML = ''; }
+        function filterBlockList() {
+            const q = (blockInp.value || '').trim().toLowerCase();
+            const matches = blockIds.filter((id) => !q || id.toLowerCase().indexOf(q) >= 0).slice(0, 80);
+            blockListEl.innerHTML = '';
+            for (const id of matches) {
+                const row = document.createElement('div');
+                row.className = 'block-search-item';
+                row.dataset.id = id;
+                row.textContent = id;
+                row.addEventListener('mousedown', (e) => { e.preventDefault(); setEditBlock(id); });
+                blockListEl.appendChild(row);
+            }
+            blockListEl.style.display = matches.length ? 'block' : 'none';
+        }
+        blockInp.addEventListener('input', filterBlockList);
+        blockInp.addEventListener('focus', filterBlockList);
+        blockInp.addEventListener('blur', () => { setTimeout(hideBlockList, 150); });
+        blockInp.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const first = blockListEl.querySelector('.block-search-item');
+                if (first) { e.preventDefault(); setEditBlock(first.dataset.id); }
+            } else if (e.key === 'Escape') {
+                hideBlockList();
+                blockInp.blur();
+            }
+        });
     }
 
     bindEvents();

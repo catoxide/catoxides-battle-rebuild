@@ -144,6 +144,8 @@ export function createStructurePreview(canvas) {
     let pieceMeshes = new Map(); // pieceName → { fills:[], jigsaws:[] }
     const editMaps = new Map();  // pieceName → 编辑过的局部体素表（P3 点选/笔刷；无 = 用片段定义）
     let clip = null;             // 3D 切片 {axis:'x'|'y'|'z', dir:-1|1, threshold:number}（P3）
+    let slice = null;            // P9 编辑切片 {axis:'x'|'y'|'z', index:number}（剖切面：隐藏面向相机一侧，仅 rot=0 单片模式）
+    let sliceSide = 1;           // 当前剖切方向（相机所在侧），相机越过分界面时翻转并重建
 
     /** 共享单位立方体（所有体素 InstancedMesh 复用；clearGroups 不 dispose） */
     const unitBox = new THREE.BoxGeometry(1, 1, 1);
@@ -275,8 +277,9 @@ export function createStructurePreview(canvas) {
         gFills.add(bb);
         entry.fills.push(bb);
 
-        // 体素：展开（或编辑表）→ 表面 → 世界坐标（旋转+偏移）→ 切片 → 按 blockId 实例化
-        const vox = editMaps.get(piece.name) || Voxel.expandPiece(piece);
+        // 体素：展开（或编辑表）→ P9 剖切过滤（仅 rot=0，即单片模式）→ 表面 → 世界坐标 → 切片 → 按 blockId 实例化
+        let vox = editMaps.get(piece.name) || Voxel.expandPiece(piece);
+        if (slice && !rot) vox = Voxel.cutOf(vox, slice, sliceSide);
         const world = Voxel.applyClip(Voxel.worldSurface(vox, off, rot, [w, h, d]), clip);
         const groups = new Map();
         for (const [x, y, z, bid] of world) {
@@ -351,16 +354,28 @@ export function createStructurePreview(canvas) {
         lastBuild = { kind, bp, placements, built, pieces: pieces || [], hidden: hidden || [] };
         lastPlacements = built;
     }
-    /** 用最后一次构建参数重建（编辑/切片后调用；不重置相机） */
+    /** 用最后一次构建参数重建（编辑/切片后调用；不重置相机）；rebuilding 防重入；
+     *  重建期间若切片翻转（sliceFlipPending），完成后自动补一轮 */
+    let rebuilding = false;
+    let sliceFlipPending = false;
     async function rebuild() {
-        if (!lastBuild) return;
-        const b = lastBuild;
-        const opts = { hiddenPieces: b.hidden, reframe: false };
-        if (b.kind === 'place') {
-            opts.pieces = b.pieces;
-            await setPlacements(b.placements, opts);
-        } else {
-            await setBlueprint(b.bp, opts);
+        if (!lastBuild || rebuilding) return;
+        rebuilding = true;
+        try {
+            for (;;) {
+                sliceFlipPending = false;
+                const b = lastBuild;
+                const opts = { hiddenPieces: b.hidden, reframe: false };
+                if (b.kind === 'place') {
+                    opts.pieces = b.pieces;
+                    await setPlacements(b.placements, opts);
+                } else {
+                    await setBlueprint(b.bp, opts);
+                }
+                if (!sliceFlipPending) break;
+            }
+        } finally {
+            rebuilding = false;
         }
     }
 
@@ -393,6 +408,17 @@ export function createStructurePreview(canvas) {
             frameBox([0, 0, 0], [totalW, maxH, Math.max(...pieces.map((p) => (p.size || [1, 1, 1])[2]), 1)]);
         }
         if (!running) renderOnce();
+    }
+
+    /**
+     * P9 单片编辑模式：只渲染一个片段（放原点、rot=0、居中取景），
+     * 供笔刷/点选/切片对该片段独立编辑。
+     * @param {Object} piece 蓝图片段
+     * @param {{reframe?:boolean}} opts
+     */
+    async function setPiece(piece, opts = {}) {
+        if (!piece) return;
+        await setBlueprint({ pieces: [piece] }, Object.assign({ reframe: true }, opts));
     }
 
     /**
@@ -600,8 +626,11 @@ export function createStructurePreview(canvas) {
         t1 = toLocal(t1); t2 = toLocal(t2);
         const k = Math.floor((size - 1) / 2);
         const map = ensureEditMap(pl.name);
+        const sAi = slice ? (slice.axis === 'x' ? 0 : slice.axis === 'y' ? 1 : 2) : -1;
         const apply = (lx, ly, lz) => {
             if (lx < 0 || ly < 0 || lz < 0 || lx >= w || ly >= h || lz >= d) return;
+            // P9：切片启用时只在切片层内编辑（rot=0 单片模式，局部轴 = 世界轴）
+            if (slice && !pl.rot && [lx, ly, lz][sAi] !== slice.index) return;
             const key = lx + ',' + ly + ',' + lz;
             if (!blockId || blockId === 'minecraft:air' || blockId === 'air') map.delete(key);
             else map.set(key, blockId);
@@ -627,6 +656,34 @@ export function createStructurePreview(canvas) {
         return rebuild();
     }
     function getClip() { return clip; }
+
+    /**
+     * P9 编辑切片（剖切面）：null 关闭；否则 {axis:'x'|'y'|'z', index:number}
+     * 隐藏面向相机一侧、展示另一侧 + 切片层本身；笔刷被限制在切片层内。
+     */
+    function setSlice(c) {
+        const next = (c && c.axis && isFinite(c.index))
+            ? { axis: c.axis, index: Math.trunc(c.index) } : null;
+        slice = next;
+        if (next) sliceSide = currentCamSide(next.axis);
+        return rebuild();
+    }
+    function getSlice() { return slice ? Object.assign({}, slice) : null; }
+    /** 相机在 +axis 侧 = +1，-axis 侧 = -1（0 时按 +1） */
+    function currentCamSide(axis) {
+        const ai = axis === 'x' ? 'x' : axis === 'y' ? 'y' : 'z';
+        return (camera.position[ai] - orbit.target[ai]) >= 0 ? 1 : -1;
+    }
+    /** 拖拽/循环中调用：相机越过分界面 → 翻转剖切方向并重建（无翻转时零成本） */
+    function checkSliceFlip() {
+        if (!slice) return;
+        const s = currentCamSide(slice.axis);
+        if (s !== sliceSide) {
+            sliceSide = s;
+            sliceFlipPending = true;
+            if (!rebuilding) rebuild();
+        }
+    }
 
     /** 某片段的当前体素表（编辑表或定义展开） */
     function getPieceVoxelMap(pieceName) {
@@ -686,7 +743,8 @@ export function createStructurePreview(canvas) {
             orbit.phi -= dy * 0.006;
             orbit.phi = Math.max(0.05, Math.min(Math.PI / 2 - 0.02, orbit.phi));
         }
-        if (!running) renderOnce();
+        checkSliceFlip();
+        renderNow();
     }
 
     // pointer 事件：down 在画布，move/up 在 window（捕获阶段）
@@ -746,8 +804,9 @@ export function createStructurePreview(canvas) {
         e.preventDefault();
         const f = e.deltaY > 0 ? 1.1 : 0.9;
         orbit.radius = Math.max(2, Math.min(2000, orbit.radius * f));
+        checkSliceFlip();
         updateHud();
-        if (!running) renderOnce();
+        renderNow();
     }, { passive: false });
 
     /** 重置到固定角落视角（保留当前取景半径/目标） */
@@ -755,37 +814,67 @@ export function createStructurePreview(canvas) {
         orbit.theta = Math.PI / 4;
         orbit.phi = Math.PI / 3;
         applyCamera();
-        if (!running) renderOnce();
+        renderNow();
     }
 
     // ===== 渲染循环 =====
+    // 2026-09-23 修复（用户报告"HUD 有反馈但 3D 不动"）：
+    // 页面 hidden（窗口最小化/被遮挡）时 Chromium 完全不触发 rAF →
+    // 渲染循环一帧都不跑，而 running=true 又跳过所有按需渲染 → 画面永久冻结。
+    // 对策：① 相机每帧跟随轨道参数；② 交互（拖拽/滚轮/重置）按需立即渲染；
+    //       ③ 看门狗：循环停摆 >1s 时兜底渲染并尝试重启 rAF 链；
+    //       ④ visibilitychange 恢复时重启循环。
     let running = false;
     let autoRotate = false;
+    let lastFrameTime = 0;
     function setAutoRotate(on) { autoRotate = !!on; }
 
     function renderOnce() {
         sizeCanvas();
         applyCamera();
         renderer.render(scene, camera);
+        lastFrameTime = performance.now();
+    }
+    let lastManualRender = 0;
+    /** 交互触发的按需渲染（rAF 停摆时也保证画面即时响应） */
+    function renderNow() {
+        const t = performance.now();
+        if (t - lastManualRender < 16) return;
+        lastManualRender = t;
+        renderOnce();
     }
     let hudFrame = 0;
     function loop() {
         if (!running) return;
-        if (autoRotate) {
-            orbit.theta += 0.0035;
-            applyCamera();
-        }
+        if (autoRotate) orbit.theta += 0.0035;
+        applyCamera();
+        checkSliceFlip(); // P9：自动旋转等移动相机时，越过分界面自动翻转剖切
         sizeCanvas();
         renderer.render(scene, camera);
+        lastFrameTime = performance.now();
         if (++hudFrame % 30 === 0) updateHud();
         requestAnimationFrame(loop);
     }
     function start() {
         sizeCanvas();
         updateHud();
-        if (running) return;
-        running = true;
-        requestAnimationFrame(loop);
+        if (!running) running = true;
+        // rAF 链可能已死（页面曾长期 hidden）→ 只在停摆时补发，避免双链
+        if (performance.now() - lastFrameTime > 500) requestAnimationFrame(loop);
+    }
+    // 看门狗：hidden 页面里 rAF 不触发、setInterval 仍会跑（节流到 ~1Hz 也够）
+    setInterval(() => {
+        if (running && performance.now() - lastFrameTime > 1000) {
+            renderOnce();
+            requestAnimationFrame(loop);
+        }
+    }, 500);
+    if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && running && performance.now() - lastFrameTime > 300) {
+                requestAnimationFrame(loop);
+            }
+        });
     }
     function stop() {
         running = false;
@@ -835,7 +924,12 @@ export function createStructurePreview(canvas) {
             triangles: renderer ? renderer.info.render.triangles : 0,
             editedPieces: [...editMaps.keys()],
             clip,
+            slice,
+            sliceSide,
             ghosts: gGhosts.children.length,
+            // 相机实际位置（拖拽验证用：应随 orbit 变化）
+            camera: camera ? { x: +camera.position.x.toFixed(2), y: +camera.position.y.toFixed(2), z: +camera.position.z.toFixed(2) } : null,
+            running,
             hud: hud ? { display: hud.style.display, text: hud.textContent } : null,
         };
     }
@@ -849,6 +943,7 @@ export function createStructurePreview(canvas) {
     return {
         setBlueprint,
         setPlacements,
+        setPiece, // P9 单片编辑模式
         rebuild,
         setLayer,
         setPieceVisible,
@@ -866,6 +961,8 @@ export function createStructurePreview(canvas) {
         brushVoxel,
         setClip,
         getClip,
+        setSlice, // P9 编辑切片（剖切面）
+        getSlice,
         getPieceVoxelMap,
         clearEdits,
         getPlacements,

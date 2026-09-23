@@ -20,6 +20,7 @@ const StructureSchema = require('./src/core/structureSchema');
 const VanillaExport = require('./src/core/vanillaExport');
 const RegionImport = require('./src/core/regionImport');
 const McAssets = require('./src/core/mcAssets');
+const McBlocks = require('./src/core/mcBlocks');
 
 // ==================== 项目根解析（支持打包后 exe 运行） ====================
 // 优先级：① 内部配置（userData/config.json）→ ② 自动向上探测 contentpacks-source/
@@ -708,10 +709,18 @@ ipcMain.handle('core:mcBlockFaces', (event, blockId) => {
     return { ok: true, data: Object.keys(faces).length ? faces : null };
 });
 
-ipcMain.handle('core:mcBlockList', () => {
-    const root = McAssets.resolveRoot(ROOT);
-    if (!root) return { ok: true, data: [] };
-    return { ok: true, data: McAssets.blockList(root) };
+// P10：实时读取游戏将加载的方块（vanilla 数据集 + run/data + run/mods），30s 缓存，force 刷新
+ipcMain.handle('core:mcBlockList', (event, opts) => {
+    try {
+        const r = McBlocks.scanBlocks(ROOT, { force: !!(opts && opts.force) });
+        return { ok: true, data: r.ids, meta: r.meta };
+    } catch (e) {
+        // 兜底：仅 vanilla 静态列表
+        try {
+            const root = McAssets.resolveRoot(ROOT);
+            return { ok: true, data: root ? McAssets.blockList(root) : [], meta: null };
+        } catch { return { ok: false, error: String(e.message || e) }; }
+    }
 });
 
 // ==================== 启动 ====================

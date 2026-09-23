@@ -408,3 +408,16 @@ code { background: #45475a; padding: 1px 5px; border-radius: 4px; font-size: 12p
   background: var(--bg); color: var(--fg); border: 1px solid var(--border);
   border-radius: 6px; padding: 4px 6px; font-size: 12px;
 }
+/* P10 方块搜索（快捷按钮 + 实时过滤下拉） */
+.block-search { position: relative; display: inline-block; }
+.block-search-list {
+  display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 50;
+  min-width: 260px; max-height: 320px; overflow-y: auto;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45); padding: 4px;
+}
+.block-search-item {
+  padding: 4px 8px; font-size: 12px; font-family: ui-monospace, Consolas, monospace;
+  border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+.block-search-item:hover { background: var(--bg); color: var(--acc); }
