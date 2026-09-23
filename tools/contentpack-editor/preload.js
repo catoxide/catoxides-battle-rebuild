@@ -26,6 +26,20 @@ const api = {
     saveHealth: (packDir, namespace, entityId, config) => ipcRenderer.invoke('health:save', packDir, namespace, entityId, config),
     deleteHealth: (packDir, namespace, entityId) => ipcRenderer.invoke('health:delete', packDir, namespace, entityId),
 
+    // 建筑结构（建筑拼图）
+    listStructures: (packDir) => ipcRenderer.invoke('structure:list', packDir),
+    readStructure: (packDir, relFile, structureId) => ipcRenderer.invoke('structure:read', packDir, relFile, structureId),
+    saveStructure: (packDir, blueprint) => ipcRenderer.invoke('structure:save', packDir, blueprint),
+    deleteStructure: (packDir, relFile, structureId) => ipcRenderer.invoke('structure:delete', packDir, relFile, structureId),
+    exportStructureVanilla: (packDir, blueprint) => ipcRenderer.invoke('structure:exportVanilla', packDir, blueprint),
+    getStructureDefaults: () => ipcRenderer.invoke('core:getStructureDefaults'),
+
+    // 游戏资源（vanilla 方块贴图）
+    mcAssets: () => ipcRenderer.invoke('core:mcAssets'),
+    mcBlockFaces: (blockId) => ipcRenderer.invoke('core:mcBlockFaces', blockId),
+    importRegion: () => ipcRenderer.invoke('core:importRegion'),
+    mcBlockList: () => ipcRenderer.invoke('core:mcBlockList'),
+
     // 暂存区（草稿）
     stagingList: (packDir) => ipcRenderer.invoke('staging:list', packDir),
     stagingAll: () => ipcRenderer.invoke('staging:all'),

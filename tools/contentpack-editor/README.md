@@ -94,12 +94,44 @@ npm start
 
 ---
 
+## 3b. 建筑结构（建筑拼图）工作流
+
+中栏顶部下拉切换到 **建筑结构**（与实体共用中栏/右栏，页签独立）：
+
+1. **选包 → 选结构 / + 新建**（`structures/<structureId>/blueprint.json`）
+2. **五个页签**：
+   - **基本信息**：structureId、namespace、step（11 个原版生成步骤）、terrainAdaptation（Java 取值）、startPool、maxDistanceFromCenter、biomes、projectToSurface、maxSurfaceLevel
+   - **片段与拼图**：每个片段 = 一个原版结构模板（尺寸 + boxFills 整块填充 + fillBlocks 单方块 + jigsaw 块表：x/y/z、name、pool、target、joint、orientation 12 值、finalState、优先级）
+   - **模板池**：池 → 元素（引用片段 + weight 1-150 + projection rigid/terrain_matching）+ fallback
+   - **放置规则**：random_spread（spacing/separation/salt/frequency）+ 可选互斥区
+   - **3D 预览（双模式）**：
+      - **拼合生长（默认）**：按原版 jigsaw 规则把多个片段**自由拼合成整栋建筑**——从 startPool 随机抽起点，每个 jigsaw 按其 pool 抽模板，按 name/反向朝向/旋转匹配后放置，直到达到「最大片段」上限（`structureGrowth.js` 纯函数模拟，rng 可注入）。看**多片段自由组合的对准**是否合理；**🎲 重新生长** = 用新随机数再长一遍；图例显示每类片段实际放置次数 ×N，状态行「生长：N 片段 · M 个死端」（死端 = 无匹配目标 / 位置重叠）
+      - **并排查看**：各片段并排摆放，看单个片段本体
+      - 交互：左键拖拽 = 轨道旋转、右键或 Shift+左键拖拽 = 平移、滚轮 = 缩放、**重置视角 = 固定角落**；图层开关（方块 / jigsaw 标记 / 网格）随时可关；右侧图例 = 每个片段单独显隐；自动旋转开关
+3. **保存草稿 → 导出（暂存→包）→ 打包**（与实体同一套暂存体系）
+4. **导出原版数据**（结构编辑器独有按钮）：把当前蓝图**机械映射**为原版 4 类文件写入包目录：
+   - `assets/<ns>/structures/<piece>.nbt`（模板，jigsaw 写 nbtData 方块实体）
+   - `data/<ns>/worldgen/template_pool/<pool>.json`
+   - `data/<ns>/worldgen/structure/<structureId>.json`
+   - `data/<ns>/worldgen/structure_set/<structureId>_set.json`
+
+   导出后游戏侧**零自定义 worldgen 代码**——原版 jigsaw 引擎直接生成。
+   示例包：`contentpacks-source/structure-example-pack/`（大厅+塔+自链走廊）。
+
+> 契约字段与取值严格对齐原版 1.21.1（`src/core/structureSchema.js`，保存/导出时全字段校验，
+> 非法值如基岩版 terrainAdaptation 会直接报错）。1.21.2+ 模板路径变化时只需改 `vanillaExport.js` 一处。
+
+---
+
 ## 4. 文件产出对照（编辑器 → 游戏侧）
 
 | 编辑器产出 | 路径 | 游戏侧解析 |
 |-----------|------|-----------|
 | 实体定义 | `entities/<id>.json` | `MobDefinitionParser` |
 | 部位配置 | `assets/<ns>/health_config/<id>.json` | `EntityBoneHealthConfig.load()` |
+| 结构蓝图（源格式） | `structures/<structureId>/blueprint.json` | 编辑器「导出原版数据」的输入 |
+| 结构模板 | `assets/<ns>/structures/<piece>.nbt` | 原版结构模板加载器 |
+| 模板池 / 结构 / 结构集合 | `data/<ns>/worldgen/...` | 原版 worldgen 注册表（jigsaw 引擎） |
 | 打包产物 | `contentpacks/<包名>.jar` | `ContentPackLoader` |
 
 ---
@@ -118,9 +150,10 @@ npm start
 
 ## 6. 技术信息
 
-- 技术栈：Electron（Node + 原生 JS，无框架）
-- 与主 mod 通信：纯文件契约（JSON），语言完全解耦
-- 后续规划：拖拽分配骨骼、schema 驱动（内容包贡献编辑页面）、建筑拼图/loottable 模块、3D 预览
+- 技术栈：Electron（Node + 原生 JS，无框架）+ Three.js（3D 预览，本地捆绑 `src/lib/three.module.js`）
+- 与主 mod 通信：纯文件契约（JSON/NBT），语言完全解耦
+- 已内置内容类型：实体（4 页签）、建筑结构（5 页签，含 3D 预览）
+- 后续规划：拖拽分配骨骼、schema 驱动（内容包贡献编辑页面）、loottable 模块、3D 预览增强（片段连接关系图 / 真实方块贴图）
 
 ---
 
@@ -137,6 +170,14 @@ tools/contentpack-editor/
 │   ├── styles.css         # 深色主题
 │   ├── app.js             # 全局状态 + 启动
 │   ├── core/              # 纯逻辑库（可独立测试）
-│   └── views/             # 三个视图组件
-└── test/                  # 测试（node test 运行）
+│   │   ├── structureSchema.js   # 建筑结构契约（原版对齐）+ 校验
+│   │   ├── nbt.js               # 小端 gzip NBT 读写（结构模板）
+│   │   ├── vanillaExport.js     # blueprint → 原版 4 类 jigsaw 数据文件
+│   │   └── structureGrowth.js   # 原版 jigsaw 生长模拟（纯函数，拼合预览用）
+│   ├── lib/
+│   │   ├── three.module.js      # Three.js（捆绑，3D 预览用）
+│   │   └── structurePreview.js  # 建筑结构 3D 预览（轨道相机/平移/拼合生长/图层/显隐）
+│   └── views/             # 视图组件（packList/entityList/entityEditor/structureList/structureEditor）
+├── .scratch/              # 临时脚本（gitignore，不进版本库）
+└── test/                  # 测试（npm test = core.test.js + structure.test.js + structureGrowth.test.js）
 ```

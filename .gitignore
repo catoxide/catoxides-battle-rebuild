@@ -43,6 +43,8 @@ repo/
 tools/contentpack-editor/node_modules/
 tools/contentpack-editor/dist/
 tools/contentpack-editor/release/
+# 临时脚本/一次性验证（不进版本库；固定放这里）
+tools/contentpack-editor/.scratch/
 
 Deprecated&References/
 
@@ -50,4 +52,7 @@ Deprecated&References/
 .omo/
 design/
 openclaude_config.json
+
+### Scratch (临时脚本/探针，不入库；说明见 .scratch/README.md) ###
+.scratch/
  

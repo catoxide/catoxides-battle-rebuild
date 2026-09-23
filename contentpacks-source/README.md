@@ -10,6 +10,7 @@
 |------|------|
 | `template-pack/` | **标准模板**：复制它创建新包 |
 | `test-mob-pack/` | 测试包（JSON 数据驱动实体验证，含独立 Java 源码） |
+| `structure-example-pack/` | 建筑结构示例（纯数据包）：`structures/*/blueprint.json` 源格式 + 编辑器导出的原版 jigsaw 数据（`assets/` 模板 .nbt + `data/` 模板池/结构/结构集合） |
 | `build-pack.ps1` | 打包脚本（模板脚本，支持独立编译） |
 
 ## 创建新内容包（3 步）

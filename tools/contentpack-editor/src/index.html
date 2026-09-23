@@ -52,8 +52,9 @@
   <!-- 中栏：内容列表（类型可切换，选项由已接入的 contentpack 扩展动态提供） -->
   <aside class="panel" id="panelEntity">
     <div class="panel-title">
-      <select id="contentTypeSelect" title="内容类型" style="width:auto; margin:0; max-width:110px">
+      <select id="contentTypeSelect" title="内容类型" style="width:auto; margin:0; max-width:130px">
         <option value="entity" data-i18n="entity.title">实体</option>
+        <option value="structure" data-i18n="structure.title">建筑结构</option>
       </select>
       <span id="packNameLabel" class="muted"></span>
       <button class="btn ghost small" id="btnNewEntity" disabled data-i18n="entity.new">+ 新建</button>
@@ -66,7 +67,7 @@
   <!-- 右栏：实体编辑器 -->
   <main class="panel editor-panel" id="panelEditor">
     <div class="editor-empty" id="editorEmpty" data-i18n="editor.empty">
-      请选择或新建一个内容包，然后选择/新建实体。
+      请选择或新建一个内容包，然后选择/新建实体或建筑结构。
     </div>
 
     <div id="editorContent" class="hidden">
@@ -199,6 +200,155 @@
       <div class="status" id="statusBar"></div>
       <pre class="out" id="buildOutput"></pre>
     </div>
+
+    <!-- 建筑结构（建筑拼图）编辑器：blueprint.json 编辑 + 原版 jigsaw 数据导出 + 3D 预览 -->
+    <div id="structureEditorContent" class="hidden">
+      <div class="editor-tabs-bar" id="structTabsBar"></div>
+      <div class="editor-header">
+        <span class="editor-title" id="structTitle"></span>
+        <span class="editor-badge" id="structBadge"></span>
+        <div class="editor-actions">
+          <button class="btn ghost" id="btnStructExport" data-i18n="editor.export">导出</button>
+          <button class="btn ghost" id="btnStructExportVanilla" data-i18n="structure.exportVanilla">导出原版数据</button>
+          <button class="btn" id="btnStructSave" data-i18n="editor.saveDraft">保存草稿</button>
+          <button class="btn accent" id="btnStructBuild" data-i18n="editor.build">打包</button>
+        </div>
+      </div>
+
+      <div class="tabs" id="structTabs">
+        <button class="tab active" data-stab="basic" data-i18n="structure.tab.basic">基本信息</button>
+        <button class="tab" data-stab="pieces" data-i18n="structure.tab.pieces">片段与拼图</button>
+        <button class="tab" data-stab="pools" data-i18n="structure.tab.pools">模板池</button>
+        <button class="tab" data-stab="place" data-i18n="structure.tab.place">放置规则</button>
+        <button class="tab" data-stab="3d" data-i18n="structure.tab.3d">3D 预览</button>
+      </div>
+
+      <!-- 页签 1：基本信息（结构定义 → worldgen/structure/*.json） -->
+      <div class="tab-page active" id="stab-basic">
+        <div class="card">
+          <h2 data-i18n="structure.identity">标识</h2>
+          <div class="grid2">
+            <div><label data-i18n="structure.id">structureId（必填，结构注册名）</label><input id="sId"></div>
+            <div><label data-i18n="structure.ns">namespace（缺省挂主 mod）</label><input id="sNs" placeholder="留空 = catoxidesbattlerebuild"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2 data-i18n="structure.defTitle">结构定义</h2>
+          <div class="grid2">
+            <div><label data-i18n="structure.step">step（生成步骤）</label><select id="sStep"></select></div>
+            <div><label data-i18n="structure.ta">terrainAdaptation（地形适应，Java 取值）</label><select id="sTa"></select></div>
+            <div><label data-i18n="structure.startPool">startPool（起始模板池）</label><input id="sStartPool" placeholder="如 start"></div>
+            <div><label data-i18n="structure.maxDist">maxDistanceFromCenter（最大扩展半径，格）</label><input id="sMaxDist" type="number" min="1"></div>
+            <div><label data-i18n="structure.biomes">biomes（生物群系 ID/tag，逗号分隔）</label><input id="sBiomes" placeholder="#minecraft:is_overworld"></div>
+            <div><label data-i18n="structure.maxLevel">maxSurfaceLevel（最大表面高度偏移）</label><input id="sMaxLevel" type="number"></div>
+            <div class="check"><label><input id="sProject" type="checkbox" checked> <span data-i18n="structure.project">projectToSurface（贴地投影）</span></label></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 页签 2：片段与拼图（每个片段 = 一个结构模板 .nbt） -->
+      <div class="tab-page" id="stab-pieces">
+        <div class="row">
+          <button class="btn ghost small" id="btnAddPiece" data-i18n="structure.addPiece">+ 添加片段</button>
+          <button class="btn ghost small" id="btnImportRegion" data-i18n="structure.importRegion">⛏ 圈地读取 (.nbt)</button>
+          <span class="note" data-i18n="structure.piecesNote">片段 = 原版结构模板（1.21.1 格式：blocks[].nbt 携带 jigsaw 数据）；圈地读取 = 把游戏/工具导出的 .nbt 结构模板导入为片段。</span>
+        </div>
+        <div class="card" id="structTreeCard" style="margin-bottom:10px">
+          <div class="row" style="justify-content:space-between">
+            <h3 style="margin:0" data-i18n="structure.tree.title">📐 结构导航</h3>
+            <span class="note" id="structTreeSummary"></span>
+          </div>
+          <div id="structTree" class="struct-tree"></div>
+        </div>
+        <div id="piecesContainer"></div>
+      </div>
+
+      <!-- 页签 3：模板池（→ worldgen/template_pool/*.json） -->
+      <div class="tab-page" id="stab-pools">
+        <div class="row">
+          <button class="btn ghost small" id="btnAddPool" data-i18n="structure.addPool">+ 添加池</button>
+          <span class="note" data-i18n="structure.poolsNote">池元素引用片段（模板），weight 1-150；projection: rigid=固定 / terrain_matching=贴地。</span>
+        </div>
+        <div id="poolsContainer"></div>
+      </div>
+
+      <!-- 页签 4：放置规则（→ worldgen/structure_set/*_set.json） -->
+      <div class="tab-page" id="stab-place">
+        <div class="card">
+          <h2 data-i18n="structure.setTitle">结构集合（random_spread 随机散布）</h2>
+          <div class="grid2">
+            <div><label data-i18n="structure.spacing">spacing（平均间隔，格）</label><input id="ssSpacing" type="number" min="1"></div>
+            <div><label data-i18n="structure.separation">separation（最小间距，格）</label><input id="ssSeparation" type="number" min="0"></div>
+            <div><label data-i18n="structure.salt">salt（随机盐，区分不同集合）</label><input id="ssSalt" type="number" min="0"></div>
+            <div><label data-i18n="structure.frequency">frequency（生成频率 0-1）</label><input id="ssFrequency" type="number" step="0.01" min="0" max="1"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2 data-i18n="structure.ezTitle">互斥区 exclusion_zone（可选）</h2>
+          <div class="grid2">
+            <div class="check"><label><input id="ezEnabled" type="checkbox"> <span data-i18n="structure.ezOn">启用</span></label></div>
+            <div><label data-i18n="structure.ezChunks">chunkCount（1-16 区块）</label><input id="ezChunks" type="number" min="1" max="16"></div>
+            <div><label data-i18n="structure.ezOther">otherSet（另一个结构集合 ID）</label><input id="ezOther" placeholder="如 minecraft:villages"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 页签 5：3D 预览（轨道旋转 / 固定角落视角 / 随时开关显隐） -->
+      <div class="tab-page" id="stab-3d">
+        <div class="row struct-toolbar">
+          <select id="sel3dMode" title="">
+            <option value="growth" data-i18n="structure.3d.modeGrowth">拼合生长</option>
+            <option value="side" data-i18n="structure.3d.modeSide">并排查看</option>
+          </select>
+          <button class="btn ghost small" id="btn3dRegrow" title="">🎲 <span data-i18n="structure.3d.regrow">重新生长</span></button>
+          <label class="chk" data-i18n="structure.3d.maxPieces">最大片段</label><input id="inp3dMax" type="number" min="1" max="128" value="24" style="width:64px">
+          <button class="btn ghost small" id="btn3dReset" data-i18n="structure.3d.reset">重置视角</button>
+          <label class="chk"><input type="checkbox" id="chk3dRotate"> <span data-i18n="structure.3d.rotate">自动旋转</span></label>
+          <label class="chk"><input type="checkbox" id="chk3dFills" checked> <span data-i18n="structure.3d.fills">方块</span></label>
+          <label class="chk"><input type="checkbox" id="chk3dJigsaws" checked> <span data-i18n="structure.3d.jigsaws">jigsaw 标记</span></label>
+          <label class="chk"><input type="checkbox" id="chk3dGrid" checked> <span data-i18n="structure.3d.grid">网格</span></label>
+          <label class="chk"><input type="checkbox" id="chk3dGhosts" checked> <span data-i18n="structure.3d.ghosts">死端幽灵</span></label>
+          <button class="btn ghost small" id="btn3dDiagnose" title="">🔍 <span data-i18n="structure.3d.diagnose">检查可生成性</span></button>
+          <span class="note" data-i18n="structure.3d.hint">左键拖拽 = 旋转 · 右键/Shift拖拽 = 平移 · 滚轮 = 缩放</span>
+          <span class="note" style="margin-left:auto;opacity:.55">v0.2</span>
+        </div>
+        <div class="card" id="diagReport" style="display:none; margin-top:8px"></div>
+        <div class="row struct-toolbar" id="structEditBar">
+          <select id="selEditTool" title="">
+            <option value="none" data-i18n="structure.3d.edit.toolNone">工具：无（仅拖动）</option>
+            <option value="inspect" data-i18n="structure.3d.edit.toolInspect">工具：点选读取</option>
+            <option value="paint" data-i18n="structure.3d.edit.toolPaint">工具：笔刷</option>
+            <option value="erase" data-i18n="structure.3d.edit.toolErase">工具：擦除(空气)</option>
+            <option value="placeholder" data-i18n="structure.3d.edit.toolPlaceholder">工具：占位符 #empty</option>
+          </select>
+          <input id="inpEditBlock" list="blockIdList" value="minecraft:stone_bricks" style="width:190px" data-i18n-ph="structure.3d.edit.blockPh" placeholder="方块 ID">
+          <datalist id="blockIdList"></datalist>
+          <label class="chk" data-i18n="structure.3d.edit.brushSize">笔刷</label>
+          <select id="selBrushSize"><option>1</option><option selected>3</option><option>5</option></select>
+          <label class="chk" data-i18n="structure.3d.edit.clip">切片</label>
+          <select id="selClipAxis">
+            <option value="off" data-i18n="structure.3d.edit.clipOff">关</option>
+            <option value="x">X</option><option value="y">Y</option><option value="z">Z</option>
+          </select>
+          <select id="selClipDir" title="">
+            <option value="1">＋ 隐高处</option><option value="-1">－ 隐低处</option>
+          </select>
+          <input id="inpClipT" type="range" min="-64" max="128" value="0" style="width:110px">
+          <button class="btn ghost small" id="btnEditUndo" data-i18n="structure.3d.edit.undo">撤销编辑</button>
+          <span class="note" id="editInfo"></span>
+        </div>
+        <div class="struct-3d-layout">
+          <div id="struct3dWrap"><canvas id="structCanvas" width="800" height="520"></canvas></div>
+          <div class="struct-legend">
+            <div class="panel-title" data-i18n="structure.3d.pieces">片段显隐</div>
+            <div id="structLegend"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="status" id="structStatus"></div>
+      <pre class="out" id="structOutput"></pre>
+    </div>
   </main>
 </div>
 
@@ -206,6 +356,11 @@
 <script src="views/packList.js"></script>
 <script src="views/entityList.js"></script>
 <script src="views/entityEditor.js"></script>
+<script src="core/structureGrowth.js"></script>
+<script src="core/voxel.js"></script>
+<script src="core/structureDiagnostics.js"></script>
+<script src="views/structureList.js"></script>
+<script src="views/structureEditor.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

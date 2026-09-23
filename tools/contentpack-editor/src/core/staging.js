@@ -59,6 +59,30 @@ function stageHealthConfig(packName, namespace, entityId, config) {
 }
 
 /**
+ * 写结构蓝图草稿：暂存 structures/<structureId>/blueprint.json
+ * @param {string} packName
+ * @param {Object} blueprint 已通过校验的蓝图对象
+ */
+function stageStructure(packName, blueprint) {
+    const dir = path.join(packStagingDir(packName), 'structures', sanitize(blueprint.structureId));
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'blueprint.json');
+    fs.writeFileSync(file, JSON.stringify(blueprint, null, 2), 'utf-8');
+    return { file: path.relative(getStagingRoot(), file), staged: true };
+}
+
+/**
+ * 读结构蓝图草稿
+ * @param {string} packName
+ * @param {string} structureId
+ * @returns {Object|null}
+ */
+function readStagedStructure(packName, structureId) {
+    const file = path.join(packStagingDir(packName), 'structures', sanitize(structureId), 'blueprint.json');
+    return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) : null;
+}
+
+/**
  * 读实体草稿（存在则优先于正式包）
  * @param {string} packName
  * @param {string} entityId
@@ -103,6 +127,15 @@ function listStaged(packName) {
         walkHealth(assetsDir, (namespace, id, p) => {
             items.push({ kind: 'health', id, namespace, file: path.relative(base, p), mtime: fs.statSync(p).mtime.toISOString() });
         });
+    }
+    const structuresDir = path.join(base, 'structures');
+    if (fs.existsSync(structuresDir)) {
+        for (const dir of fs.readdirSync(structuresDir, { withFileTypes: true })) {
+            if (!dir.isDirectory()) continue;
+            const p = path.join(structuresDir, dir.name, 'blueprint.json');
+            if (!fs.existsSync(p)) continue;
+            items.push({ kind: 'structure', id: dir.name, namespace: null, file: path.relative(base, p), mtime: fs.statSync(p).mtime.toISOString() });
+        }
     }
     return items;
 }
@@ -163,6 +196,12 @@ function exportStaged(packName, packSourceDir) {
             fs.mkdirSync(path.dirname(dest), { recursive: true });
             fs.copyFileSync(src, dest);
             exported.push(path.relative(packSourceDir, dest));
+        } else if (item.kind === 'structure') {
+            const src = path.join(base, 'structures', item.id, 'blueprint.json');
+            const dest = path.join(packSourceDir, 'structures', item.id, 'blueprint.json');
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.copyFileSync(src, dest);
+            exported.push(path.relative(packSourceDir, dest));
         }
     }
     // 回收：删除该包暂存目录
@@ -204,6 +243,17 @@ function removeStagedEntity(packName, entityId) {
     return true;
 }
 
+/**
+ * 删除单个结构的暂存（结构删除时联动）
+ * @param {string} packName
+ * @param {string} structureId
+ */
+function removeStagedStructure(packName, structureId) {
+    const f = path.join(packStagingDir(packName), 'structures', sanitize(structureId), 'blueprint.json');
+    if (fs.existsSync(f)) fs.unlinkSync(f);
+    return true;
+}
+
 module.exports = {
     initStaging,
     getStagingRoot,
@@ -211,10 +261,13 @@ module.exports = {
     stageHealthConfig,
     readStagedEntity,
     readStagedHealthConfig,
+    stageStructure,
+    readStagedStructure,
     listStaged,
     hasStaged,
     listAllStagedPacks,
     exportStaged,
     discardStaged,
     removeStagedEntity,
+    removeStagedStructure,
 };

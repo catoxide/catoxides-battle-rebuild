@@ -16,6 +16,10 @@ const EntitySchema = require('./src/core/entitySchema');
 const HealthConfig = require('./src/core/healthConfig');
 const StateMachine = require('./src/core/stateMachine');
 const Staging = require('./src/core/staging');
+const StructureSchema = require('./src/core/structureSchema');
+const VanillaExport = require('./src/core/vanillaExport');
+const RegionImport = require('./src/core/regionImport');
+const McAssets = require('./src/core/mcAssets');
 
 // ==================== 项目根解析（支持打包后 exe 运行） ====================
 // 优先级：① 内部配置（userData/config.json）→ ② 自动向上探测 contentpacks-source/
@@ -280,6 +284,105 @@ ipcMain.handle('entity:delete', async (event, packDir, id) => {
     }
 });
 
+// --- 建筑结构（建筑拼图：blueprint.json → 原版 jigsaw 数据） ---
+ipcMain.handle('structure:list', async (event, packDir) => {
+    try {
+        // 合并：正式包蓝图 + 暂存区蓝图（暂存优先，避免重复）
+        const structures = StructureSchema.listStructures(packDir);
+        const staged = Staging.listStaged(packNameOf(packDir)).filter((i) => i.kind === 'structure');
+        const stagedIds = new Set(staged.map((i) => i.id));
+        for (const s of staged) {
+            if (!structures.some((x) => x.structureId === s.id)) {
+                const stagedBp = Staging.readStagedStructure(packNameOf(packDir), s.id);
+                if (stagedBp) {
+                    structures.push({
+                        file: '(staged)',
+                        structureId: s.id,
+                        namespace: stagedBp.namespace || '',
+                        pieces: (stagedBp.pieces || []).length,
+                        pools: (stagedBp.templatePools || []).length,
+                        staged: true,
+                    });
+                }
+            } else {
+                const x = structures.find((y) => y.structureId === s.id);
+                if (x) x.staged = true;
+            }
+        }
+        return { ok: true, data: structures };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('structure:read', async (event, packDir, relFile, structureId) => {
+    try {
+        // 暂存优先：按 structureId 匹配草稿
+        const id = structureId
+            || (relFile && relFile !== '(staged)' ? relFile.replace(/\\/g, '/').split('/').slice(-2, -1)[0] : '');
+        if (id) {
+            const staged = Staging.readStagedStructure(packNameOf(packDir), id);
+            if (staged) return { ok: true, data: Object.assign({}, staged, { _staged: true }) };
+        }
+        if (!relFile || relFile === '(staged)') {
+            return { ok: false, error: '未找到蓝图（正式包与暂存区均无）' };
+        }
+        const bp = StructureSchema.readStructure(packDir, relFile);
+        return { ok: true, data: bp };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('structure:save', async (event, packDir, blueprint) => {
+    try {
+        const { valid, errors } = StructureSchema.validateBlueprint(blueprint);
+        if (!valid) {
+            return { ok: false, error: '结构校验失败:\n' + errors.join('\n') };
+        }
+        const result = Staging.stageStructure(packNameOf(packDir), blueprint);
+        return { ok: true, data: Object.assign({}, result, { staged: true }) };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('structure:delete', async (event, packDir, relFile, structureId) => {
+    try {
+        const id = structureId
+            || (relFile && relFile !== '(staged)' ? relFile.replace(/\\/g, '/').split('/').slice(-2, -1)[0] : '');
+        const result = relFile && relFile !== '(staged)'
+            ? StructureSchema.deleteStructure(packDir, relFile)
+            : { deleted: false };
+        if (id) Staging.removeStagedStructure(packNameOf(packDir), id);
+        return { ok: true, data: result };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+/**
+ * 把蓝图映射导出为原版 jigsaw 数据文件（写入包源码目录，随 build-pack.ps1 进 jar）。
+ * 同时把当前蓝图写为正式 blueprint.json（仅本结构，不触碰其他暂存草稿）。
+ */
+ipcMain.handle('structure:exportVanilla', async (event, packDir, blueprint) => {
+    try {
+        const { valid, errors } = StructureSchema.validateBlueprint(blueprint);
+        if (!valid) {
+            return { ok: false, error: '结构校验失败（无法导出）:\n' + errors.join('\n') };
+        }
+        // 1. 当前蓝图落盘为正式 blueprint.json（仅此结构）
+        StructureSchema.writeStructure(packDir, blueprint);
+        Staging.removeStagedStructure(packNameOf(packDir), blueprint.structureId);
+        // 2. 映射导出原版数据文件
+        const result = VanillaExport.exportToPack(packDir, blueprint);
+        if (!result.ok) return { ok: false, error: result.errors.join('\n') };
+        return { ok: true, data: { files: result.files } };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
 // --- 部位配置 ---
 ipcMain.handle('health:read', async (event, packDir, namespace, entityId) => {
     try {
@@ -494,6 +597,38 @@ ipcMain.handle('dialog:openJarFile', async () => {
     return { ok: true, data: result.filePaths[0] };
 });
 
+// --- 圈地读取：结构模板 .nbt → 蓝图片段 ---
+// 支持 1.21.1 现行格式（blocks[].nbt 携带 jigsaw 数据，小端）与 1.20.x 旧格式；
+// 字节序由 RegionImport/NBT.decodeAuto 自动判别（游戏=小端，部分工具/数据集=大端）。
+ipcMain.handle('core:importRegion', async () => {
+    try {
+        const result = await dialog.showOpenDialog(mainWindow, {
+            title: '圈地读取：选择结构模板 .nbt',
+            filters: [{ name: 'Minecraft 结构模板', extensions: ['nbt'] }],
+            properties: ['openFile'],
+        });
+        if (result.canceled || result.filePaths.length === 0) return { ok: true, canceled: true };
+        const file = result.filePaths[0];
+        const region = RegionImport.parseRegionNbt(fs.readFileSync(file));
+        const base = path.basename(file, path.extname(file));
+        return {
+            ok: true,
+            file: path.basename(file),
+            piece: RegionImport.regionToPiece(region, base),
+            info: {
+                size: region.size,
+                blocks: region.blocks.filter((b) => b.block !== 'minecraft:air').length,
+                jigsaws: region.jigsaws.length,
+                format: region.format,
+                dataVersion: region.dataVersion,
+                entities: region.entities,
+            },
+        };
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
+});
+
 // --- 打包 ---
 ipcMain.handle('pack:build', async (event, { packDir, outJarName }) => {
     try {
@@ -536,10 +671,48 @@ ipcMain.handle('core:getStateMachineTemplates', () => ({
     data: StateMachine.TEMPLATES,
 }));
 
+ipcMain.handle('core:getStructureDefaults', () => ({
+    ok: true,
+    data: {
+        blueprint: StructureSchema.defaultBlueprint(),
+        piece: StructureSchema.defaultPiece(),
+        jigsaw: StructureSchema.defaultJigsaw(),
+        poolElement: StructureSchema.defaultPoolElement(),
+        constants: {
+            steps: StructureSchema.STEPS,
+            terrainAdaptations: StructureSchema.TERRAIN_ADAPTATIONS,
+            projections: StructureSchema.PROJECTIONS,
+            joints: StructureSchema.JOINTS,
+            orientations: StructureSchema.ORIENTATIONS,
+        },
+    },
+}));
+
 ipcMain.handle('core:getEntityDefaults', () => ({
     ok: true,
     data: EntitySchema.createDefaultEntity(),
 }));
+
+// ===== 游戏资源（vanilla 方块贴图，本机自有副本） =====
+ipcMain.handle('core:mcAssets', () => {
+    const root = McAssets.resolveRoot(ROOT);
+    if (!root) return { ok: true, data: { ready: false, root: null, blockCount: 0 } };
+    const list = McAssets.blockList(root);
+    return { ok: true, data: { ready: true, root, blockCount: list.length } };
+});
+
+ipcMain.handle('core:mcBlockFaces', (event, blockId) => {
+    const root = McAssets.resolveRoot(ROOT);
+    if (!root) return { ok: true, data: null };
+    const faces = McAssets.blockFaces(root, blockId);
+    return { ok: true, data: Object.keys(faces).length ? faces : null };
+});
+
+ipcMain.handle('core:mcBlockList', () => {
+    const root = McAssets.resolveRoot(ROOT);
+    if (!root) return { ok: true, data: [] };
+    return { ok: true, data: McAssets.blockList(root) };
+});
 
 // ==================== 启动 ====================
 app.whenReady().then(() => {

@@ -1,11 +1,11 @@
 {
   "name": "contentpack-editor",
-  "version": "0.1.0",
-  "description": "Catoxide's Battle Rebuild - ContentPack 可视化编辑器（实体/部位/动画状态机）",
+  "version": "0.2.0",
+  "description": "Catoxide's Battle Rebuild - ContentPack 可视化编辑器（实体/部位/动画状态机/建筑结构）",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node test/core.test.js",
+    "test": "node test/nbt.test.js && node test/core.test.js && node test/structure.test.js && node test/structureGrowth.test.js && node test/structureDiagnostics.test.js && node test/voxel.test.js && node test/regionImport.test.js",
     "pack": "electron-builder --win portable"
   },
   "author": "catoxide",

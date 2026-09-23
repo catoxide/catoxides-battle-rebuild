@@ -1,0 +1,217 @@
+/**
+ * mcAssets.js - 游戏资源解析器（主进程）
+ *
+ * 从本机 vanilla 1.21.1 资源根读取 方块→贴图 映射（blockstate → model → texture），
+ * 供 3D 预览渲染真实方块贴图。
+ *
+ * 资源根自动探测（可用配置 mcAssetsRoot 覆盖）：
+ *   1. <项目根>/../数据集/1.21.1/client            （用户数据集，首选）
+ *   2. <项目根>/run/client                         （dev 客户端，若已解出 assets）
+ *   3. %USERPROFILE%/.cache/minecraft-modding-mcp/decompiled/<最新>/
+ *   资源根须包含 assets/minecraft/textures/block 才有效。
+ *
+ * 许可说明：
+ *   贴图/模型/块状态 JSON 是 Mojang 游戏文件在【用户本机】的自有副本
+ *   （与游戏安装同来源），仅用于本机编辑器内显示，不随编辑器分发、不重传。
+ *
+ * 后续演进（用户规划）：AssetSource 可替换为「实时读取正在加载的游戏
+ * （原版 + 自定义包）」实现，接口不变。
+ */
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+/** 探测到的资源根（懒加载一次） */
+let resolvedRoot = null;
+let resolvedExplicit = false;
+
+/** 配置覆盖的资源根 */
+function setRootOverride(root) {
+    resolvedRoot = root && fs.existsSync(root) ? root : null;
+    resolvedExplicit = true;
+}
+
+/**
+ * 探测资源根
+ * @param {string} projectRoot 项目根（含 run/ 的目录）
+ */
+function resolveRoot(projectRoot) {
+    if (resolvedExplicit) return resolvedRoot;
+    const home = process.env.USERPROFILE || '';
+    const cands = [];
+    if (projectRoot) {
+        // 数据集位置不固定：从项目根向上逐级找 <X>/数据集/1.21.1/client
+        let up = projectRoot;
+        for (let i = 0; i < 5; i++) {
+            cands.push(path.join(up, '数据集', '1.21.1', 'client'));
+            up = path.dirname(up);
+            if (!up || up === path.dirname(up)) break;
+        }
+        cands.push(path.join(projectRoot, 'run', 'client'));
+    }
+    // MCP 解包缓存（取最新修改的）
+    const mcpBase = path.join(home, '.cache', 'minecraft-modding-mcp', 'decompiled');
+    if (fs.existsSync(mcpBase)) {
+        try {
+            const dirs = fs.readdirSync(mcpBase, { withFileTypes: true })
+                .filter((d) => d.isDirectory())
+                .map((d) => {
+                    const p = path.join(mcpBase, d.name);
+                    let mtime = 0;
+                    try { mtime = fs.statSync(p).mtimeMs; } catch {}
+                    return { p, mtime };
+                })
+                .sort((a, b) => b.mtime - a.mtime);
+            for (const d of dirs) cands.push(d.p);
+        } catch {}
+    }
+    for (const c of cands) {
+        if (c && fs.existsSync(path.join(c, 'assets', 'minecraft', 'textures', 'block'))) {
+            resolvedRoot = c;
+            return resolvedRoot;
+        }
+    }
+    return null;
+}
+
+function isReady(root) {
+    return !!(root && fs.existsSync(path.join(root, 'assets', 'minecraft', 'textures', 'block')));
+}
+
+/** 纹理 ID（minecraft:block/xxx）→ 绝对文件路径（不存在返回 null） */
+function texturePath(root, texId) {
+    if (!texId) return null;
+    let id = texId;
+    if (id.startsWith('minecraft:')) id = id.slice('minecraft:'.length);
+    else if (id.includes(':')) id = id.slice(id.indexOf(':') + 1); // 自定义命名空间 → 无本地文件
+    const rel = path.join('assets', 'minecraft', 'textures', id + '.png');
+    const p = path.join(root, rel);
+    if (fs.existsSync(p)) return p;
+    // 常见回退：block/ 子目录
+    const name = id.split('/').pop();
+    const fb = path.join(root, 'assets', 'minecraft', 'textures', 'block', name + '.png');
+    if (fs.existsSync(fb)) return fb;
+    return null;
+}
+
+const jsonCache = new Map(); // file → parsed
+function readJsonCached(p) {
+    if (jsonCache.has(p)) return jsonCache.get(p);
+    let v = null;
+    try {
+        v = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    } catch {}
+    jsonCache.set(p, v);
+    return v;
+}
+
+const facesCache = new Map(); // blockId → result
+const MISSING = Symbol('missing');
+
+/**
+ * 解析方块的 6 面贴图
+ * @param {string} root 资源根
+ * @param {string} blockId 如 minecraft:stone_bricks（可省略命名空间）
+ * @returns {{top:string|null, side:string|null, bottom:string|null, all?:string|null, source?:string}}
+ *          值为 dataURL；全部 null = 无贴图（调用方回退色板）
+ */
+function blockFaces(root, blockId) {
+    let id = blockId;
+    if (id && !id.includes(':')) id = 'minecraft:' + id;
+    if (!id) return {};
+    if (facesCache.has(id)) return facesCache.get(id);
+
+    const out = { top: null, side: null, bottom: null };
+    const toDataUrl = (texId) => {
+        const p = texturePath(root, texId);
+        if (!p) return null;
+        const key = 'dataUrl:' + p;
+        if (!jsonCache.has(key)) {
+            try { jsonCache.set(key, 'data:image/png;base64,' + fs.readFileSync(p).toString('base64')); }
+            catch { jsonCache.set(key, null); }
+        }
+        return jsonCache.get(key);
+    };
+
+    // 1) blockstate → 首选 axis=y（竖直原木类），否则第一个 variant
+    const bsFile = path.join(root, 'assets', 'minecraft', 'blockstates', id.split(':').pop() + '.json');
+    let modelId = null;
+    if (fs.existsSync(bsFile)) {
+        const bs = readJsonCached(bsFile);
+        const variants = (bs && bs.variants) || {};
+        const keys = Object.keys(variants);
+        let pick = null;
+        if (variants['']) pick = variants[''];
+        else if (variants['axis=y']) pick = variants['axis=y'];
+        else if (keys.length) pick = variants[keys[0]];
+        if (pick) {
+            modelId = Array.isArray(pick) ? pick[0].model : pick.model;
+        }
+    }
+    if (!modelId) {
+        // 2) 无 blockstate：直接猜 model/block/<name>
+        modelId = 'minecraft:block/' + id.split(':').pop();
+    }
+
+    const ns = id.split(':')[0] || 'minecraft';
+    const modelName = modelId.startsWith(ns + ':') ? modelId.slice(ns.length + 1) : modelId;
+    const modelFile = path.join(root, 'assets', ns, 'models', modelName + '.json');
+    let tex = {};
+    if (fs.existsSync(modelFile)) {
+        const m = readJsonCached(modelFile);
+        tex = (m && m.textures) || {};
+        const parent = (m && m.parent) || '';
+        if (parent.endsWith('cube_all')) {
+            const a = tex.all || Object.values(tex)[0] || null;
+            out.top = toDataUrl(a); out.side = toDataUrl(a); out.bottom = toDataUrl(a);
+        } else if (parent.endsWith('cube_column')) {
+            out.side = toDataUrl(tex.side || null);
+            const t = tex.top || tex.end || tex.side || null;
+            out.top = toDataUrl(t); out.bottom = toDataUrl(t);
+        } else if (parent.endsWith('cube_bottom_top')) {
+            out.top = toDataUrl(tex.top || null);
+            out.bottom = toDataUrl(tex.bottom || null);
+            out.side = toDataUrl(tex.side || tex.all || null);
+        } else {
+            // slab/stairs/cross/自定义：尽力取 side/top/bottom，否则首个纹理铺 6 面
+            out.side = toDataUrl(tex.side || tex.all || null);
+            out.top = toDataUrl(tex.top || tex.end || out.side);
+            out.bottom = toDataUrl(tex.bottom || out.top);
+            if (!out.side) {
+                const any = Object.values(tex)[0] || null;
+                out.top = out.side = out.bottom = toDataUrl(any);
+            }
+        }
+    }
+
+    const res = (out.top || out.side || out.bottom) ? out : MISSING;
+    facesCache.set(id, res);
+    return res === MISSING ? {} : res;
+}
+
+/** 全部方块 ID 列表（blockstates 文件名 → minecraft:<name>） */
+const listCache = { root: null, list: null };
+function blockList(root) {
+    if (listCache.root === root && listCache.list) return listCache.list;
+    const dir = path.join(root, 'assets', 'minecraft', 'blockstates');
+    let list = [];
+    try {
+        list = fs.readdirSync(dir)
+            .filter((f) => f.endsWith('.json'))
+            .map((f) => 'minecraft:' + f.slice(0, -5))
+            .sort();
+    } catch {}
+    listCache.root = root;
+    listCache.list = list;
+    return list;
+}
+
+module.exports = {
+    resolveRoot,
+    setRootOverride,
+    isReady,
+    blockFaces,
+    blockList,
+    texturePath,
+};

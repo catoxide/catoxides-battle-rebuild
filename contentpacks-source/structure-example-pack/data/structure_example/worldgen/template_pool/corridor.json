@@ -1,0 +1,14 @@
+{
+  "elements": [
+    {
+      "weight": 1,
+      "element": {
+        "element_type": "minecraft:single_pool_element",
+        "location": "structure_example:corridor",
+        "projection": "rigid",
+        "processors": []
+      }
+    }
+  ],
+  "fallback": "minecraft:empty_pool_element"
+}

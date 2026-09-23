@@ -100,6 +100,7 @@ window.EntityEditor = (function () {
             window.AppState.model = null;
             document.getElementById('editorContent').classList.add('hidden');
             document.getElementById('editorEmpty').classList.remove('hidden');
+            if (window.applyEditorVisibility) window.applyEditorVisibility();
             return;
         }
         const next = tabs[Math.min(idx, tabs.length - 1)];
@@ -141,6 +142,7 @@ window.EntityEditor = (function () {
     function renderEditorFrame(tab) {
         document.getElementById('editorEmpty').classList.add('hidden');
         document.getElementById('editorContent').classList.remove('hidden');
+        if (window.applyEditorVisibility) window.applyEditorVisibility();
         const title = document.getElementById('editorTitle');
         const id = tab.entity.id || t('dyn.unnamed');
         title.textContent = (tab.isNew ? t('dyn.newEntityTitle') : t('dyn.editEntity')) + ' — ' + id;
@@ -744,5 +746,5 @@ window.EntityEditor = (function () {
     // 初始化事件绑定（模块加载时执行一次）
     bindEvents();
 
-    return { open, closeActiveTab };
+    return { open, closeActiveTab, hasActiveTab: () => activeUid !== null };
 })();

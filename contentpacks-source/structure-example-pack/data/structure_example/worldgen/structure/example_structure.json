@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:jigsaw",
+  "biomes": [
+    "#minecraft:is_overworld"
+  ],
+  "spawn_overrides": {
+    "bonus_chests": 0,
+    "spawns": []
+  },
+  "step": "surface_structures",
+  "terrain_adaptation": "beard_thin",
+  "start_pool": "structure_example:start",
+  "max_distance_from_center": 80,
+  "project_to_surface": true,
+  "max_surface_level": 0
+}

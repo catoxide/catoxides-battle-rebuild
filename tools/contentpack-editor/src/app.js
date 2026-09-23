@@ -30,6 +30,28 @@
         }
     };
 
+    // 实体/结构两个编辑器框架的显隐协调（任一有活跃标签即显示对应框架）
+    window.applyEditorVisibility = function () {
+        const structActive = window.StructureEditor && window.StructureEditor.hasActiveTab();
+        const entityActive = window.EntityEditor && window.EntityEditor.hasActiveTab();
+        const empty = document.getElementById('editorEmpty');
+        const ent = document.getElementById('editorContent');
+        const str = document.getElementById('structureEditorContent');
+        if (structActive) {
+            empty.classList.add('hidden');
+            if (str) str.classList.remove('hidden');
+            ent.classList.add('hidden');
+        } else if (entityActive) {
+            empty.classList.add('hidden');
+            ent.classList.remove('hidden');
+            if (str) str.classList.add('hidden');
+        } else {
+            empty.classList.remove('hidden');
+            ent.classList.add('hidden');
+            if (str) str.classList.add('hidden');
+        }
+    };
+
     // ===== 布局交互：可拖拽分隔条 + 左栏收起/展开 =====
     const LAYOUT_KEY = 'contentpack-editor.layout';
 
@@ -153,23 +175,43 @@
         // 初始化中栏（实体列表）
         window.EntityList.init({
             onSelect: async (packDir, ent) => {
+                if (window.AppState.contentType === 'structure') return;
                 const readRes = await window.api.readEntity(packDir, ent.id);
                 if (!readRes.ok) { window.showError('读取实体失败: ' + readRes.error); return; }
                 window.EntityEditor.open({ pack: window.AppState.pack, entity: readRes.data, isNew: false });
             },
             onNew: async (packDir) => {
-                window.EntityEditor.open({ pack: window.AppState.pack, entity: null, isNew: true });
+                // 中栏"+ 新建"按钮共用：按当前内容类型路由
+                if (window.AppState.contentType === 'structure') {
+                    window.StructureEditor.open({ pack: window.AppState.pack, structure: null, isNew: true });
+                } else {
+                    window.EntityEditor.open({ pack: window.AppState.pack, entity: null, isNew: true });
+                }
             },
         });
 
-        // 内容类型路由（当前仅 entity 有实现；新增类型时在此注册加载器）
+        // 初始化中栏（结构列表，与实体列表共用 #entityList 容器）
+        window.StructureList.init({
+            onSelect: async (packDir, structure) => {
+                window.StructureEditor.open({ pack: window.AppState.pack, structure, isNew: false });
+            },
+            onNew: async (packDir) => {
+                window.StructureEditor.open({ pack: window.AppState.pack, structure: null, isNew: true });
+            },
+        });
+
+        // 内容类型路由：按中栏下拉切换列表加载器（新增类型时在此注册）
         async function loadContentList() {
             const type = document.getElementById('contentTypeSelect').value;
             window.AppState.contentType = type;
             const pack = window.AppState.pack;
             if (!pack) return;
             document.getElementById('btnNewEntity').disabled = false;
-            await window.EntityList.loadEntities(pack.dir);
+            if (type === 'structure') {
+                await window.StructureList.loadStructures(pack.dir);
+            } else {
+                await window.EntityList.loadEntities(pack.dir);
+            }
         }
 
         // 自动加载包列表
