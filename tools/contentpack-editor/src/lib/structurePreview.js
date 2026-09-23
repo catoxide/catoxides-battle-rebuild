@@ -194,6 +194,19 @@ export function createStructurePreview(canvas) {
         await Promise.all([...ids].map((id) => fetchFaces(id).catch(() => null)));
     }
 
+    /** 预取编辑表里新增方块的贴图（笔刷/点选刷出的方块不在片段定义里，
+     *  不预取就只有回退色，且首帧构建后材质定型 → 贴图"不热载入"） */
+    async function ensureFacesForEdited() {
+        const ids = new Set();
+        for (const map of editMaps.values()) {
+            for (const bid of map.values()) {
+                if (bid && bid !== 'minecraft:air' && bid.indexOf('#') !== 0) ids.add(bid);
+            }
+        }
+        const todo = [...ids].filter((id) => !faceCache.has(id));
+        if (todo.length) await Promise.all(todo.map((id) => fetchFaces(id).catch(() => null)));
+    }
+
     function getTextures(blockId, faces) {
         if (texSets.has(blockId)) return texSets.get(blockId);
         const t = (u) => {
@@ -219,17 +232,21 @@ export function createStructurePreview(canvas) {
         if (blockId && blockId.indexOf('#') === 0) {
             const m = new THREE.MeshBasicMaterial({ color: 0x89b4fa, transparent: true, opacity: 0.16, depthWrite: false });
             arr = [m, m, m, m, m, m];
+            matSets.set(blockId, arr);
+            arr.forEach((m, i) => sharedMats.set('blockmat:' + blockId + ':' + i, m));
         } else if (faces && (faces.top || faces.side || faces.bottom)) {
             const t = getTextures(blockId, faces);
             const side = t.side || t.top, top = t.top || t.side, bottom = t.bottom || side || t.top;
             const mk = (tex) => new THREE.MeshLambertMaterial({ map: tex || null, color: tex ? 0xffffff : blockColor(blockId) });
             arr = [mk(side), mk(side), mk(top), mk(bottom), mk(side), mk(side)];
+            matSets.set(blockId, arr);
+            arr.forEach((m, i) => sharedMats.set('blockmat:' + blockId + ':' + i, m));
         } else {
+            // 贴图尚未加载 → 回退色，【不缓存】：下次贴图到位后重建即升级为贴图材质
+            // （缓存会导致"部分方块有贴图、部分只有色块"的半更新状态）
             const m = new THREE.MeshLambertMaterial({ color: blockColor(blockId) });
             arr = [m, m, m, m, m, m];
         }
-        matSets.set(blockId, arr);
-        arr.forEach((m, i) => sharedMats.set('blockmat:' + blockId + ':' + i, m));
         return arr;
     }
 
@@ -366,6 +383,7 @@ export function createStructurePreview(canvas) {
                 sliceFlipPending = false;
                 const b = lastBuild;
                 const opts = { hiddenPieces: b.hidden, reframe: false };
+                await ensureFacesForEdited(); // 先取新刷方块的贴图，再构建
                 if (b.kind === 'place') {
                     opts.pieces = b.pieces;
                     await setPlacements(b.placements, opts);
@@ -374,6 +392,9 @@ export function createStructurePreview(canvas) {
                 }
                 if (!sliceFlipPending) break;
             }
+            // 重建后强制渲染一帧：rAF 循环停摆（窗口失焦/被节流）时也立即看到编辑结果，
+            // 不必等下一次交互（拖拽/滚轮）触发按需渲染
+            renderOnce();
         } finally {
             rebuilding = false;
         }
@@ -705,6 +726,14 @@ export function createStructurePreview(canvas) {
     //   - 经典 mouse 事件兜底（pointer 事件异常时仍可拖拽）
     //   - HUD 实时显示轨道参数 + 事件计数（诊断：拖拽时 → 计数不涨 = 事件未到达）
     let dragging = false, panning = false, lastX = 0, lastY = 0, activePointer = null;
+    // 左键拖拽是否旋转视角：true = "移动"工具；false = 笔刷/擦除工具（左键不带动相机，
+    // 避免"想点方块写像素、手一抖变成转视角"的冲突；右键拖拽平移/滚轮缩放始终可用）
+    let orbitOnLeft = true;
+    function setOrbitOnLeft(on) { orbitOnLeft = !!on; }
+    function dragAllowed(e) {
+        const isPan = (e.buttons & 2) || e.shiftKey || e.button === 2;
+        return isPan || (e.button === 0 && !e.shiftKey && orbitOnLeft);
+    }
     let evDown = 0, evMove = 0;
 
     // HUD（画布左下角浮层）
@@ -750,6 +779,7 @@ export function createStructurePreview(canvas) {
     // pointer 事件：down 在画布，move/up 在 window（捕获阶段）
     canvas.addEventListener('pointerdown', (e) => {
         if (activePointer !== null) return;
+        if (!dragAllowed(e)) return; // 笔刷/擦除工具下左键不启动拖拽（写入与视角移动解耦）
         activePointer = e.pointerId;
         dragging = true;
         panning = (e.buttons & 2) || e.shiftKey || e.button === 2; // 右键 或 Shift+左键
@@ -781,6 +811,7 @@ export function createStructurePreview(canvas) {
     // 经典 mouse 事件兜底（Chromium 下与 pointer 事件并存，用 activePointer 去重）
     canvas.addEventListener('mousedown', (e) => {
         if (activePointer !== null) return; // pointer 事件已接管
+        if (!dragAllowed(e)) return; // 与 pointerdown 同门控
         activePointer = '__mouse__';
         dragging = true;
         panning = (e.buttons & 2) || e.shiftKey;
@@ -880,6 +911,19 @@ export function createStructurePreview(canvas) {
         running = false;
         if (hud) hud.style.display = 'none';
     }
+    // P11：连续渲染循环开关。false = 按需渲染（仅交互/编辑时渲染，不占主线程，
+    // 适合编辑器窗口：搜索输入框/右键菜单不再与 60fps WebGL 渲染抢帧）。
+    // 按需模式下 running=false → 各 setXxx 的 `if (!running) renderOnce()` 转为强制渲染，
+    // 加上 rebuild 末尾的 renderOnce()，编辑结果即时可见。
+    function setContinuous(on) {
+        if (on) {
+            start();
+        } else {
+            running = false;
+            if (hud) updateHud();
+            renderOnce();
+        }
+    }
 
     function dispose() {
         stop();
@@ -952,6 +996,8 @@ export function createStructurePreview(canvas) {
         getOrbit,
         resetView,
         setAutoRotate,
+        setContinuous, // P11 编辑器窗口按需渲染
+        setOrbitOnLeft, // P11 移动/笔刷工具解耦
         start,
         stop,
         dispose,

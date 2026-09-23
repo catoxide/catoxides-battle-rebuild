@@ -11,8 +11,15 @@
 
     let state = null;      // { packDir, structureId, pieceName, blueprint }
     let pv = null;         // 预览器实例
-    let tool = 'paint';
+    let tool = 'move';     // 默认"移动"（先摆视角）；笔刷/擦除/占位 = 写入模式（左键不转视角）
     let initialized = false;
+
+    // 工具切换：更新按钮高亮 + 预览器左键拖拽门控（移动=转视角；写入=左键点按，不与视角冲突）
+    function setTool(name) {
+        tool = name;
+        document.querySelectorAll('.ed-tool[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
+        if (pv) pv.setOrbitOnLeft(name === 'move');
+    }
 
     // ===== 状态栏 =====
     function status(msg, isErr) {
@@ -51,6 +58,10 @@
                 inspect: inspectVoxel,
             }; // E2E/调试钩子
             pv.start();
+            // 编辑器窗口用按需渲染（交互/编辑时渲染，不跑 60fps 连续循环）：
+            // 省主线程 → 搜索输入/右键菜单不卡；rebuild 末尾强制 renderOnce → 编辑即时可见
+            pv.setContinuous(false);
+            pv.setOrbitOnLeft(tool === 'move');
             syncPieceSelect();
             selectPiece(state.pieceName);
             wireUI();
@@ -122,12 +133,9 @@
     function brushSize() { return parseInt($('edBrushSize').value, 10) || 1; }
 
     function wireUI() {
-        // 左侧工具按钮
+        // 左侧工具按钮（移动 / 笔刷 / 擦除 / 占位）
         document.querySelectorAll('.ed-tool[data-tool]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                tool = btn.dataset.tool;
-                document.querySelectorAll('.ed-tool[data-tool]').forEach((b) => b.classList.toggle('active', b === btn));
-            });
+            btn.addEventListener('click', () => setTool(btn.dataset.tool));
         });
         $('edResetView').addEventListener('click', () => { if (pv) pv.resetView(); });
         $('edSliceAxis').addEventListener('change', sliceChange);
@@ -154,6 +162,7 @@
             const dt = Date.now() - down.t;
             down = null;
             if (e.button !== 0 || moved > 4 || dt > 450) return;
+            if (tool === 'move') return; // 移动工具：左键只管视角，单击不写入
             const pick = pv.pickVoxel(e.clientX, e.clientY);
             if (!pick) return;
             const inp = $('edBlock');
@@ -177,12 +186,17 @@
         document.addEventListener('click', (e) => { if (!e.target.closest('#edCtx')) hideCtx(); });
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCtx(); });
 
-        // 快捷方块按钮 + 搜索
-        $('edBtnJigsaw').addEventListener('click', () => { $('edBlock').value = 'minecraft:jigsaw'; hideBlockList(); });
-        $('edBtnVoid').addEventListener('click', () => { $('edBlock').value = 'minecraft:structure_void'; hideBlockList(); });
+        // 快捷方块按钮 + 搜索（选中要刷的方块 → 自动切到笔刷工具，直接可点写）
+        $('edBtnJigsaw').addEventListener('click', () => { $('edBlock').value = 'minecraft:jigsaw'; setTool('paint'); hideBlockList(); });
+        $('edBtnVoid').addEventListener('click', () => { $('edBlock').value = 'minecraft:structure_void'; setTool('paint'); hideBlockList(); });
         const inp = $('edBlock');
         const listEl = $('edBlockList');
-        inp.addEventListener('input', filterBlockList);
+        // 搜索防抖：连续输入合并到一次重渲染（几百个方块过滤+重建成 80 行 DOM，逐键重渲染会卡）
+        let searchTimer = null;
+        inp.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(filterBlockList, 60);
+        });
         inp.addEventListener('focus', filterBlockList);
         inp.addEventListener('blur', () => { setTimeout(hideBlockList, 150); });
         inp.addEventListener('keydown', (e) => {
@@ -220,7 +234,7 @@
             row.className = 'block-search-item';
             row.dataset.id = id;
             row.textContent = id;
-            row.addEventListener('mousedown', (e) => { e.preventDefault(); inp.value = id; hideBlockList(); });
+            row.addEventListener('mousedown', (e) => { e.preventDefault(); inp.value = id; setTool('paint'); hideBlockList(); });
             listEl.appendChild(row);
         }
         listEl.style.display = matches.length ? 'block' : 'none';
@@ -304,7 +318,7 @@ placement_priority: ${jg.placementPriority != null ? jg.placementPriority : 10}<
                 slot.innerHTML = line;
             }).catch(() => {});
         }
-        $('edCtxUse').addEventListener('click', () => { $('edBlock').value = pick.blockId; hideCtx(); });
+        $('edCtxUse').addEventListener('click', () => { $('edBlock').value = pick.blockId; setTool('paint'); hideCtx(); });
         $('edCtxCopy').addEventListener('click', () => {
             if (navigator.clipboard) navigator.clipboard.writeText(pick.blockId).catch(() => {});
             hideCtx();
