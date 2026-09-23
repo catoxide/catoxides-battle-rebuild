@@ -383,13 +383,55 @@ code { background: #45475a; padding: 1px 5px; border-radius: 4px; font-size: 12p
 }
 #structCanvas { width: 100%; height: 520px; display: block; cursor: grab; touch-action: none; }
 #structCanvas:active { cursor: grabbing; }
-/* P9 片段 3D 编辑画布（片段与拼图页签） */
-#piece3dWrap {
-  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
-  background: #1e1e2e; line-height: 0;
+/* ==================== P11 片段 3D 编辑器窗口（独立窗口：顶栏 + 左工具栏 + 画布 + 状态栏） ==================== */
+body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.ed-topbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; background: var(--card);
+  border-bottom: 1px solid var(--border); flex-wrap: nowrap;
 }
-#pieceCanvas { width: 100%; height: 420px; display: block; cursor: grab; touch-action: none; }
-#pieceCanvas:active { cursor: grabbing; }
+.ed-logo { font-weight: 600; white-space: nowrap; }
+.ed-topbar select, .ed-topbar input { height: 30px; }
+.ed-topbar .block-search { position: relative; }
+.ed-spacer { flex: 1; }
+.ed-main { flex: 1; display: flex; min-height: 0; }
+.ed-tools {
+  width: 150px; background: var(--card); border-right: 1px solid var(--border);
+  padding: 8px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto;
+}
+.ed-toolgroup { display: flex; flex-direction: column; gap: 4px; }
+.ed-group-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 2px; }
+.ed-toolgroup select { width: 100%; height: 28px; }
+.ed-slicerow { display: flex; align-items: center; gap: 6px; }
+.ed-tool {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 10px; background: transparent; border: 1px solid transparent;
+  border-radius: 6px; color: var(--text); font-size: 13px; cursor: pointer; text-align: left;
+}
+.ed-tool:hover { background: rgba(255,255,255,.06); }
+.ed-tool.active { background: rgba(80,140,255,.22); border-color: var(--accent); }
+.ed-toolgroup-tip { margin-top: auto; }
+.ed-canvaswrap { flex: 1; position: relative; min-width: 0; background: #1e1e2e; }
+#edCanvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+#edCanvas:active { cursor: grabbing; }
+.ed-statusbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 10px; background: var(--card); border-top: 1px solid var(--border); font-size: 12px;
+}
+/* 右键组件/NBT 菜单 */
+.ed-ctx {
+  position: absolute; z-index: 50; min-width: 240px; max-width: 310px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45); padding: 10px; font-size: 12px;
+}
+.ed-ctx-head { font-weight: 600; margin-bottom: 6px; word-break: break-all; }
+.ed-ctx-row { margin: 2px 0; }
+.ed-ctx-sub { margin: 8px 0 4px; font-weight: 600; color: var(--accent); }
+.ed-ctx-nbt {
+  margin: 4px 0; padding: 8px; background: rgba(0,0,0,.35); border-radius: 6px;
+  font-size: 11px; line-height: 1.5; overflow-x: auto; white-space: pre;
+}
+.ed-ctx-actions { display: flex; gap: 6px; margin-top: 8px; }
 .struct-hud { user-select: none; }
 .struct-legend {
   background: var(--card); border: 1px solid var(--border); border-radius: 10px;

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>片段 3D 编辑器</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="ed-body">
+  <!-- P11 片段 3D 编辑器：独立窗口（Photoshop/Blender 式：顶栏 + 左侧工具栏 + 画布 + 状态栏） -->
+  <header class="ed-topbar">
+    <span class="ed-logo">🧱 <span data-i18n="structure.piece3d.winTitle">片段 3D 编辑</span></span>
+    <select id="edPiece" title=""></select>
+    <div class="block-search" id="edSearchWrap">
+      <input id="edBlock" value="minecraft:stone_bricks" style="width:200px" data-i18n-ph="structure.3d.edit.searchPh" placeholder="搜索方块（ID 子串）…">
+      <div id="edBlockList" class="block-search-list"></div>
+    </div>
+    <button class="btn ghost small" id="edBtnJigsaw" data-i18n-title="structure.3d.edit.jigsawBtnTip">🧩 <span data-i18n="structure.3d.edit.jigsawBtn">拼图方块</span></button>
+    <button class="btn ghost small" id="edBtnVoid" data-i18n-title="structure.3d.edit.voidBtnTip">⬚ <span data-i18n="structure.3d.edit.voidBtn">结构空位</span></button>
+    <span class="note" id="edSrcNote"></span>
+    <span class="ed-spacer"></span>
+    <button class="btn ghost small" id="edUndo" data-i18n="structure.3d.edit.undo">↩ <span data-i18n="structure.3d.edit.undo">撤销编辑</span></button>
+    <span class="note" id="edInfo"></span>
+    <button class="btn small" id="edSave">💾 <span data-i18n="structure.piece3d.save">写回</span></button>
+  </header>
+  <div class="ed-main">
+    <aside class="ed-tools">
+      <div class="ed-toolgroup">
+        <div class="ed-group-title" data-i18n="structure.piece3d.tools">工具</div>
+        <button class="ed-tool active" data-tool="paint" data-i18n-title="structure.3d.edit.toolPaint">🖌<span data-i18n="structure.piece3d.toolPaint">笔刷</span></button>
+        <button class="ed-tool" data-tool="erase" data-i18n-title="structure.3d.edit.toolErase">⌫<span data-i18n="structure.piece3d.toolErase">擦除</span></button>
+        <button class="ed-tool" data-tool="placeholder" data-i18n-title="structure.3d.edit.toolPlaceholder">▣<span data-i18n="structure.piece3d.toolPlaceholder">占位</span></button>
+      </div>
+      <div class="ed-toolgroup">
+        <div class="ed-group-title" data-i18n="structure.3d.edit.brushSize">笔刷</div>
+        <select id="edBrushSize"><option>1</option><option selected>3</option><option>5</option></select>
+      </div>
+      <div class="ed-toolgroup">
+        <div class="ed-group-title" data-i18n-title="structure.3d.edit.sliceTip"><span data-i18n="structure.3d.edit.slice">剖切</span></div>
+        <select id="edSliceAxis">
+          <option value="off" data-i18n="structure.3d.edit.sliceOff">关</option>
+          <option value="x">X</option><option value="y">Y</option><option value="z">Z</option>
+        </select>
+        <div class="ed-slicerow">
+          <input id="edSliceI" type="range" min="0" max="7" value="0" style="flex:1">
+          <span class="note" id="edSliceLabel">0</span>
+        </div>
+      </div>
+      <div class="ed-toolgroup">
+        <div class="ed-group-title" data-i18n="structure.piece3d.view">视角</div>
+        <button class="ed-tool" id="edResetView" data-i18n-title="structure.3d.reset">⌂<span data-i18n="structure.3d.reset">重置视角</span></button>
+      </div>
+      <div class="ed-toolgroup ed-toolgroup-tip">
+        <div class="note" data-i18n="structure.piece3d.rightTip">右键方块 = 查组件/NBT（jigsaw 含朝向）</div>
+      </div>
+    </aside>
+    <div class="ed-canvaswrap" id="edCanvasWrap">
+      <canvas id="edCanvas" width="900" height="600"></canvas>
+      <div id="edCtx" class="ed-ctx" style="display:none"></div>
+    </div>
+  </div>
+  <footer class="ed-statusbar">
+    <span class="note" id="edStatus"></span>
+    <span class="note ed-spacer"></span>
+    <span class="note" data-i18n="structure.3d.hint">左键拖拽 = 旋转 · 右键/Shift拖拽 = 平移 · 滚轮 = 缩放</span>
+  </footer>
+  <script src="i18n.js"></script>
+  <script src="core/voxel.js"></script>
+  <script src="views/pieceEditor.js"></script>
+</body>
+</html>

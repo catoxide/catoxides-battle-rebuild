@@ -120,6 +120,67 @@ function createWindow() {
     // mainWindow.webContents.openDevTools();
 }
 
+// ==================== P11 片段 3D 编辑器窗口（独立窗口，Photoshop/Blender 式布局） ====================
+// 数据流：主窗口 tab 是唯一事实源 → 打开时把 blueprint 推给编辑器窗口；
+// 编辑器窗口内存中编辑 → "写回"（或关窗前自动写回）→ 主窗口合并进 tab（保存草稿时落盘）。
+let pieceEditorWin = null;
+let pieceEditorPending = null; // 等待页面加载完成后投递的 payload（防 send 早于渲染脚本注册的竞态）
+
+function deliverEditorPayload() {
+    if (pieceEditorWin && !pieceEditorWin.isDestroyed() && pieceEditorPending) {
+        pieceEditorWin.webContents.send('pieceEditor:load', pieceEditorPending);
+        pieceEditorPending = null;
+    }
+}
+
+function createPieceEditorWindow() {
+    pieceEditorWin = new BrowserWindow({
+        width: 1180,
+        height: 800,
+        title: '片段 3D 编辑器',
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: false,
+        },
+    });
+    pieceEditorWin.loadFile(path.join(__dirname, 'src', 'piece-editor.html'));
+    // 持久监听：页面（重新）加载完成即投递 pending payload（投递后置 null，重复事件无害）
+    pieceEditorWin.webContents.on('did-finish-load', deliverEditorPayload);
+    pieceEditorWin.on('closed', () => { pieceEditorWin = null; pieceEditorPending = null; });
+    return pieceEditorWin;
+}
+
+// 打开/聚焦编辑器窗口并推送蓝图（payload: {packDir, structureId, pieceName, blueprint}）
+ipcMain.handle('pieceEditor:open', (event, payload) => {
+    try {
+        if (!pieceEditorWin || pieceEditorWin.isDestroyed()) {
+            pieceEditorPending = payload;
+            createPieceEditorWindow(); // 页面加载完成后由 did-finish-load 投递
+        } else {
+            pieceEditorPending = payload;
+            if (!pieceEditorWin.webContents.isLoading()) deliverEditorPayload(); // 已加载 → 立即投递
+        }
+        if (!pieceEditorWin || pieceEditorWin.isDestroyed()) return { ok: false, error: '窗口创建失败' };
+        pieceEditorWin.setTitle('片段 3D 编辑器 — ' + (payload.structureId || '?') + (payload.pieceName ? ' / ' + payload.pieceName : ''));
+        pieceEditorWin.show();
+        pieceEditorWin.focus();
+        return { ok: true };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+// 编辑器窗口 → 主窗口：编辑写回（转发给所有非源窗口）
+ipcMain.on('pieceEditor:saveEdits', (event, payload) => {
+    const srcId = event.sender.id;
+    for (const w of BrowserWindow.getAllWindows()) {
+        if (w.isDestroyed() || w.webContents.id === srcId) continue;
+        w.webContents.send('pieceEditor:edits', payload);
+    }
+});
+
 // ==================== IPC 处理器 ====================
 // 每个 handler 返回 { ok, data|error }，渲染进程统一处理
 
@@ -707,6 +768,17 @@ ipcMain.handle('core:mcBlockFaces', (event, blockId) => {
     if (!root) return { ok: true, data: null };
     const faces = McAssets.blockFaces(root, blockId);
     return { ok: true, data: Object.keys(faces).length ? faces : null };
+});
+
+// P11 右键查方块：读数据集 blockstate 定义（属性/朝向/变体数）
+ipcMain.handle('core:blockState', (event, blockId) => {
+    try {
+        const root = McAssets.resolveRoot(ROOT);
+        if (!root) return { ok: true, data: null };
+        return { ok: true, data: McAssets.blockState(root, blockId) };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
 });
 
 // P10：实时读取游戏将加载的方块（vanilla 数据集 + run/data + run/mods），30s 缓存，force 刷新

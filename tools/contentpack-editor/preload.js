@@ -38,7 +38,14 @@ const api = {
     mcAssets: () => ipcRenderer.invoke('core:mcAssets'),
     mcBlockFaces: (blockId) => ipcRenderer.invoke('core:mcBlockFaces', blockId),
     importRegion: () => ipcRenderer.invoke('core:importRegion'),
-    mcBlockList: () => ipcRenderer.invoke('core:mcBlockList'),
+    mcBlockList: (opts) => ipcRenderer.invoke('core:mcBlockList', opts),
+    blockState: (blockId) => ipcRenderer.invoke('core:blockState', blockId),
+
+    // P11 片段 3D 编辑器窗口（独立窗口）
+    openPieceEditor: (payload) => ipcRenderer.invoke('pieceEditor:open', payload),
+    savePieceEdits: (payload) => ipcRenderer.send('pieceEditor:saveEdits', payload),
+    onPieceEditorEdits: (cb) => ipcRenderer.on('pieceEditor:edits', (e, p) => cb(p)),
+    onPieceEditorLoad: (cb) => ipcRenderer.on('pieceEditor:load', (e, p) => cb(p)),
 
     // 暂存区（草稿）
     stagingList: (packDir) => ipcRenderer.invoke('staging:list', packDir),

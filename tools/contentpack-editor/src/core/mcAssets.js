@@ -207,11 +207,60 @@ function blockList(root) {
     return list;
 }
 
+/**
+ * P11 右键查方块：读 blockstate 定义（1.21.1 数据集）
+ * variants 键格式：`"a=1,b=2"` 或 `{ prop: { value: model } }`（或单模型）
+ * @returns {{file:string, properties:Object<string,string[]>, variantCount:number}|null}
+ */
+function blockState(root, blockId) {
+    const s = String(blockId || '');
+    const i = s.indexOf(':');
+    const ns = i >= 0 ? s.slice(0, i) : 'minecraft';
+    const name = i >= 0 ? s.slice(i + 1) : s;
+    if (!name || name.includes('/') || name.includes('\\')) return null;
+    const file = path.join(root, 'assets', ns, 'blockstates', name + '.json');
+    let raw;
+    try { raw = JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { return null; }
+    const props = {};
+    const addProp = (p, v) => {
+        if (!props[p]) props[p] = [];
+        if (v && !props[p].includes(v)) props[p].push(v);
+    };
+    const variants = (raw && typeof raw.variants === 'object' && raw.variants) || {};
+    let variantCount = 0;
+    for (const key of Object.keys(variants)) {
+        const v = variants[key];
+        if (key.includes('=')) {
+            // 扁平键："facing=north,up=true"
+            for (const kv of key.split(',')) {
+                const eq = kv.indexOf('=');
+                if (eq < 0) continue;
+                addProp(kv.slice(0, eq).trim(), kv.slice(eq + 1).trim());
+            }
+            variantCount += Array.isArray(v) ? v.length : 1;
+        } else if (v && typeof v === 'object') {
+            // 嵌套：{ facing: { north: model, south: model } } 或 { facing: [models] }
+            if (Array.isArray(v)) variantCount += v.length;
+            else { for (const val of Object.keys(v)) addProp(key, val); variantCount += Object.keys(v).length; }
+        } else {
+            variantCount += 1;
+        }
+    }
+    const out = {};
+    for (const [p, vs] of Object.entries(props)) out[p] = vs.sort();
+    return {
+        file: 'assets/' + ns + '/blockstates/' + name + '.json',
+        properties: out,
+        variantCount,
+    };
+}
+
 module.exports = {
     resolveRoot,
     setRootOverride,
     isReady,
     blockFaces,
     blockList,
+    blockState,
     texturePath,
 };
