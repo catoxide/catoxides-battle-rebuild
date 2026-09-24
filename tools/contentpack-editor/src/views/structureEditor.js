@@ -1077,6 +1077,7 @@ window.StructureEditor = (function () {
                     showStatus('🧱 3D 编辑器写回：' + n + ' 个片段已更新（记得"保存草稿"落盘）', true);
                 }
                 window.__lastEditorEdits = payload; // E2E 钩子
+                window.__lastEditorMergedBp = tab.bp; // E2E 钩子：合并后的主窗口蓝图状态
             });
         }
     }

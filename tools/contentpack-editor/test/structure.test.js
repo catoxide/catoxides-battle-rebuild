@@ -194,6 +194,27 @@ test('schema：blockNbt 非 tagged compound → error', () => {
     const v = S.validateBlueprint(mkNbtBp([{ x: 0, y: 0, z: 0, nbt: { $t: 8, v: 'x' } }]));
     assert.ok(v.errors.some((e) => e.includes('blockNbt') && e.includes('tagged compound')), JSON.stringify(v.errors));
 });
+test('模板导出：熔炉类 BE（Items + BurnTime/CookTime 原样通过）', () => {
+    const furnNbt = {
+        $t: 10,
+        v: {
+            id: { $t: 8, v: 'minecraft:furnace' },
+            Items: { $t: 9, elemType: 10, v: [] },
+            BurnTime: { $t: 3, v: 800 },
+            CookTime: { $t: 3, v: 300 },
+            CookTimeTotal: { $t: 3, v: 200 },
+        },
+    };
+    const p = { name: 'f', size: [2, 2, 2], boxFills: [], fillBlocks: [{ x: 0, y: 0, z: 0, block: 'minecraft:furnace' }], blockNbt: [{ x: 0, y: 0, z: 0, nbt: furnNbt }] };
+    const dec = NBT.decode(V.buildTemplateNbt(p, 'ns'));
+    const f = dec.blocks.find((b) => b.nbt);
+    assert.ok(f, 'furnace 块应带 nbt');
+    assert.strictEqual(f.nbt.id, 'minecraft:furnace');
+    assert.strictEqual(f.nbt.BurnTime, 800);
+    assert.strictEqual(f.nbt.CookTime, 300);
+    assert.strictEqual(f.nbt.CookTimeTotal, 200);
+    assert.deepStrictEqual(f.nbt.Items, []);
+});
 
 // ===== 4. blueprint → 原版文件映射 =====
 console.log('=== 4. blueprint → 原版文件映射 ===');
@@ -354,6 +375,34 @@ test('exportToPack 写盘 + 目录结构正确', () => {
         const nbtBuf = fs.readFileSync(path.join(tmp, 'data/example/structure/main_hall.nbt'));
         const dec = NBT.decode(nbtBuf);
         assert.strictEqual(dec.size[0], 10);
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});
+test('exportToPack：落盘 .nbt 含 blockNbt（文件级往返，模拟"导出原版数据"落盘）', () => {
+    const nbtBp = S.defaultBlueprint();
+    nbtBp.structureId = 'nbtpack';
+    nbtBp.namespace = 'ex';
+    nbtBp.structure.startPool = 'p1';
+    nbtBp.pieces = [{
+        name: 'hall', size: [4, 3, 4],
+        boxFills: [{ from: [0, 0, 0], to: [3, 0, 3], block: 'minecraft:stone_bricks' }],
+        fillBlocks: [{ x: 1, y: 1, z: 1, block: 'minecraft:chest' }],
+        jigsaws: [],
+        blockNbt: [{ x: 1, y: 1, z: 1, nbt: chestNbt }],
+    }];
+    nbtBp.templatePools = [{ name: 'p1', elements: [{ template: 'hall', weight: 1, projection: 'rigid' }] }];
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cped-nbt-'));
+    try {
+        const r = V.exportToPack(tmp, nbtBp);
+        assert.strictEqual(r.ok, true, r.errors && r.errors.join('; '));
+        const dec = NBT.decode(fs.readFileSync(path.join(tmp, 'data/ex/structure/hall.nbt')));
+        const chest = dec.blocks.find((b) => b.nbt && b.nbt.id === 'minecraft:chest');
+        assert.ok(chest, '落盘模板中 chest 块应带 nbt');
+        assert.deepStrictEqual(chest.pos, [1, 1, 1]);
+        assert.strictEqual(chest.nbt.Items[0].count, 5);
+        assert.strictEqual(chest.nbt.Items[0].id, 'minecraft:golden_apple');
+        assert.strictEqual(chest.nbt.Items[0].Slot, 13);
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
     }
