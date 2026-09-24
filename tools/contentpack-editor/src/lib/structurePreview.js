@@ -85,7 +85,11 @@ function orientationVec(o) {
     }
 }
 
-export function createStructurePreview(canvas) {
+/**
+ * @param {HTMLCanvasElement} canvas
+ * @param {{onChange?: () => void}} hooks onChange：体素编辑表变化（setVoxel/clearEdits）回调
+ */
+export function createStructurePreview(canvas, hooks = {}) {
     const W0 = canvas.width || 800, H0 = canvas.height || 600;
 
     const scene = new THREE.Scene();
@@ -184,6 +188,16 @@ export function createStructurePreview(canvas) {
         return p;
     }
 
+    /** 预取一组方块的外观（优先）与回退贴图（外观失败才需要 blockFaces） */
+    async function ensureAssetsFor(ids) {
+        const set = new Set(ids || []);
+        await ensureAppearanceFor(set);
+        const needFaces = [...set].filter((id) =>
+            id && id !== 'minecraft:air' && !id.startsWith('#') && !faceCache.has(id)
+            && !(specCache.get(id) && specCache.get(id).ok));
+        if (needFaces.length) await Promise.all(needFaces.map((id) => fetchFaces(id).catch(() => null)));
+    }
+
     /** 预取一组片段用到的全部贴图（构建前 await） */
     async function ensureFacesFor(pieces) {
         const ids = new Set();
@@ -191,7 +205,7 @@ export function createStructurePreview(canvas) {
             for (const bf of pc.boxFills || []) if (bf && bf.block) ids.add(bf.block);
             for (const fb of pc.fillBlocks || []) if (fb && fb.block) ids.add(fb.block);
         }
-        await Promise.all([...ids].map((id) => fetchFaces(id).catch(() => null)));
+        await ensureAssetsFor(ids);
     }
 
     /** 预取编辑表里新增方块的贴图（笔刷/点选刷出的方块不在片段定义里，
@@ -203,8 +217,7 @@ export function createStructurePreview(canvas) {
                 if (bid && bid !== 'minecraft:air' && bid.indexOf('#') !== 0) ids.add(bid);
             }
         }
-        const todo = [...ids].filter((id) => !faceCache.has(id));
-        if (todo.length) await Promise.all(todo.map((id) => fetchFaces(id).catch(() => null)));
+        await ensureAssetsFor(ids);
     }
 
     function getTextures(blockId, faces) {
@@ -248,6 +261,114 @@ export function createStructurePreview(canvas) {
             arr = [m, m, m, m, m, m];
         }
         return arr;
+    }
+
+    // --- P14 外观系统（vanilla 标准链路：主进程按 blockstate→模型链→元素/UV/旋转/uvlock 烘焙，
+    //     渲染端只做几何装配；同一 blockId[props] 的所有实例共享几何 → 仍用 InstancedMesh）---
+    const specCache = new Map();    // bid → {ok,data} | null（dataURL 已在主进程解好）
+    const specPending = new Map();  // bid → Promise
+    const specGeos = new Map();     // bid → {geometry, materials[]}（会话级复用，clearGroups 不释放）
+    const texByUrl = new Map();     // dataURL → THREE.Texture
+    const texMats = new Map();      // dataURL → Set(material)（alpha 检测完成后统一升级 cutout）
+
+    async function fetchAppearance(bid) {
+        if (specCache.has(bid)) return specCache.get(bid);
+        if (specPending.has(bid)) return specPending.get(bid);
+        const p = (async () => {
+            let res = null;
+            if (typeof window !== 'undefined' && window.api && window.api.mcBlockAppearance) {
+                try {
+                    const r = await window.api.mcBlockAppearance(bid);
+                    if (r) res = r;
+                } catch { res = null; }
+            }
+            specCache.set(bid, res && res.ok ? res : null);
+            return specCache.get(bid);
+        })();
+        specPending.set(bid, p);
+        p.finally(() => specPending.delete(bid));
+        return p;
+    }
+
+    /** 预取一组方块的外观（优先于贴图：外观成功则无需 blockFaces 回退贴图） */
+    async function ensureAppearanceFor(ids) {
+        const todo = [...new Set(ids || [])].filter((id) =>
+            id && id !== 'minecraft:air' && !id.startsWith('#') && !specCache.has(id));
+        if (!todo.length) return;
+        await Promise.all(todo.map((id) => fetchAppearance(id).catch(() => null)));
+    }
+
+    /** 16×16 贴图 alpha 采样（玻璃/门/栅栏等 cutout；加载完成时调一次） */
+    function textureHasAlpha(tex) {
+        const img = tex && tex.image;
+        if (!img || !img.width || !img.height) return false;
+        try {
+            const c = document.createElement('canvas');
+            c.width = img.width; c.height = img.height;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const d = ctx.getImageData(0, 0, c.width, c.height).data;
+            for (let i = 3; i < d.length; i += 4) if (d[i] < 250) return true;
+        } catch { return false; }
+        return false;
+    }
+
+    /** bid → {geometry, materials}（每个烘焙面一个材质组；贴图缺失→回退色板） */
+    function specMeshAssets(bid) {
+        if (specGeos.has(bid)) return specGeos.get(bid);
+        const spec = specCache.get(bid);
+        if (!spec || !spec.data || !spec.data.faces || !spec.data.faces.length) return null;
+        const faces = spec.data.faces;
+        const pos = new Float32Array(faces.length * 12);
+        const uv = new Float32Array(faces.length * 8);
+        const idx = new Uint16Array(faces.length * 6);
+        const matMap = new Map();
+        const getMat = (f) => {
+            const url = f.texUrl || null;
+            const k = (url || '∅') + '|' + f.shade.toFixed(3);
+            if (matMap.has(k)) return matMap.get(k);
+            // 灰度 = 游戏面亮度（顶 1.0/底 0.5/南北 0.8/东西 0.6）；贴图 = 色 × 灰度
+            const mat = new THREE.MeshLambertMaterial({ color: new THREE.Color(f.shade, f.shade, f.shade), side: THREE.DoubleSide });
+            if (url) {
+                let tex = texByUrl.get(url);
+                if (!tex) {
+                    texMats.set(url, new Set());
+                    tex = texLoader.load(url, (t) => {
+                        if (textureHasAlpha(t)) { // MC cutout（玻璃/门/栅栏等）
+                            for (const m of texMats.get(url) || []) { m.alphaTest = 0.5; m.needsUpdate = true; }
+                        }
+                    });
+                    tex.magFilter = THREE.NearestFilter;
+                    tex.minFilter = THREE.NearestFilter;
+                    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+                    texByUrl.set(url, tex);
+                }
+                mat.map = tex;
+                (texMats.get(url) || new Set()).add(mat);
+                if (tex.image && tex.image.width && textureHasAlpha(tex)) { mat.alphaTest = 0.5; } // 图已加载完
+            } else {
+                mat.color = blockColor(bid).multiplyScalar(f.shade);
+            }
+            matMap.set(k, mat);
+            sharedMats.set('specmat:' + bid + ':' + k, mat);
+            return mat;
+        };
+        let v = 0;
+        const materials = faces.map((f, fi) => {
+            pos.set(f.pos, fi * 12);
+            uv.set(f.uv, fi * 8);
+            idx.set([v, v + 1, v + 2, v, v + 2, v + 3], fi * 6);
+            v += 4;
+            return getMat(f);
+        });
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+        geo.setIndex(new THREE.BufferAttribute(idx, 1));
+        faces.forEach((f, fi) => geo.addGroup(fi * 6, 6, fi));
+        const out = { geometry: geo, materials };
+        specGeos.set(bid, out);
+        return out;
     }
 
     function clearGroups() {
@@ -306,8 +427,12 @@ export function createStructurePreview(canvas) {
         const m4 = new THREE.Matrix4();
         for (const [bid, positions] of groups) {
             if (!positions.length) continue;
-            const faces = faceCache.get(bid) || null;
-            const im = new THREE.InstancedMesh(unitBox, getMats(bid, faces), positions.length);
+            // P14：优先外观链路（按 blockstate 烘焙的真实模型几何）；失败回退简单立方体
+            const spec = specCache.get(bid);
+            const assets = spec && spec.ok ? specMeshAssets(bid) : null;
+            const geo = assets ? assets.geometry : unitBox;
+            const mats = assets ? assets.materials : getMats(bid, faceCache.get(bid) || null);
+            const im = new THREE.InstancedMesh(geo, mats, positions.length);
             for (let i = 0; i < positions.length; i++) {
                 m4.makeTranslation(positions[i][0] + 0.5, positions[i][1] + 0.5, positions[i][2] + 0.5);
                 im.setMatrixAt(i, m4);
@@ -665,6 +790,7 @@ export function createStructurePreview(canvas) {
         const key = local[0] + ',' + local[1] + ',' + local[2];
         if (!blockId || blockId === 'minecraft:air' || blockId === 'air') map.delete(key);
         else map.set(key, blockId);
+        if (hooks.onChange) hooks.onChange(); // P14：未写回修改（dirty）通知
         return rebuild();
     }
 
@@ -722,6 +848,7 @@ export function createStructurePreview(canvas) {
             if (!blockId || blockId === 'minecraft:air' || blockId === 'air') map.delete(key);
             else map.set(key, blockId);
         }
+        if (hooks.onChange) hooks.onChange(); // P14：未写回修改（dirty）通知
         return rebuild();
     }
 
@@ -877,6 +1004,7 @@ export function createStructurePreview(canvas) {
     function clearEdits(pieceName) {
         if (pieceName) editMaps.delete(pieceName);
         else editMaps.clear();
+        if (hooks.onChange) hooks.onChange(); // P14：dirty 通知（写回后清零）
         return rebuild();
     }
     function getPlacements() { return lastPlacements; }
@@ -908,6 +1036,44 @@ export function createStructurePreview(canvas) {
         + 'padding:4px 8px;border-radius:6px;pointer-events:none;display:none;white-space:pre;z-index:5;';
     const wrap = canvas.parentElement;
     if (wrap) { wrap.style.position = 'relative'; wrap.appendChild(hud); }
+
+    // P14 方向罗盘（MC 约定：北=-Z 南=+Z 西=-X 东=+X；整个表盘随相机方位角 θ 同向旋转，
+    // 使指针始终指向世界方向：θ=0（相机在南朝北看）→ 北在上；θ=90°（相机在东朝西看）→ 北在右 …）
+    let compass = null, compassDial = null;
+    if (wrap) {
+        compass = document.createElement('div');
+        compass.className = 'struct-compass';
+        compass.style.cssText = 'position:absolute;top:10px;right:10px;width:66px;height:66px;'
+            + 'background:rgba(30,30,46,.72);border:1px solid #45475a;border-radius:50%;'
+            + 'pointer-events:none;display:none;z-index:6;';
+        compassDial = document.createElement('div');
+        compassDial.style.cssText = 'position:absolute;inset:0;';
+        const mk = (label, deg, color, size) => {
+            const el = document.createElement('div');
+            el.textContent = label;
+            const rad = (deg - 90) * Math.PI / 180; // 0°=上（北），顺时针
+            const cx = (Math.sin(rad) * 21).toFixed(1), cy = (-Math.cos(rad) * 21).toFixed(1);
+            el.style.cssText = 'position:absolute;left:calc(50% + ' + cx + 'px);top:calc(50% + ' + cy + 'px);transform:translate(-50%,-50%);'
+                + 'color:' + color + ';font:' + size + 'px/1 "Segoe UI",sans-serif;font-weight:600;';
+            compassDial.appendChild(el);
+        };
+        mk('北', 0, '#f38ba8', 13);   // 北 -Z（MC 默认朝向）
+        mk('东', 90, '#cdd6f4', 11);  // 东 +X
+        mk('南', 180, '#cdd6f4', 11); // 南 +Z
+        mk('西', 270, '#cdd6f4', 11); // 西 -X
+        // 中心十字
+        const dot = document.createElement('div');
+        dot.style.cssText = 'position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;'
+            + 'background:#89b4fa;border-radius:50%;';
+        compassDial.appendChild(dot);
+        compass.appendChild(compassDial);
+        wrap.appendChild(compass);
+    }
+    function updateCompass() {
+        if (!compass || !compassDial) return;
+        compass.style.display = 'block';
+        compassDial.style.transform = 'rotate(' + (orbit.theta * 180 / Math.PI).toFixed(2) + 'deg)';
+    }
     function updateHud() {
         if (!hud) return;
         hud.style.display = 'block';
@@ -1027,6 +1193,7 @@ export function createStructurePreview(canvas) {
     function renderOnce() {
         sizeCanvas();
         applyCamera();
+        updateCompass();
         renderer.render(scene, camera);
         lastFrameTime = performance.now();
     }
@@ -1043,6 +1210,7 @@ export function createStructurePreview(canvas) {
         if (!running) return;
         if (autoRotate) orbit.theta += 0.0035;
         applyCamera();
+        updateCompass();
         checkSliceFlip(); // P9：自动旋转等移动相机时，越过分界面自动翻转剖切
         sizeCanvas();
         renderer.render(scene, camera);
@@ -1074,6 +1242,7 @@ export function createStructurePreview(canvas) {
     function stop() {
         running = false;
         if (hud) hud.style.display = 'none';
+        if (compass) compass.style.display = 'none';
     }
     // P11：连续渲染循环开关。false = 按需渲染（仅交互/编辑时渲染，不占主线程，
     // 适合编辑器窗口：搜索输入框/右键菜单不再与 60fps WebGL 渲染抢帧）。
@@ -1100,9 +1269,16 @@ export function createStructurePreview(canvas) {
         texSets.clear();
         for (const arr of matSets.values()) arr.forEach((m) => m.dispose());
         matSets.clear();
+        for (const t of texByUrl.values()) t.dispose();
+        texByUrl.clear();
+        texMats.clear();
+        for (const g of specGeos.values()) g.geometry.dispose();
+        specGeos.clear();
         sharedMats.clear();
         faceCache.clear();
         facePending.clear();
+        specCache.clear();
+        specPending.clear();
         editMaps.clear();
         unitBox.dispose();
         if (renderer && renderer.forceContextLoss) renderer.forceContextLoss();
@@ -1117,6 +1293,10 @@ export function createStructurePreview(canvas) {
         }
         let textured = 0, missing = 0;
         for (const v of faceCache.values()) v ? textured++ : missing++;
+        let specBlocks = 0, specVoxels = 0;
+        for (const c of gFills.children) {
+            if (c.isInstancedMesh && c.geometry !== unitBox) { specBlocks++; specVoxels += c.count; }
+        }
         let loadedTex = 0;
         for (const set of texSets.values()) {
             for (const t of [set.top, set.side, set.bottom]) {
@@ -1130,6 +1310,9 @@ export function createStructurePreview(canvas) {
             texturedBlocks: textured,
             missingBlocks: missing,
             loadedTextures: loadedTex,
+            specBlocks, // P14：走外观链路（真实模型几何）的 blockId 数
+            specVoxels,
+            compass: compass ? { display: compass.style.display, rotate: compassDial ? compassDial.style.transform : null } : null,
             renderCalls: renderer ? renderer.info.render.calls : 0,
             triangles: renderer ? renderer.info.render.triangles : 0,
             editedPieces: [...editMaps.keys()],

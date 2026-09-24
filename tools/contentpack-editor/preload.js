@@ -40,12 +40,17 @@ const api = {
     importRegion: () => ipcRenderer.invoke('core:importRegion'),
     mcBlockList: (opts) => ipcRenderer.invoke('core:mcBlockList', opts),
     blockState: (blockId, opts) => ipcRenderer.invoke('core:blockState', blockId, opts),
+    mcBlockAppearance: (blockId, opts) => ipcRenderer.invoke('core:blockAppearance', blockId, opts),
 
     // P11 片段 3D 编辑器窗口（独立窗口）
     openPieceEditor: (payload) => ipcRenderer.invoke('pieceEditor:open', payload),
     savePieceEdits: (payload) => ipcRenderer.send('pieceEditor:saveEdits', payload),
     onPieceEditorEdits: (cb) => ipcRenderer.on('pieceEditor:edits', (e, p) => cb(p)),
     onPieceEditorLoad: (cb) => ipcRenderer.on('pieceEditor:load', (e, p) => cb(p)),
+    // P14 未写回修改（dirty）：关窗/切换提示
+    notifyEditorDirty: (n) => ipcRenderer.send('pieceEditor:dirty', n),
+    onPieceEditorFlush: (cb) => ipcRenderer.on('pieceEditor:flush', () => cb()),
+    notifyEditorFlushed: () => ipcRenderer.send('pieceEditor:flushed'),
 
     // 暂存区（草稿）
     stagingList: (packDir) => ipcRenderer.invoke('staging:list', packDir),

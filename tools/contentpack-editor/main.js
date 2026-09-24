@@ -125,6 +125,9 @@ function createWindow() {
 // 编辑器窗口内存中编辑 → "写回"（或关窗前自动写回）→ 主窗口合并进 tab（保存草稿时落盘）。
 let pieceEditorWin = null;
 let pieceEditorPending = null; // 等待页面加载完成后投递的 payload（防 send 早于渲染脚本注册的竞态）
+// P14 未写回修改跟踪（关窗提示）：渲染端每次编辑变化推送计数
+let editorDirtyCount = 0;
+let editorForceClose = false;
 
 function deliverEditorPayload() {
     if (pieceEditorWin && !pieceEditorWin.isDestroyed() && pieceEditorPending) {
@@ -148,9 +151,49 @@ function createPieceEditorWindow() {
     pieceEditorWin.loadFile(path.join(__dirname, 'src', 'piece-editor.html'));
     // 持久监听：页面（重新）加载完成即投递 pending payload（投递后置 null，重复事件无害）
     pieceEditorWin.webContents.on('did-finish-load', deliverEditorPayload);
-    pieceEditorWin.on('closed', () => { pieceEditorWin = null; pieceEditorPending = null; });
+    // P14 关窗提示：有未写回修改 → 先询问（取消 / 写回并关闭 / 不保存关闭）
+    pieceEditorWin.on('close', (e) => {
+        if (editorDirtyCount > 0 && !editorForceClose) {
+            e.preventDefault();
+            dialog.showMessageBox(pieceEditorWin, {
+                type: 'warning',
+                title: '未写回的修改',
+                message: '有 ' + editorDirtyCount + ' 个片段有未写回的修改。',
+                detail: '「写回并关闭」会把修改同步到主窗口（保存草稿时落盘）；\n「不保存关闭」将丢失这些修改。',
+                buttons: ['取消', '写回并关闭', '不保存关闭'],
+                defaultId: 0,
+                cancelId: 0,
+            }).then((r) => {
+                if (!pieceEditorWin || pieceEditorWin.isDestroyed()) return;
+                if (r.response === 1) {
+                    pieceEditorWin.webContents.send('pieceEditor:flush'); // 渲染端写回后回 pieceEditor:flushed
+                } else if (r.response === 2) {
+                    editorForceClose = true;
+                    pieceEditorWin.close();
+                }
+            });
+        }
+    });
+    pieceEditorWin.on('closed', () => {
+        pieceEditorWin = null;
+        pieceEditorPending = null;
+        editorDirtyCount = 0;
+        editorForceClose = false;
+    });
     return pieceEditorWin;
 }
+
+// P14：渲染端推送未写回修改计数（编辑/写回/撤销后）
+ipcMain.on('pieceEditor:dirty', (event, n) => {
+    editorDirtyCount = Math.max(0, n | 0);
+});
+// P14：「写回并关闭」——渲染端完成写回后回报，主进程放行关闭
+ipcMain.on('pieceEditor:flushed', () => {
+    if (pieceEditorWin && !pieceEditorWin.isDestroyed()) {
+        editorForceClose = true;
+        pieceEditorWin.close();
+    }
+});
 
 // 打开/聚焦编辑器窗口并推送蓝图（payload: {packDir, structureId, pieceName, blueprint}）
 ipcMain.handle('pieceEditor:open', (event, payload) => {
@@ -776,6 +819,17 @@ ipcMain.handle('core:blockState', (event, blockId, opts) => {
     try {
         const r = McAssets.blockStateAny(ROOT, blockId, opts || {});
         return { ok: true, data: r && r.data, source: r && r.source, file: r && r.data && r.data.file };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+// P14 方块外观：vanilla 标准链路完整烘焙（blockstate variant → 模型 parent 链 →
+// 元素面顶点/UV/旋转/uvlock + 贴图 dataURL）；渲染端按 blockId[props] 缓存
+ipcMain.handle('core:blockAppearance', (event, blockId, opts) => {
+    try {
+        const r = McAssets.blockAppearance(ROOT, blockId, opts || {});
+        return r && r.ok ? { ok: true, data: r.data } : { ok: false, error: r && r.error };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
     }

@@ -319,11 +319,67 @@ function tryReadJson(p) {
 }
 
 /**
- * 通用 blockstate 定义查找（P13）——按优先级：
+ * 资源文件通用查找（P13/P14 链路）——按优先级：
  *   1. vanilla 数据集（resolveRoot）
  *   2. 正在编辑的内容包 opts.packDir
  *   3. run/resourcepacks/ 各包、run/saves/<world>/datapacks/ 各包、run/data（隐式数据包）
- *   4. run/mods/*.jar 内 assets/<ns>/blockstates/<name>.json（zip 条目读取）
+ *   4. run/mods/*.jar 内（zip 条目读取）
+ * @param {string} rel 资源相对路径（'assets/ns/.../x.json'，正斜杠）
+ * @returns {{abs:string, source:string}|{buf:Buffer, source:string}|null}
+ *   磁盘文件 → {abs}；jar 内 → {buf}；source ∈ vanilla|pack|datapack|mod:<jar名>
+ */
+function findAsset(projectRoot, rel, opts = {}) {
+    const parts = rel.split('/');
+    // 1) vanilla 数据集
+    const root = resolveRoot(projectRoot);
+    if (root) {
+        const p = path.join(root, ...parts);
+        if (fs.existsSync(p)) return { abs: p, source: 'vanilla' };
+    }
+    // 2) 正在编辑的内容包
+    if (opts.packDir) {
+        const p = path.join(opts.packDir, ...parts);
+        if (fs.existsSync(p)) return { abs: p, source: 'pack' };
+    }
+    if (!projectRoot) return null;
+    // 3) 资源包 / 数据包 / 隐式 data
+    const dirs = [];
+    const rp = path.join(projectRoot, 'run', 'resourcepacks');
+    try { for (const en of fs.readdirSync(rp, { withFileTypes: true })) if (en.isDirectory()) dirs.push(path.join(rp, en.name)); } catch {}
+    const saves = path.join(projectRoot, 'run', 'saves');
+    try {
+        for (const w of fs.readdirSync(saves, { withFileTypes: true })) {
+            if (!w.isDirectory()) continue;
+            const dp = path.join(saves, w.name, 'datapacks');
+            try { for (const d of fs.readdirSync(dp, { withFileTypes: true })) if (d.isDirectory()) dirs.push(path.join(dp, d.name)); } catch {}
+        }
+    } catch {}
+    dirs.push(path.join(projectRoot, 'run', 'data'));
+    for (const dir of dirs) {
+        const p = path.join(dir, ...parts);
+        if (fs.existsSync(p)) return { abs: p, source: 'datapack' };
+    }
+    // 4) mod jar
+    const mods = path.join(projectRoot, 'run', 'mods');
+    let files;
+    try { files = fs.readdirSync(mods); } catch { files = []; }
+    for (const f of files) {
+        if (!f.toLowerCase().endsWith('.jar')) continue;
+        const buf = readZipEntry(path.join(mods, f), rel);
+        if (buf) return { buf, source: 'mod:' + f };
+    }
+    return null;
+}
+
+function readAssetJson(found) {
+    if (!found) return null;
+    try {
+        return JSON.parse(found.abs ? fs.readFileSync(found.abs, 'utf-8') : found.buf.toString('utf-8'));
+    } catch { return null; }
+}
+
+/**
+ * 通用 blockstate 定义查找（P13）
  * @returns {{data:{file,properties,variantCount}, source:'vanilla'|'pack'|'datapack'|'mod'}|null}
  */
 function blockStateAny(projectRoot, blockId, opts = {}) {
@@ -333,52 +389,399 @@ function blockStateAny(projectRoot, blockId, opts = {}) {
     const name = i >= 0 ? s.slice(i + 1) : s;
     if (!name || name.includes('/') || name.includes('\\')) return null;
     const rel = 'assets/' + ns + '/blockstates/' + name + '.json';
+    const found = findAsset(projectRoot, rel, opts);
+    const raw = readAssetJson(found);
+    if (!raw) return null;
+    const src = found.source === 'vanilla' ? 'vanilla'
+        : found.source === 'pack' ? 'pack'
+        : found.source === 'datapack' ? 'datapack'
+        : 'mod';
+    const tag = found.source.startsWith('mod:') ? '  [' + found.source.slice(4) + ']' : '';
+    return { data: { file: rel + tag, ...parseBlockstateJson(raw) }, source: src };
+}
 
-    // 1) vanilla 数据集
-    const root = resolveRoot(projectRoot);
-    if (root) {
-        const d = blockState(root, s);
-        if (d) return { data: d, source: 'vanilla' };
+/**
+ * 解析 blockstate JSON 的完整 variants（P14：variant 匹配用）
+ * @returns {{key:string, model:string, x:number, y:number, uvlock:boolean, weight:number}[]}（文件序）
+ */
+function parseBlockstateVariants(raw) {
+    const out = [];
+    const variants = (raw && typeof raw.variants === 'object' && raw.variants) || {};
+    const items = Array.isArray(variants) ? variants.map((v, i) => [String(i), v]) : Object.entries(variants);
+    for (const [key, v] of items) {
+        if (!v || typeof v !== 'object' || !v.model) continue;
+        const model = Array.isArray(v.model) ? v.model[0] : String(v.model);
+        out.push({
+            key: String(key),
+            model,
+            x: Number(v.x) || 0,
+            y: Number(v.y) || 0,
+            uvlock: !!v.uvlock,
+            weight: Number(v.weight) || 1,
+        });
     }
-    // 2) 正在编辑的内容包
-    if (opts.packDir) {
-        const raw = tryReadJson(path.join(opts.packDir, rel));
-        if (raw) return { data: { file: rel, ...parseBlockstateJson(raw) }, source: 'pack' };
+    return out;
+}
+
+// ===== P14 blockAppearance：vanilla 标准渲染链路（主进程完整烘焙）=====
+// ground truth = 反编译游戏源码（MCP 缓存 a759a935）：
+//   FaceBakery（顶点/UV/元素旋转/模型旋转 pivot 0.5）· BlockFaceUV（uv 角映射 + rotation 字段）
+//   · FaceInfo（6 面四角序）· BlockElement（默认 cuboid UV uvsByFace + 元素旋转参数）
+//   · BlockModel（parent 链：elements 取首个非空、textures 沿链查找、#ref 递归）
+//   · MultiVariant/Variant（variant 键=属性子集匹配；旋转 x/y∈0/90/180/270；uvlock）
+//   · BlockModelRotation（q = rotateYXZ(-y°,-x°) → M = Ry(-y)·Rx(-x)，绕方块中心）
+//   · BlockMath.getUVLockTransform（UV 锁：G2L[dir] ∘ T⁻¹ ∘ L2G[rotatedDir]，0.5 中心仿射）
+// 输出：每个 element-face 的 4 顶点（pos 0..1 方块空间 / uv 0..1 已转 three.js 方向）+ 贴图 dataURL + shade。
+
+const FACE_CORNERS = { // FaceInfo 四角（shape 数组下标；shape=[minY,maxY,minZ,maxZ,minX,maxX]）
+    down:  [[4, 0, 3], [4, 0, 2], [5, 0, 2], [5, 0, 3]],
+    up:    [[4, 1, 2], [4, 1, 3], [5, 1, 3], [5, 1, 2]],
+    north: [[5, 1, 2], [5, 0, 2], [4, 0, 2], [4, 1, 2]],
+    south: [[4, 1, 3], [4, 0, 3], [5, 0, 3], [5, 1, 3]],
+    west:  [[4, 1, 2], [4, 0, 2], [4, 0, 3], [4, 1, 3]],
+    east:  [[5, 1, 3], [5, 0, 3], [5, 0, 2], [5, 1, 2]],
+};
+const FACE_NORMAL = {
+    down: [0, -1, 0], up: [0, 1, 0], north: [0, 0, -1],
+    south: [0, 0, 1], west: [-1, 0, 0], east: [1, 0, 0],
+};
+const SHADE = { up: 1.0, down: 0.5, north: 0.8, south: 0.8, west: 0.6, east: 0.6 }; // 游戏方块亮度
+
+// --- 3x3 矩阵（行主序 9 元组；仅旋转） ---
+function mat3Mul(a, b) {
+    const r = new Array(9);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+        r[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
     }
-    // 3) 资源包 / 数据包 / 隐式 data
-    if (projectRoot) {
-        const dirs = [];
-        const rp = path.join(projectRoot, 'run', 'resourcepacks');
-        try { for (const en of fs.readdirSync(rp, { withFileTypes: true })) if (en.isDirectory()) dirs.push([path.join(rp, en.name), 'datapack']); } catch {}
-        const saves = path.join(projectRoot, 'run', 'saves');
-        try {
-            for (const w of fs.readdirSync(saves, { withFileTypes: true })) {
-                if (!w.isDirectory()) continue;
-                const dp = path.join(saves, w.name, 'datapacks');
-                try { for (const d of fs.readdirSync(dp, { withFileTypes: true })) if (d.isDirectory()) dirs.push([path.join(dp, d.name), 'datapack']); } catch {}
-            }
-        } catch {}
-        dirs.push([path.join(projectRoot, 'run', 'data'), 'datapack']);
-        for (const [dir, src] of dirs) {
-            const raw = tryReadJson(path.join(dir, rel));
-            if (raw) return { data: { file: rel, ...parseBlockstateJson(raw) }, source: src };
+    return r;
+}
+function mat3Trans(a) { return [a[0], a[3], a[6], a[1], a[4], a[7], a[2], a[5], a[8]]; } // 旋转矩阵逆=转置
+function mat3Vec(m, v) {
+    return [
+        m[0] * v[0] + m[1] * v[1] + m[2] * v[2],
+        m[3] * v[0] + m[4] * v[1] + m[5] * v[2],
+        m[6] * v[0] + m[7] * v[1] + m[8] * v[2],
+    ];
+}
+function rotX(deg) {
+    const t = deg * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
+    return [1, 0, 0, 0, c, -s, 0, s, c];
+}
+function rotY(deg) {
+    const t = deg * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
+    return [c, 0, s, 0, 1, 0, -s, 0, c];
+}
+/** 模型（variant）旋转：M = Ry(-y)·Rx(-x)（BlockModelRotation rotateYXZ(-y°,-x°)） */
+function modelRotMat(x, y) { return mat3Mul(rotY(-y), rotX(-x)); }
+/** Rodrigues 绕任意轴右手旋转（元素旋转用） */
+function rotAxisMat(axis, deg) {
+    const t = deg * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
+    const [x, y, z] = axis, f = 1 - c;
+    return [
+        c + x * x * f, x * y * f - z * s, x * z * f + y * s,
+        y * x * f + z * s, c + y * y * f, y * z * f - x * s,
+        z * x * f - y * s, z * y * f + x * s, c + z * z * f,
+    ];
+}
+function closestDir(v) {
+    let best = 'up', bd = -1;
+    for (const [name, n] of Object.entries(FACE_NORMAL)) {
+        const d = v[0] * n[0] + v[1] * n[1] + v[2] * n[2];
+        if (d > bd) { bd = d; best = name; }
+    }
+    return best;
+}
+
+// --- UV 锁（BlockMath.getUVLockTransform + FaceBakery.recomputeUVs） ---
+const UV_ID = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+const UV_L2G = {
+    south: UV_ID, east: rotY(90), west: rotY(-90), north: rotY(180),
+    up: rotX(-90), down: rotX(90),
+};
+function uvLockMat(T, faceDir) {
+    const rotated = closestDir(mat3Vec(T, FACE_NORMAL[faceDir]));
+    return mat3Mul(mat3Mul(mat3Trans(UV_L2G[faceDir]), mat3Trans(T)), UV_L2G[rotated]);
+}
+/**
+ * UV 锁定重算：返回 {uv:[u0,v0,u2,v2], rotation}
+ * （0.5 中心仿射变换两个对角 uv 点 + 符号保序 + 新 rotation = M·(cos r, sin r) 的角度取整）
+ */
+function recomputeUVs(uv, rotation, faceDir, T) {
+    const M = uvLockMat(T, faceDir);
+    const xf = (u, v) => {
+        const p = mat3Vec(M, [u - 0.5, v - 0.5, -0.5]);
+        return [p[0] + 0.5, p[1] + 0.5];
+    };
+    const a = xf(uv[0], uv[1]);
+    const b = xf(uv[2], uv[3]);
+    let u0 = a[0], u2 = b[0];
+    if (Math.sign(uv[2] - uv[0]) !== Math.sign(b[0] - a[0])) { const t = u0; u0 = u2; u2 = t; }
+    let v0 = a[1], v2 = b[1];
+    if (Math.sign(uv[3] - uv[1]) !== Math.sign(b[1] - a[1])) { const t = v0; v0 = v2; v2 = t; }
+    const r = rotation * Math.PI / 180;
+    const w = mat3Vec(M, [Math.cos(r), Math.sin(r), 0]);
+    const newRot = ((-Math.round(Math.atan2(w[1], w[0]) * 180 / Math.PI / 90) * 90) % 360 + 360) % 360;
+    return { uv: [u0, v0, u2, v2], rotation: newRot };
+}
+
+/** 元素旋转（FaceBakery.applyElementRotation：先绕 origin 转，再按 perp 轴 rescale） */
+function elemRotate(p, rot) {
+    if (!rot) return p;
+    const ox = rot.origin[0] / 16, oy = rot.origin[1] / 16, oz = rot.origin[2] / 16;
+    const axis = rot.axis === 'x' ? [1, 0, 0] : rot.axis === 'y' ? [0, 1, 0] : [0, 0, 1];
+    let d = mat3Vec(rotAxisMat(axis, rot.angle), [p[0] - ox, p[1] - oy, p[2] - oz]);
+    if (rot.rescale) {
+        const f = (Math.abs(rot.angle) === 22.5 ? 1 / Math.cos(22.5 * Math.PI / 180) : 1 / Math.cos(45 * Math.PI / 180)) - 1;
+        const perp = rot.axis === 'x' ? [0, 1, 1] : rot.axis === 'y' ? [1, 0, 1] : [1, 1, 0];
+        for (let i = 0; i < 3; i++) if (perp[i]) d[i] *= 1 + f;
+    }
+    return [d[0] + ox, d[1] + oy, d[2] + oz];
+}
+
+/** 默认 cuboid UV（BlockElement.uvsByFace；face 无 "uv" 字段时用） */
+function defaultUv(face, from, to) {
+    const [x1, y1, z1] = from, [x2, y2, z2] = to;
+    switch (face) {
+        case 'down': return [x1, 16 - z2, x2, 16 - z1];
+        case 'up': return [x1, z1, x2, z2];
+        case 'south': return [x1, 16 - y2, x2, 16 - y1];
+        case 'west': return [z1, 16 - y2, z2, 16 - y1];
+        case 'east': return [16 - z2, 16 - y2, 16 - z1, 16 - y1];
+        default: return [16 - x2, 16 - y2, 16 - x1, 16 - y1]; // north
+    }
+}
+
+/** 模型 ID → 资源相对路径（'ns:path' → assets/ns/models/path.json） */
+function modelRel(modelId) {
+    const i = String(modelId).indexOf(':');
+    const ns = i >= 0 ? modelId.slice(0, i) : 'minecraft';
+    const p = i >= 0 ? modelId.slice(i + 1) : modelId;
+    return 'assets/' + ns + '/models/' + p + '.json';
+}
+
+/** 模型 parent 链（child→root；防环 8 层）；@returns Array<{raw,parent}>（[0]=child） */
+function loadModelChain(projectRoot, modelId, opts, depth = 0) {
+    if (depth > 8 || !modelId) return null;
+    const found = findAsset(projectRoot, modelRel(modelId), opts);
+    const raw = readAssetJson(found);
+    if (!raw || typeof raw !== 'object') return null;
+    const chain = [{ raw }];
+    if (raw.parent) {
+        const parentChain = loadModelChain(projectRoot, raw.parent, opts, depth + 1);
+        if (parentChain) chain.push(...parentChain);
+    }
+    return chain;
+}
+
+/** 沿链解析纹理引用（#ref 递归；child 优先）→ 纹理 ID 或 null */
+function resolveTextureId(chain, ref) {
+    let name = ref;
+    const seen = new Set();
+    for (;;) {
+        if (seen.has(name)) return null;
+        seen.add(name);
+        if (name.startsWith('#')) name = name.slice(1);
+        let resolved = null;
+        for (const node of chain) {
+            const t = node.raw.textures && node.raw.textures[name];
+            if (t != null) { resolved = String(t); break; }
+        }
+        if (resolved == null) return null;
+        if (!resolved.startsWith('#')) return resolved;
+        name = resolved;
+    }
+}
+
+/** 读纹理 → dataURL（缓存；不存在返回 null） */
+const texDataCache = new Map();
+function textureDataUrl(projectRoot, texId, opts) {
+    const key = texId;
+    if (texDataCache.has(key)) return texDataCache.get(key);
+    if (texId && texId.includes(':')) {
+        const i = texId.indexOf(':');
+        const rel = 'assets/' + texId.slice(0, i) + '/textures/' + texId.slice(i + 1) + '.png';
+        const found = findAsset(projectRoot, rel, opts);
+        if (found) {
+            const buf = found.abs ? fs.readFileSync(found.abs) : found.buf;
+            const url = 'data:image/png;base64,' + buf.toString('base64');
+            if (texDataCache.size > 4096) texDataCache.clear();
+            texDataCache.set(key, url);
+            return url;
         }
     }
-    // 4) mod jar
-    if (projectRoot) {
-        const mods = path.join(projectRoot, 'run', 'mods');
-        let files;
-        try { files = fs.readdirSync(mods); } catch { files = []; }
-        for (const f of files) {
-            if (!f.toLowerCase().endsWith('.jar')) continue;
-            const rawBuf = readZipEntry(path.join(mods, f), rel);
-            if (!rawBuf) continue;
-            let raw;
-            try { raw = JSON.parse(rawBuf.toString('utf-8')); } catch { raw = null; }
-            if (raw) return { data: { file: rel + '  [' + f + ']', ...parseBlockstateJson(raw) }, source: 'mod' };
-        }
-    }
+    texDataCache.set(key, null);
     return null;
+}
+
+// 裸方块串（无 [props]）按游戏 StateDefinition 默认值补齐（对照反编译源码：
+// SlabBlock type=bottom/waterlogged=false；DoorBlock half=lower；stairs facing=north 等）
+const PROP_DEFAULTS = {
+    facing: 'north',
+    half: 'bottom', // stairs/trapdoor；门的 half=lower 由第三级通配兜底
+    shape: 'straight',
+    waterlogged: 'false',
+    open: 'false',
+    hinge: 'left',
+    type: 'bottom',
+    axis: 'x',
+    east: 'false', west: 'false', north: 'false', south: 'false',
+    powered: 'false', lit: 'false',
+};
+
+/**
+ * 解析 blockstate variants → 匹配当前实例。三级（属性子集匹配，文件序首个命中）：
+ *   1. 严格：键中所有属性在实例中存在且相等
+ *   2. 默认补齐：缺失的属性必须等于 PROP_DEFAULTS（裸方块串 → 游戏默认朝向）
+ *   3. 通配：缺失属性任意值（兜底门等默认值不在表内的情况）
+ *   均未命中 → 空键 variant；再未命中 → null
+ */
+function matchVariant(variants, inst) {
+    const parse = (k) => {
+        const vp = {};
+        for (const kv of String(k).split(',')) {
+            const i = kv.indexOf('=');
+            if (i > 0) vp[kv.slice(0, i).trim()] = kv.slice(i + 1).trim();
+        }
+        return vp;
+    };
+    // mode 1 严格（缺失属性=不匹配）· mode 2 默认补齐（缺失须=PROP_DEFAULTS）· mode 3 通配（缺失任意）
+    const passes = (vp, mode) => {
+        for (const [k, val] of Object.entries(vp)) {
+            if (inst[k] !== undefined) {
+                if (inst[k] !== val) return false;
+            } else if (mode === 1) {
+                return false;
+            } else if (mode === 2 && PROP_DEFAULTS[k] !== val) {
+                return false;
+            }
+        }
+        return true;
+    };
+    for (const mode of [1, 2, 3]) {
+        for (const v of variants) {
+            if (passes(parse(v.key), mode)) return v;
+        }
+    }
+    const empty = variants.find((v) => !v.key);
+    return empty || null;
+}
+
+/**
+ * P14 方块外观（vanilla 标准链路完整烘焙）
+ * @param {string} blockId 方块串（可带 [props] 实例）
+ * @returns {{ok:true, data:{model,variantKey,faces:[{pos,uv,tex,shade}],textures:{id:dataURL}}}|{ok:false}}
+ */
+function blockAppearance(projectRoot, blockId, opts = {}) {
+    const id = String(blockId || '');
+    if (id === 'minecraft:air' || !id || id.startsWith('#')) return { ok: false, error: 'air/placeholder' };
+    if (blockAppearanceCache.has(id)) return blockAppearanceCache.get(id);
+
+    let data = null;
+    try {
+        const bsRel = (() => {
+            const s = stripProps(id);
+            const i = s.indexOf(':');
+            const ns = i >= 0 ? s.slice(0, i) : 'minecraft';
+            return 'assets/' + ns + '/blockstates/' + (i >= 0 ? s.slice(i + 1) : s) + '.json';
+        })();
+        const rawBs = readAssetJson(findAsset(projectRoot, bsRel, opts));
+        if (rawBs) {
+            const inst = parsePropsObj(id);
+            const variants = parseBlockstateVariants(rawBs);
+            const v = matchVariant(variants, inst);
+            if (v) {
+                const chain = loadModelChain(projectRoot, v.model, opts);
+                if (chain) {
+                    // elements：链上首个非空（BlockModel.getElements）
+                    let elements = null;
+                    for (const node of chain) if (node.raw.elements && node.raw.elements.length) { elements = node.raw.elements; break; }
+                    if (elements) {
+                        const T = modelRotMat(v.x, v.y);
+                        const Tinv = mat3Trans(T);
+                        const faces = [];
+                        const textures = {};
+                        for (const el of elements) {
+                            const from = el.from, to = el.to;
+                            const shape = [from[1] / 16, to[1] / 16, from[2] / 16, to[2] / 16, from[0] / 16, to[0] / 16];
+                            const elRot = el.rotation
+                                ? { origin: el.rotation.origin || [8, 8, 8], axis: (el.rotation.axis || 'y').toLowerCase(), angle: Number(el.rotation.angle) || 0, rescale: !!el.rotation.rescale }
+                                : null;
+                            const elemN = elRot ? rotAxisMat(elRot.axis === 'x' ? [1, 0, 0] : elRot.axis === 'y' ? [0, 1, 0] : [0, 0, 1], elRot.angle) : null;
+                            for (const [faceName, fd] of Object.entries(el.faces || {})) {
+                                if (!FACE_CORNERS[faceName] || !fd || typeof fd !== 'object') continue;
+                                let uv = Array.isArray(fd.uv) && fd.uv.length === 4 ? fd.uv.slice() : defaultUv(faceName, from, to);
+                                let frot = Number(fd.rotation) || 0;
+                                if (v.uvlock) {
+                                    const r = recomputeUVs(uv, frot, faceName, T);
+                                    uv = r.uv; frot = r.rotation;
+                                }
+                                const pos = [], uvv = [];
+                                for (let i = 0; i < 4; i++) {
+                                    const c = FACE_CORNERS[faceName][i];
+                                    let p = [shape[c[0]], shape[c[1]], shape[c[2]]];
+                                    p = elemRotate(p, elRot);
+                                    const d = mat3Vec(T, [p[0] - 0.5, p[1] - 0.5, p[2] - 0.5]);
+                                    p = [d[0] + 0.5, d[1] + 0.5, d[2] + 0.5];
+                                    // BlockFaceUV.getU/getV（反编译精确对照）：
+                                    //   idx = (i + rot/90) % 4
+                                    //   U = uv[idx∈{2,3} ? 2 : 0]   V = uv[idx∈{1,2} ? 3 : 1]
+                                    // 即角点 0=(u1,v1) 1=(u1,v2) 2=(u2,v2) 3=(u2,v1)
+                                    const idx = (i + frot / 90) % 4;
+                                    const u = uv[idx === 2 || idx === 3 ? 2 : 0];
+                                    const vv = uv[idx === 1 || idx === 2 ? 3 : 1];
+                                    pos.push(p[0], p[1], p[2]);
+                                    uvv.push(u / 16, 1 - vv / 16);
+                                }
+                                const texId = resolveTextureId(chain, String(fd.texture || ''));
+                                let texUrl = null;
+                                if (texId) {
+                                    texUrl = textureDataUrl(projectRoot, texId, opts);
+                                    if (texUrl && textures[texId] === undefined) textures[texId] = texUrl;
+                                }
+                                // shade：旋转后的面朝向（T·elemN·normal）
+                                let n = FACE_NORMAL[faceName];
+                                if (elemN) n = mat3Vec(elemN, n);
+                                n = mat3Vec(T, n);
+                                const shade = el.shade === false ? 1.0 : SHADE[closestDir(n)];
+                                faces.push({ pos, uv: uvv, tex: texId, texUrl, shade });
+                            }
+                        }
+                        if (faces.length) {
+                            data = { model: v.model, variantKey: v.key, faces, textures };
+                        }
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        data = null;
+    }
+
+    const out = data
+        ? { ok: true, data }
+        : { ok: false, error: 'no blockstate/model' };
+    if (blockAppearanceCache.size > 2048) blockAppearanceCache.clear();
+    blockAppearanceCache.set(id, out);
+    return out;
+}
+
+const blockAppearanceCache = new Map();
+/** 测试用：清外观缓存 */
+function _resetAppearanceCache() {
+    blockAppearanceCache.clear();
+    texDataCache.clear();
+}
+
+/** 方块串 → 实例属性对象（键剥 minecraft: 前缀） */
+function parsePropsObj(blockId) {
+    const out = {};
+    const m = String(blockId || '').match(/\[([^\]]*)\]$/);
+    if (!m) return out;
+    for (const kv of m[1].split(',')) {
+        const i = kv.indexOf('=');
+        if (i > 0) out[kv.slice(0, i).trim().replace(/^minecraft:/, '')] = kv.slice(i + 1).trim();
+    }
+    return out;
 }
 
 module.exports = {
@@ -389,8 +792,25 @@ module.exports = {
     blockList,
     blockState,
     parseBlockstateJson,
+    parseBlockstateVariants,
     readZipEntry,
     blockStateAny,
+    blockAppearance,
     stripProps,
     texturePath,
+    // P14 测试用
+    _internals: {
+        findAsset,
+        matchVariant,
+        modelRotMat,
+        mat3Vec,
+        recomputeUVs,
+        defaultUv,
+        elemRotate,
+        FACE_CORNERS,
+        loadModelChain,
+        modelRel,
+        resolveTextureId,
+        _resetAppearanceCache,
+    },
 };

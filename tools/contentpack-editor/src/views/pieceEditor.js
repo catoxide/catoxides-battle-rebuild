@@ -23,6 +23,36 @@
     // P12 方块实体 NBT 编辑：同上（blockNbt 列表）
     let blockNbtEdited = new Set();
     let blockNbtBackup = new Map();
+    let lastSelectedPiece = null;   // P14：片段切换提示（恢复选择用）
+    let autoSaveNote = 0;           // P14：重开编辑器时自动写回的片段数（状态栏提示）
+
+    // ===== P14 未写回修改（dirty）跟踪 =====
+    // 语义：编辑已进本地 blueprint（内存），「写回」才同步主窗口并落盘 → dirty = 改过未写回
+    function dirtyCount() {
+        let n = jigsawEdited.size + blockNbtEdited.size;
+        if (pv) n += pv.debugStats().editedPieces.length;
+        return n;
+    }
+    function pushDirty() {
+        if (window.api && window.api.notifyEditorDirty) window.api.notifyEditorDirty(dirtyCount());
+    }
+    /** 立即写回全部未写回修改；@returns 写回的片段数 */
+    function flushEdits() {
+        if (!pv || !state) return 0;
+        const st = pv.debugStats();
+        if (!st.editedPieces.length && !jigsawEdited.size && !blockNbtEdited.size) return 0;
+        const pieces = collectEdits();
+        if (!pieces.length) return 0;
+        window.api.savePieceEdits({ packDir: state.packDir, structureId: state.structureId, pieces });
+        if (pv) pv.clearEdits();
+        jigsawEdited.clear();
+        blockNbtEdited.clear();
+        // 注意：【不清】jigsawBackup/blockNbtBackup —— 撤销功能依赖原始快照
+        //（写回后仍可撤销本地蓝图到写回前状态，与旧行为一致）
+        updateInfo();
+        pushDirty();
+        return pieces.length;
+    }
 
     // ===== P12 方块实体 NBT（1.21.1 格式，对照 vanilla 结构模板实测数据）=====
     // 实测（ancient_city 模板）：chest = {"Items":[{"count":1,"Slot":13,"id":"..."}], "id":"minecraft:chest"}
@@ -204,6 +234,11 @@
 
     // ===== 主入口：主窗口推送蓝图 =====
     window.api.onPieceEditorLoad((payload) => {
+        // P14：有未写回修改 → 先自动写回（修改属于旧结构，payload 已到达，不能丢）
+        if (initialized && pv && dirtyCount()) {
+            const n = flushEdits();
+            if (n) autoSaveNote = n;
+        }
         state = payload;
         if (!initialized) { init(); return; }
         // 再次打开（换结构/换片段）→ 重置本地编辑并加载新数据
@@ -212,15 +247,18 @@
         jigsawBackup.clear();
         blockNbtEdited.clear();
         blockNbtBackup.clear();
+        pushDirty();
         syncPieceSelect();
         selectPiece(state.pieceName);
-        status(t('structure.piece3d.loaded') + ' — ' + (state.structureId || '') + (state.pieceName ? ' / ' + state.pieceName : ''));
+        status((autoSaveNote ? tf('structure.piece3d.autoSaved', { n: autoSaveNote }) + ' · ' : '')
+            + t('structure.piece3d.loaded') + ' — ' + (state.structureId || '') + (state.pieceName ? ' / ' + state.pieceName : ''));
+        autoSaveNote = 0;
     });
 
     async function init() {
         try {
             const mod = await import('../lib/structurePreview.js');
-            pv = mod.createStructurePreview($('edCanvas'));
+            pv = mod.createStructurePreview($('edCanvas'), { onChange: pushDirty }); // P14：dirty 通知
             window.__pieceEditor = {
                 pv: () => pv,
                 getState: () => state,
@@ -267,6 +305,7 @@
     function selectPiece(name) {
         const piece = (state.blueprint.pieces || []).find((p) => p.name === name) || currentPiece();
         if (!piece || !pv) return;
+        lastSelectedPiece = piece.name; // P14
         pv.setPiece(piece);
         // 换片段重置剖切
         pv.setSlice(null);
@@ -308,7 +347,15 @@
         $('edResetView').addEventListener('click', () => { if (pv) pv.resetView(); });
         $('edSliceAxis').addEventListener('change', sliceChange);
         $('edSliceI').addEventListener('input', sliceChange);
-        $('edPiece').addEventListener('change', () => selectPiece($('edPiece').value));
+        // P14：切换片段 → 有未写回修改先提示（修改仍保留在本窗口，写回才同步主窗口）
+        $('edPiece').addEventListener('change', () => {
+            const next = $('edPiece').value;
+            if (dirtyCount() && next !== lastSelectedPiece) {
+                const ok = window.confirm(tf('structure.piece3d.dirtySwitch', { n: dirtyCount() }));
+                if (!ok) { $('edPiece').value = lastSelectedPiece || next; return; }
+            }
+            selectPiece(next);
+        });
 
         // 撤销 / 写回
         $('edUndo').addEventListener('click', () => {
@@ -568,6 +615,7 @@
                     placementPriority: Math.max(0, Math.min(999, parseInt($('edJgPlaceP').value, 10) || 0)),
                 };
                 jigsawEdited.add(piece.name);
+                pushDirty(); // P14
                 updateInfo();
             };
             ['edJgName', 'edJgPool', 'edJgTarget', 'edJgOrient', 'edJgFinal', 'edJgSelP', 'edJgPlaceP'].forEach((id) => {
@@ -596,6 +644,7 @@
             const entry = { x, y, z, nbt: r.nbt };
             if (i >= 0) piece.blockNbt[i] = entry; else piece.blockNbt.push(entry);
             blockNbtEdited.add(piece.name);
+            pushDirty(); // P14
             nbtMsg(t('structure.piece3d.nbtApplied'));
             updateInfo();
         });
@@ -610,6 +659,7 @@
             if (!blockNbtBackup.has(piece.name)) blockNbtBackup.set(piece.name, JSON.parse(JSON.stringify(piece.blockNbt || [])));
             piece.blockNbt = (piece.blockNbt || []).filter((b) => !(b.x === x && b.y === y && b.z === z));
             blockNbtEdited.add(piece.name);
+            pushDirty(); // P14
             hideCtx();
             updateInfo();
         });
@@ -726,20 +776,17 @@
         return out;
     }
     function saveEdits() {
-        const pieces = collectEdits();
-        if (!pieces.length) { status(t('structure.piece3d.noEdit'), false); return false; }
-        window.api.savePieceEdits({ packDir: state.packDir, structureId: state.structureId, pieces });
-        if (pv) pv.clearEdits();
-        updateInfo();
-        status(tf('structure.piece3d.saved', { n: pieces.length }), false);
+        const n = flushEdits();
+        if (!n) { status(t('structure.piece3d.noEdit'), false); return false; }
+        status(tf('structure.piece3d.saved', { n }), false);
         return true;
     }
-    // 关窗前自动写回（ipcRenderer.send 为同步 IPC，beforeunload 中可靠）
-    window.addEventListener('beforeunload', () => {
-        if (!initialized || !pv) return;
-        const st = pv.debugStats();
-        if (!st.editedPieces.length) return;
-        const pieces = collectEdits();
-        if (pieces.length) window.api.savePieceEdits({ packDir: state.packDir, structureId: state.structureId, pieces });
-    });
+    // P14 关窗提示由主进程对话框负责（pieceEditor:dirty 计数）：取消 / 写回并关闭 / 不保存关闭。
+    // 「写回并关闭」：主进程下发 flush → 这里同步写回（ipcRenderer.send 可靠）→ 回报放行
+    if (window.api && window.api.onPieceEditorFlush) {
+        window.api.onPieceEditorFlush(() => {
+            flushEdits();
+            if (window.api.notifyEditorFlushed) window.api.notifyEditorFlushed();
+        });
+    }
 })();
