@@ -145,6 +145,13 @@ export function createStructurePreview(canvas, hooks = {}) {
     }
 
     // ===== 场景构建（方块级体素 + 真实贴图） =====
+    // P14 调试：重建/换片时序追踪（定位切片段不生效）
+    const pvTrace = [];
+    function trace(s) {
+        pvTrace.push(s + ' @' + Date.now());
+        if (pvTrace.length > 300) pvTrace.shift();
+        if (typeof window !== 'undefined') window.__pvTrace = pvTrace;
+    }
     let pieceMeshes = new Map(); // pieceName → { fills:[], jigsaws:[] }
     const editMaps = new Map();  // pieceName → 编辑过的局部体素表（P3 点选/笔刷；无 = 用片段定义）
     let clip = null;             // 3D 切片 {axis:'x'|'y'|'z', dir:-1|1, threshold:number}（P3）
@@ -497,44 +504,74 @@ export function createStructurePreview(canvas, hooks = {}) {
         lastPlacements = built;
     }
     /** 用最后一次构建参数重建（编辑/切片后调用；不重置相机）；rebuilding 防重入；
-     *  重建期间若切片翻转（sliceFlipPending）或又有新编辑（editsDirty，P12 笔触），完成后自动补一轮 */
+     *  重建期间若切片翻转（sliceFlipPending）或又有新编辑（editsDirty，P12 笔触），完成后自动补一轮。
+     *  P14：构建目标 = pendingBuild（请求时同步置位）优先于 lastBuild ——
+     *  并发请求（切片段 vs 切片重置/编辑）时循环始终追最新的请求，过期构建被丢弃。 */
     let rebuilding = false;
     let sliceFlipPending = false;
     let editsDirty = false; // P12：重建期间又有新编辑（笔触连续写格）→ 完成后自动补一轮，不丢格
+    let pendingBuild = null; // {kind, bp, placements, opts} —— 已请求未完成的构建（同步置位，重建循环取最新）
     async function rebuild() {
-        if (!lastBuild) return;
-        if (rebuilding) { editsDirty = true; return; }
+        if (!pendingBuild && !lastBuild) { trace('rebuild skip (无目标)'); return; }
+        if (rebuilding) { editsDirty = true; trace('rebuild 并入进行中的重建（editsDirty=1）'); return; }
         rebuilding = true;
         try {
             for (;;) {
                 sliceFlipPending = false;
                 editsDirty = false;
-                const b = lastBuild;
-                const opts = { hiddenPieces: b.hidden, reframe: false };
+                const b = pendingBuild || lastBuild;
+                if (!b) break;
+                const isPending = (b === pendingBuild);
+                const kind = b.kind;
+                const bp = b.bp;
+                const placements = b.placements;
+                const piecesArr = b.pieces || [];
+                const hidden = b.hidden || [];
+                // 公开 API 的 reframe 默认 true（旧行为 opts.reframe !== false）；编辑重建不重置相机
+                const reframe = isPending ? !((b.opts || {}).reframe === false) : false;
+                trace('rebuild iter [' + (kind === 'place' ? 'place' : (bp && bp.pieces ? bp.pieces.map((p) => p.name).join('|') : '?')) + (isPending ? '（新请求）' : '') + ']');
                 await ensureFacesForEdited(); // 先取新刷方块的贴图，再构建
-                if (b.kind === 'place') {
-                    opts.pieces = b.pieces;
-                    await setPlacements(b.placements, opts);
+                // 等待期间若又来了更新请求 → 不构建旧的，循环重读最新目标
+                if (pendingBuild && pendingBuild !== b) continue;
+                if (kind === 'place') {
+                    await buildPlacements(placements, { pieces: piecesArr, hiddenPieces: hidden, reframe });
                 } else {
-                    await setBlueprint(b.bp, opts);
+                    await buildBlueprint(bp, { hiddenPieces: hidden, reframe });
                 }
+                if (pendingBuild === b) pendingBuild = null; // 本目标构建完成 → 清除请求
                 // 重建后强制渲染一帧：rAF 循环停摆（窗口失焦/被节流）时也立即看到编辑结果
                 renderOnce();
-                if (!sliceFlipPending && !editsDirty) break;
+                if (!pendingBuild && !sliceFlipPending && !editsDirty) { trace('rebuild 结束'); break; }
             }
         } finally {
             rebuilding = false;
         }
     }
 
+    /** 请求一次构建（同步置 pendingBuild → 重建循环执行）；setPiece/直接 setPlacements 走这里 */
+    function requestBuild(kind, bp, placements, pieces, opts) {
+        pendingBuild = { kind, bp, placements, pieces: pieces || [], hidden: (opts && opts.hiddenPieces) || [], opts: opts || {} };
+        return rebuild();
+    }
+
     /**
-     * 并排模式：片段沿 X 轴排开（编辑单个片段用）
+     * 并排模式（公开 API）：片段沿 X 轴排开（编辑单个片段用）。
+     * 请求一次并排构建（走 pendingBuild 通道，并发安全）
      * @param {Object} bp 蓝图对象
      * @param {{hiddenPieces?:string[], reframe?:boolean}} opts
      */
     async function setBlueprint(bp, opts = {}) {
+        return requestBuild('bp', bp, null, (bp && bp.pieces) || [], opts);
+    }
+    // P14：构建序号 —— 并发构建时最后声明者生效，过期构建丢弃（重建循环单飞，此为双保险）
+    let buildSeq = 0;
+    async function buildBlueprint(bp, opts = {}) {
+        const seq = ++buildSeq;
         const pieces = (bp && bp.pieces) || [];
+        trace('buildBlueprint start [' + (pieces.map((p) => p.name).join('|') || '(空)') + '] seq' + seq);
         await ensureFacesFor(pieces);
+        if (seq !== buildSeq) { trace('buildBlueprint 过期丢弃 [' + (pieces.map((p) => p.name).join('|') || '(空)') + '] seq' + seq); return; }
+        trace('buildBlueprint faces-ok [' + (pieces.map((p) => p.name).join('|') || '(空)') + ']');
         clearGroups();
         const hidden = new Set(opts.hiddenPieces || []);
 
@@ -548,6 +585,7 @@ export function createStructurePreview(canvas, hooks = {}) {
             maxH = Math.max(maxH, h);
         }
         totalW = Math.max(cursorX - 12, 1);
+        trace('buildBlueprint built [' + (pieces.map((p) => p.name).join('|') || '(空)') + ']');
         saveBuild('bp', bp, null, built, pieces, [...hidden]);
         applyHidden(hidden);
         if (opts.reframe !== false) {
@@ -565,22 +603,30 @@ export function createStructurePreview(canvas, hooks = {}) {
      * @param {{reframe?:boolean}} opts
      */
     async function setPiece(piece, opts = {}) {
-        if (!piece) return;
+        if (!piece) { trace('setPiece 跳过（piece 为空）'); return; }
+        trace('setPiece 请求 ' + piece.name);
         clearHover(); // P12：换片段 → 旧悬停高亮失效（函数声明已提升，此处可安全调用）
-        await setBlueprint({ pieces: [piece] }, Object.assign({ reframe: true }, opts));
+        // P14：走请求-重建通道（pendingBuild 同步置位）→ 与并发重建不竞态
+        await requestBuild('bp', { pieces: [piece] }, null, [piece], Object.assign({ reframe: true }, opts));
     }
 
     /**
-     * 拼合模式：按生长结果放置（预览 jigsaw 拼合后的完整建筑）
+     * 拼合模式（公开 API）：按生长结果放置（预览 jigsaw 拼合后的完整建筑）。
+     * 请求一次拼合构建（走 pendingBuild 通道，并发安全）
      * @param {Array} placements growStructure 的 placements
      *   [{pieceName, offset:[x,y,z], rotation:0..3, via}]
      * @param {{pieces?:Array, hiddenPieces?:string[], reframe?:boolean}} opts
      */
     async function setPlacements(placements, opts = {}) {
+        return requestBuild('place', null, placements || [], (opts && opts.pieces) || [], opts || {});
+    }
+    async function buildPlacements(placements, opts = {}) {
+        const seq = ++buildSeq;
         const list = placements || [];
         const byName = new Map();
         for (const p of opts.pieces || []) byName.set(p.name, p);
         await ensureFacesFor(list.map((pl) => byName.get(pl.pieceName)).filter(Boolean));
+        if (seq !== buildSeq) { trace('buildPlacements 过期丢弃 seq' + seq); return; }
         clearGroups();
         const hidden = new Set(opts.hiddenPieces || []);
 
@@ -830,8 +876,14 @@ export function createStructurePreview(canvas, hooks = {}) {
             return inB(lx, ly, lz) ? [[lx, ly, lz]] : [];
         }
         // 'place'：命中面的面向侧相邻格（MC 放置逻辑）
+        // P14：切片模式下只允许编辑切面本身 —— 相邻格若出切面（Y 面右键等）→ 不放置（悬停红标）
         const t = brushPlaceCell(pick);
-        return t && inB(t[0], t[1], t[2]) ? [t] : [];
+        if (!t || !inB(t[0], t[1], t[2])) return [];
+        if (slice) {
+            const ai = slice.axis === 'x' ? 0 : slice.axis === 'y' ? 1 : 2;
+            if (t[ai] !== slice.index) return [];
+        }
+        return [t];
     }
 
     /**
@@ -974,6 +1026,12 @@ export function createStructurePreview(canvas, hooks = {}) {
     function setSlice(c) {
         const next = (c && c.axis && isFinite(c.index))
             ? { axis: c.axis, index: Math.trunc(c.index) } : null;
+        // P14 修复：slice 未变化 → 不重建（原实现无条件 rebuild → 与并发 setPiece 竞态，
+        // 用旧 lastBuild 覆盖新片段场景，表现为"切片段后还是同一个模型"）
+        const same = (next === null && slice === null)
+            || (next && slice && next.axis === slice.axis && next.index === slice.index);
+        if (same) return;
+        trace('setSlice ' + (next ? next.axis + '=' + next.index : 'null') + '（原 ' + (slice ? slice.axis + '=' + slice.index : 'null') + '）');
         slice = next;
         if (next) sliceSide = currentCamSide(next.axis);
         return rebuild();
@@ -1037,42 +1095,72 @@ export function createStructurePreview(canvas, hooks = {}) {
     const wrap = canvas.parentElement;
     if (wrap) { wrap.style.position = 'relative'; wrap.appendChild(hud); }
 
-    // P14 方向罗盘（MC 约定：北=-Z 南=+Z 西=-X 东=+X；整个表盘随相机方位角 θ 同向旋转，
-    // 使指针始终指向世界方向：θ=0（相机在南朝北看）→ 北在上；θ=90°（相机在东朝西看）→ 北在右 …）
-    let compass = null, compassDial = null;
+    // P14 方向罗盘 → 3D 视图立方体（MC 约定：北=-Z 南=+Z 西=-X 东=+X 上=+Y 下=-Y）。
+    // 小场景独立渲染：立方体四元数 = 主相机四元数 → 跟着视角转，朝向面即相机所在侧
+    //（默认 3/4 视角：看到 上/南/东 三面）。
+    let compass = null, compassDial = null, cubeRenderer = null, cubeScene = null, cubeCam = null, cubeMesh = null, cubeTexs = [];
     if (wrap) {
         compass = document.createElement('div');
         compass.className = 'struct-compass';
         compass.style.cssText = 'position:absolute;top:10px;right:10px;width:66px;height:66px;'
-            + 'background:rgba(30,30,46,.72);border:1px solid #45475a;border-radius:50%;'
+            + 'background:rgba(30,30,46,.72);border:1px solid #45475a;border-radius:10px;'
             + 'pointer-events:none;display:none;z-index:6;';
+        // 兼容 E2E 的隐形 dial（rotate 值仍按 θ 设置）
         compassDial = document.createElement('div');
-        compassDial.style.cssText = 'position:absolute;inset:0;';
-        const mk = (label, deg, color, size) => {
-            const el = document.createElement('div');
-            el.textContent = label;
-            const rad = (deg - 90) * Math.PI / 180; // 0°=上（北），顺时针
-            const cx = (Math.sin(rad) * 21).toFixed(1), cy = (-Math.cos(rad) * 21).toFixed(1);
-            el.style.cssText = 'position:absolute;left:calc(50% + ' + cx + 'px);top:calc(50% + ' + cy + 'px);transform:translate(-50%,-50%);'
-                + 'color:' + color + ';font:' + size + 'px/1 "Segoe UI",sans-serif;font-weight:600;';
-            compassDial.appendChild(el);
-        };
-        mk('北', 0, '#f38ba8', 13);   // 北 -Z（MC 默认朝向）
-        mk('东', 90, '#cdd6f4', 11);  // 东 +X
-        mk('南', 180, '#cdd6f4', 11); // 南 +Z
-        mk('西', 270, '#cdd6f4', 11); // 西 -X
-        // 中心十字
-        const dot = document.createElement('div');
-        dot.style.cssText = 'position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;'
-            + 'background:#89b4fa;border-radius:50%;';
-        compassDial.appendChild(dot);
+        compassDial.style.cssText = 'position:absolute;inset:0;opacity:0;';
+        const cubeCanvas = document.createElement('canvas');
+        const dpr = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
+        cubeCanvas.width = 66 * dpr; cubeCanvas.height = 66 * dpr;
+        cubeCanvas.style.cssText = 'position:absolute;inset:0;width:66px;height:66px;';
+        compass.appendChild(cubeCanvas);
         compass.appendChild(compassDial);
         wrap.appendChild(compass);
+        // 立方体面贴图：128×128 画布字（BoxGeometry 组序 +X,-X,+Y,-Y,+Z,-Z）
+        const faceLabel = (ch, color) => {
+            const c = document.createElement('canvas');
+            c.width = 128; c.height = 128;
+            const g = c.getContext('2d');
+            g.fillStyle = 'rgba(46,46,66,0.92)';
+            g.fillRect(0, 0, 128, 128);
+            g.strokeStyle = '#585b70'; g.lineWidth = 6;
+            g.strokeRect(3, 3, 122, 122);
+            g.fillStyle = color;
+            g.font = '700 72px "Segoe UI","Microsoft YaHei",sans-serif';
+            g.textAlign = 'center'; g.textBaseline = 'middle';
+            g.fillText(ch, 64, 70);
+            const t = new THREE.CanvasTexture(c);
+            t.magFilter = THREE.NearestFilter;
+            t.minFilter = THREE.LinearFilter;
+            cubeTexs.push(t);
+            return t;
+        };
+        const mats = [
+            new THREE.MeshBasicMaterial({ map: faceLabel('东', '#cdd6f4') }), // +X
+            new THREE.MeshBasicMaterial({ map: faceLabel('西', '#cdd6f4') }), // -X
+            new THREE.MeshBasicMaterial({ map: faceLabel('上', '#89b4fa') }), // +Y
+            new THREE.MeshBasicMaterial({ map: faceLabel('下', '#7f849c') }), // -Y
+            new THREE.MeshBasicMaterial({ map: faceLabel('南', '#cdd6f4') }), // +Z
+            new THREE.MeshBasicMaterial({ map: faceLabel('北', '#f38ba8') }), // -Z
+        ];
+        cubeScene = new THREE.Scene();
+        cubeMesh = new THREE.Mesh(new THREE.BoxGeometry(1.35, 1.35, 1.35), mats);
+        cubeScene.add(cubeMesh);
+        cubeCam = new THREE.OrthographicCamera(-1.1, 1.1, 1.1, -1.1, 0.1, 10);
+        cubeCam.position.set(0, 0, 3);
+        cubeCam.lookAt(0, 0, 0);
+        cubeRenderer = new THREE.WebGLRenderer({ canvas: cubeCanvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+        cubeRenderer.setPixelRatio(dpr);
+        cubeRenderer.setSize(66, 66, false);
     }
     function updateCompass() {
         if (!compass || !compassDial) return;
         compass.style.display = 'block';
-        compassDial.style.transform = 'rotate(' + (orbit.theta * 180 / Math.PI).toFixed(2) + 'deg)';
+        const rotDeg = (orbit.theta * 180 / Math.PI).toFixed(2);
+        compassDial.style.transform = 'rotate(' + rotDeg + 'deg)'; // E2E 兼容字段
+        if (cubeRenderer && cubeMesh && cubeScene && cubeCam) {
+            cubeMesh.quaternion.copy(camera.quaternion); // 立方体与主视角同步
+            cubeRenderer.render(cubeScene, cubeCam);
+        }
     }
     function updateHud() {
         if (!hud) return;
@@ -1280,6 +1368,10 @@ export function createStructurePreview(canvas, hooks = {}) {
         specCache.clear();
         specPending.clear();
         editMaps.clear();
+        for (const t of cubeTexs) t.dispose(); // P14 视图立方体面贴图
+        cubeTexs = [];
+        if (cubeMesh) { cubeMesh.geometry.dispose(); }
+        if (cubeRenderer) { cubeRenderer.dispose(); cubeRenderer = null; }
         unitBox.dispose();
         if (renderer && renderer.forceContextLoss) renderer.forceContextLoss();
         canvas._structRenderer = null;
@@ -1305,6 +1397,7 @@ export function createStructurePreview(canvas, hooks = {}) {
         }
         return {
             pieces: pieceMeshes.size,
+            pieceNames: [...pieceMeshes.keys()], // P14 调试：当前场景渲染的片名
             instanceMeshes,
             voxels,
             texturedBlocks: textured,
@@ -1333,6 +1426,12 @@ export function createStructurePreview(canvas, hooks = {}) {
         return { theta: orbit.theta, phi: orbit.phi, radius: orbit.radius,
                  target: { x: orbit.target.x, y: orbit.target.y, z: orbit.target.z } };
     }
+    /** 直接设置轨道角度（测试/调试用；E2E 罗盘旋转一致性） */
+    function setOrbit(theta, phi) {
+        orbit.theta = theta;
+        if (phi != null) orbit.phi = Math.max(0.05, Math.min(Math.PI - 0.05, phi));
+        renderOnce();
+    }
 
     /** 2026-09-24：世界坐标 → 画布 client 坐标（E2E 精确瞄准 / 未来 UI 用） */
     function projectToScreen(x, y, z) {
@@ -1351,6 +1450,7 @@ export function createStructurePreview(canvas, hooks = {}) {
         getLayers,
         getHiddenPieces,
         getOrbit,
+        setOrbit,
         resetView,
         setAutoRotate,
         setContinuous, // P11 编辑器窗口按需渲染

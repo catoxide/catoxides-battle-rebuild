@@ -128,6 +128,7 @@ let pieceEditorPending = null; // 等待页面加载完成后投递的 payload�
 // P14 未写回修改跟踪（关窗提示）：渲染端每次编辑变化推送计数
 let editorDirtyCount = 0;
 let editorForceClose = false;
+let editorFlushForClose = false; // 仅「写回并关闭」流程的 flush 才在 flushed 后强关窗口
 
 function deliverEditorPayload() {
     if (pieceEditorWin && !pieceEditorWin.isDestroyed() && pieceEditorPending) {
@@ -166,6 +167,7 @@ function createPieceEditorWindow() {
             }).then((r) => {
                 if (!pieceEditorWin || pieceEditorWin.isDestroyed()) return;
                 if (r.response === 1) {
+                    editorFlushForClose = true;
                     pieceEditorWin.webContents.send('pieceEditor:flush'); // 渲染端写回后回 pieceEditor:flushed
                 } else if (r.response === 2) {
                     editorForceClose = true;
@@ -179,6 +181,7 @@ function createPieceEditorWindow() {
         pieceEditorPending = null;
         editorDirtyCount = 0;
         editorForceClose = false;
+        editorFlushForClose = false;
     });
     return pieceEditorWin;
 }
@@ -187,8 +190,11 @@ function createPieceEditorWindow() {
 ipcMain.on('pieceEditor:dirty', (event, n) => {
     editorDirtyCount = Math.max(0, n | 0);
 });
-// P14：「写回并关闭」——渲染端完成写回后回报，主进程放行关闭
+// P14：flush 完成回报 —— 仅「写回并关闭」流程放行关闭；
+// 重开前的预 flush（见 pieceEditor:open）不关窗（由 webContents.once 投递 payload）
 ipcMain.on('pieceEditor:flushed', () => {
+    if (!editorFlushForClose) return;
+    editorFlushForClose = false;
     if (pieceEditorWin && !pieceEditorWin.isDestroyed()) {
         editorForceClose = true;
         pieceEditorWin.close();
@@ -196,14 +202,31 @@ ipcMain.on('pieceEditor:flushed', () => {
 });
 
 // 打开/聚焦编辑器窗口并推送蓝图（payload: {packDir, structureId, pieceName, blueprint}）
+// P14：已加载且窗口有未写回修改 → 先 flush（同步写回主窗口）再投递 payload，
+// 否则 payload 是写回前的旧蓝图 → 刚写回的修改从视图消失（主窗口内存其实已合并）。
 ipcMain.handle('pieceEditor:open', (event, payload) => {
     try {
         if (!pieceEditorWin || pieceEditorWin.isDestroyed()) {
             pieceEditorPending = payload;
             createPieceEditorWindow(); // 页面加载完成后由 did-finish-load 投递
         } else {
-            pieceEditorPending = payload;
-            if (!pieceEditorWin.webContents.isLoading()) deliverEditorPayload(); // 已加载 → 立即投递
+            const win = pieceEditorWin;
+            if (editorDirtyCount > 0 && !win.webContents.isLoading()) {
+                let delivered = false;
+                const deliver = () => {
+                    if (delivered || !win || win.isDestroyed()) return;
+                    delivered = true;
+                    win.webContents.removeListener('pieceEditor:flushed', onFlushed);
+                    deliverEditorPayload();
+                };
+                const onFlushed = () => deliver();
+                win.webContents.once('pieceEditor:flushed', onFlushed);
+                win.webContents.send('pieceEditor:flush');
+                setTimeout(deliver, 1500); // 渲染端异常兜底：超时强制投递
+            } else {
+                pieceEditorPending = payload;
+                if (!win.webContents.isLoading()) deliverEditorPayload(); // 已加载 → 立即投递
+            }
         }
         if (!pieceEditorWin || pieceEditorWin.isDestroyed()) return { ok: false, error: '窗口创建失败' };
         pieceEditorWin.setTitle('片段 3D 编辑器 — ' + (payload.structureId || '?') + (payload.pieceName ? ' / ' + payload.pieceName : ''));

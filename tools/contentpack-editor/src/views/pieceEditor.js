@@ -233,6 +233,7 @@
     }
 
     // ===== 主入口：主窗口推送蓝图 =====
+    let loadSeq = 0; // P14：payload 到达计数（E2E 等待 state 替换完成，避免读到旧窗口状态）
     window.api.onPieceEditorLoad((payload) => {
         // P14：有未写回修改 → 先自动写回（修改属于旧结构，payload 已到达，不能丢）
         if (initialized && pv && dirtyCount()) {
@@ -240,6 +241,7 @@
             if (n) autoSaveNote = n;
         }
         state = payload;
+        loadSeq++;
         if (!initialized) { init(); return; }
         // 再次打开（换结构/换片段）→ 重置本地编辑并加载新数据
         if (pv) pv.clearEdits();
@@ -264,6 +266,8 @@
                 getState: () => state,
                 inspect: inspectVoxel,
                 openMenuAt: openMenuAtCell, // P12 E2E：指定格开中键菜单
+                dirtyCount: () => dirtyCount(), // P14 调试
+                loadSeq: () => loadSeq, // P14：payload 到达计数（E2E 等待用）
             }; // E2E/调试钩子
             pv.start();
             // 编辑器窗口用按需渲染（交互/编辑时渲染，不跑 60fps 连续循环）：
@@ -306,9 +310,10 @@
         const piece = (state.blueprint.pieces || []).find((p) => p.name === name) || currentPiece();
         if (!piece || !pv) return;
         lastSelectedPiece = piece.name; // P14
-        pv.setPiece(piece);
-        // 换片段重置剖切
+        // P14 顺序关键：先重置剖切（若切片激活会触发一轮旧片段重建），
+        // 再换片段 —— 新片段的构建序号在后 → 并发时新片段场景必然生效
         pv.setSlice(null);
+        pv.setPiece(piece);
         $('edSliceAxis').value = 'off';
         $('edSliceI').value = '0';
         syncSliceControl();
@@ -350,11 +355,15 @@
         // P14：切换片段 → 有未写回修改先提示（修改仍保留在本窗口，写回才同步主窗口）
         $('edPiece').addEventListener('change', () => {
             const next = $('edPiece').value;
+            window.__peSwitchLog = window.__peSwitchLog || [];
+            window.__peSwitchLog.push({ next, dirty: dirtyCount(), last: lastSelectedPiece, t: Date.now() });
             if (dirtyCount() && next !== lastSelectedPiece) {
                 const ok = window.confirm(tf('structure.piece3d.dirtySwitch', { n: dirtyCount() }));
+                window.__peSwitchLog.push({ decided: ok ? 'confirm-yes' : 'confirm-no' });
                 if (!ok) { $('edPiece').value = lastSelectedPiece || next; return; }
             }
             selectPiece(next);
+            window.__peSwitchLog.push({ decided: 'direct' });
         });
 
         // 撤销 / 写回
