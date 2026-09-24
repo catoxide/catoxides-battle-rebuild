@@ -76,11 +76,11 @@ test('纯 ID', () => {
     assert.strictEqual(r.name, 'minecraft:stone_bricks');
     assert.deepStrictEqual(r.properties, {});
 });
-test('带属性', () => {
+test('带属性（键归一化：剥 minecraft: 前缀，游戏 StateDefinition 用裸属性名）', () => {
     const r = V.parseBlockId('minecraft:stone_bricks[minecraft:axis=y,minecraft:waterlogged=false]');
     assert.strictEqual(r.name, 'minecraft:stone_bricks');
-    assert.strictEqual(r.properties['minecraft:axis'], 'y');
-    assert.strictEqual(r.properties['minecraft:waterlogged'], 'false');
+    assert.strictEqual(r.properties['axis'], 'y');
+    assert.strictEqual(r.properties['waterlogged'], 'false');
 });
 test('非法 ID 抛错', () => {
     assert.throws(() => V.parseBlockId('not a block !!'));
@@ -113,7 +113,10 @@ test('模板含 air + 填充 + jigsaw 调色板与 blocks（1.21.1 格式）', (
     assert.strictEqual(dec.palette[0].Name, 'minecraft:air');
     assert.strictEqual(dec.palette[1].Name, 'minecraft:stone_bricks');
     assert.strictEqual(dec.palette[3].Name, 'minecraft:jigsaw');
-    assert.strictEqual(dec.palette[3].properties, 'orientation=up_north');
+    // 1.21.1 真实格式：Properties 大写 compound（游戏只认这个；小写 properties 字符串会被忽略）
+    assert.ok(dec.palette[3].Properties, 'jigsaw palette 应有 Properties compound');
+    assert.strictEqual(dec.palette[3].Properties.orientation, 'up_north');
+    assert.strictEqual(dec.palette[3].properties, undefined, '不应再写小写 properties 字符串');
     // blocks: 16 地板 + 1 填充 + 1 jigsaw = 18 个 {pos,state,nbt?}
     assert.strictEqual(dec.blocks.length, 18);
     const normal = dec.blocks.find((b) => !b.nbt);

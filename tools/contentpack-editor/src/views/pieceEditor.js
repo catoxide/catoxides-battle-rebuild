@@ -39,9 +39,87 @@
         blast_furnace: '{"id": "minecraft:blast_furnace", "Items": [], "BurnTime": 0, "CookTime": 0, "CookTimeTotal": 0}',
         smoker: '{"id": "minecraft:smoker", "Items": [], "BurnTime": 0, "CookTime": 0, "CookTimeTotal": 0}',
     };
-    const BE_TYPES = new Set(Object.keys(BE_TEMPLATES));
+    // ===== P13 方块实体判定（"是不是方块实体，能看得出来"）=====
+    // 方块实体是【代码注册】的（BlockEntityType），1.21.1 没有纯数据文件可枚举。两个数据来源交叉：
+    //   ① 1180 个 vanilla 1.21.1 结构模板实测：携带 nbt 的方块（39 种，.scratch/be-blocks-1.21.1.json）
+    //   ② 反编译源码 BlockEntityType.java 的完整注册表（165 种方块 → 41 个 BE 类型）
+    // Mod 方块：文件/代码扫描都不可见 → 不在列表内，但 NBT 入口恒可用（下方 NBT 区对任何方块开放），
+    //   且方块已带 NBT（如圈地读取捕获的）时一律按方块实体处理（isBe = 列表 ∪ 实际有 NBT）。
+    const BE_KNOWN = new Set([
+        // 存储/容器类
+        'chest', 'trapped_chest', 'ender_chest', 'barrel', 'hopper', 'dropper', 'dispenser',
+        'shulker_box', 'black_shulker_box', 'blue_shulker_box', 'brown_shulker_box', 'cyan_shulker_box',
+        'gray_shulker_box', 'green_shulker_box', 'light_blue_shulker_box', 'light_gray_shulker_box',
+        'lime_shulker_box', 'magenta_shulker_box', 'orange_shulker_box', 'pink_shulker_box',
+        'purple_shulker_box', 'red_shulker_box', 'white_shulker_box', 'yellow_shulker_box',
+        'decorated_pot', 'crafter', 'jukebox',
+        // 熔炉系
+        'furnace', 'blast_furnace', 'smoker',
+        // 床（16 色）
+        'red_bed', 'black_bed', 'blue_bed', 'brown_bed', 'cyan_bed', 'gray_bed', 'green_bed',
+        'light_blue_bed', 'light_gray_bed', 'lime_bed', 'magenta_bed', 'orange_bed', 'pink_bed',
+        'purple_bed', 'white_bed', 'yellow_bed',
+        // 旗帜（16 色 × 挂/立）
+        'white_banner', 'orange_banner', 'magenta_banner', 'light_blue_banner', 'yellow_banner',
+        'lime_banner', 'pink_banner', 'gray_banner', 'light_gray_banner', 'cyan_banner',
+        'purple_banner', 'blue_banner', 'brown_banner', 'green_banner', 'red_banner', 'black_banner',
+        'white_wall_banner', 'orange_wall_banner', 'magenta_wall_banner', 'light_blue_wall_banner',
+        'yellow_wall_banner', 'lime_wall_banner', 'pink_wall_banner', 'gray_wall_banner',
+        'light_gray_wall_banner', 'cyan_wall_banner', 'purple_wall_banner', 'blue_wall_banner',
+        'brown_wall_banner', 'green_wall_banner', 'red_wall_banner', 'black_wall_banner',
+        // 牌子（11 材质 × 挂/立 + 悬挂牌）
+        'oak_sign', 'spruce_sign', 'birch_sign', 'acacia_sign', 'cherry_sign', 'jungle_sign',
+        'dark_oak_sign', 'crimson_sign', 'warped_sign', 'mangrove_sign', 'bamboo_sign',
+        'oak_wall_sign', 'spruce_wall_sign', 'birch_wall_sign', 'acacia_wall_sign', 'cherry_wall_sign',
+        'jungle_wall_sign', 'dark_oak_wall_sign', 'crimson_wall_sign', 'warped_wall_sign',
+        'mangrove_wall_sign', 'bamboo_wall_sign',
+        'oak_hanging_sign', 'spruce_hanging_sign', 'birch_hanging_sign', 'acacia_hanging_sign',
+        'cherry_hanging_sign', 'jungle_hanging_sign', 'dark_oak_hanging_sign', 'crimson_hanging_sign',
+        'warped_hanging_sign', 'mangrove_hanging_sign', 'bamboo_hanging_sign',
+        'oak_wall_hanging_sign', 'spruce_wall_hanging_sign', 'birch_wall_hanging_sign', 'acacia_wall_hanging_sign',
+        'cherry_wall_hanging_sign', 'jungle_wall_hanging_sign', 'dark_oak_wall_hanging_sign',
+        'crimson_wall_hanging_sign', 'warped_wall_hanging_sign', 'mangrove_wall_hanging_sign', 'bamboo_wall_hanging_sign',
+        // 头颅（14）
+        'skeleton_skull', 'skeleton_wall_skull', 'creeper_head', 'creeper_wall_head',
+        'dragon_head', 'dragon_wall_head', 'zombie_head', 'zombie_wall_head',
+        'wither_skeleton_skull', 'wither_skeleton_wall_skull', 'player_head', 'player_wall_head',
+        'piglin_head', 'piglin_wall_head',
+        // 功能方块
+        'brewing_stand', 'enchanting_table', 'end_portal', 'beacon', 'conduit', 'lectern',
+        'bell', 'spawner', 'trial_spawner', 'vault', 'structure_block', 'end_gateway',
+        'daylight_detector', 'comparator', 'sculk_sensor', 'calibrated_sculk_sensor',
+        'sculk_catalyst', 'sculk_shrieker', 'chiseled_bookshelf',
+        'command_block', 'chain_command_block', 'repeating_command_block',
+        'campfire', 'soul_campfire', 'bee_nest', 'beehive',
+        'suspicious_sand', 'suspicious_gravel',
+        'moving_piston',
+        'jigsaw',
+    ]);
+    const BE_TYPES = BE_KNOWN; // 兼容旧引用
     // 字段名 → NBT 类型（类型推断覆盖；对照 vanilla 数据：Slot/count 为 byte）
     const NBT_FIELD_TYPES = { Slot: 1, count: 1, Count: 1 };
+
+    // ===== P13 方块状态属性（实例值）：block 串 "name[k=v,...]" 的解析/重建 =====
+    // 定义（有哪些属性、允许值）来自 blockstate JSON（通用链路 blockStateAny）；
+    // 实例值（这一格当前是什么朝向/含水/连接）存在方块串里，与 NBT 平级、随蓝图保存、随导出写回
+    // （1.21.1 模板 palette 的 Properties compound，对照 1180 个 vanilla 模板实测）。
+    function parsePropsInstance(blockIdStr) {
+        const out = {};
+        const m = String(blockIdStr || '').match(/\[([^\]]*)\]$/);
+        if (!m) return out;
+        for (const kv of m[1].split(',')) {
+            const i = kv.indexOf('=');
+            if (i > 0) {
+                // 键归一化：剥 minecraft: 前缀（与导出端 parseBlockId 一致；游戏 StateDefinition 用裸属性名）
+                out[kv.slice(0, i).trim().replace(/^minecraft:/, '')] = kv.slice(i + 1).trim();
+            }
+        }
+        return out;
+    }
+    function buildBlockStr(base, props) {
+        const entries = Object.entries(props || {});
+        return entries.length ? base + '[' + entries.map(([k, v]) => k + '=' + v).join(',') + ']' : base;
+    }
 
     // plain JSON → tagged NBT（类型推断；blueprint 存储格式 = tagged，long 的 v 用字符串）
     function inferTag(value, fieldName) {
@@ -430,7 +508,10 @@
         const piece = currentPiece();
         const [x, y, z] = pick.local;
         const jg = (piece && piece.jigsaws || []).find((j) => j.x === x && j.y === y && j.z === z);
-        let html = `<div class="ed-ctx-head">🧊 ${esc(pick.blockId || 'air（空）')}</div>`;
+        const beBase = String(pick.blockId || '').split('[')[0].split(':').pop();
+        const hasNbt = (piece && piece.blockNbt || []).some((b) => b.x === x && b.y === y && b.z === z);
+        const isBe = BE_KNOWN.has(beBase) || hasNbt;
+        let html = `<div class="ed-ctx-head">🧊 ${esc(pick.blockId || 'air（空）')}${isBe ? ` <span class="note">· ⚙ ${t('structure.piece3d.beBadge')}</span>` : ''}</div>`;
         html += `<div class="ed-ctx-row">${t('structure.piece3d.pos')} <b>${x}, ${y}, ${z}</b> <span class="note">· ${esc(pick.piece)}</span></div>`;
         if (jg) {
             // P12：jigsaw 组件可编辑（change 即落本地蓝图，写回时随 payload 上主窗口）
@@ -447,12 +528,11 @@
             <b>place_prio</b> <input class="ed-ctx-in" id="edJgPlaceP" type="number" min="0" max="999" value="${jg.placementPriority != null ? jg.placementPriority : 10}"></div>`;
         }
         // P12 方块实体 NBT（箱子/熔炉等功能方块：精确编辑实体数据，1.21.1 格式对照 vanilla 实测）
-        const beName = String(pick.blockId || '').split('[')[0].split(':').pop();
-        const isBe = BE_TYPES.has(beName);
+        const beName = beBase;
         const curNbt = (piece && piece.blockNbt || []).find((b) => b.x === x && b.y === y && b.z === z);
         const nbtInit = curNbt
             ? JSON.stringify(taggedToPlainDisplay(curNbt.nbt), null, 1)
-            : (isBe ? BE_TEMPLATES[beName] : '{ }');
+            : (isBe && BE_TEMPLATES[beName] ? BE_TEMPLATES[beName] : (isBe ? '{ "id": "' + esc(String(pick.blockId).split('[')[0]) + '" }' : '{ }'));
         html += `<div class="ed-ctx-sub">NBT · ${t('structure.piece3d.nbtSub')}${isBe ? '' : ` <span class="note">${t('structure.piece3d.nbtNotBe')}</span>`}</div>`;
         html += `<textarea class="ed-ctx-in ed-ctx-nbtarea" id="edNbtArea" rows="6" spellcheck="false">${esc(nbtInit)}</textarea>`;
         html += `<div class="ed-ctx-row"><span class="note" id="edNbtMsg"></span></div>`;
@@ -521,7 +601,7 @@
         });
         const tplBtn = $('edNbtTpl');
         if (tplBtn) tplBtn.addEventListener('click', () => {
-            $('edNbtArea').value = isBe ? BE_TEMPLATES[beName] : '{ }';
+            $('edNbtArea').value = (isBe && BE_TEMPLATES[beName]) ? BE_TEMPLATES[beName] : (isBe ? '{ "id": "' + String(pick.blockId || '').split('[')[0] + '" }' : '{ }');
             nbtMsg('');
         });
         const delBtn = $('edNbtDel');
@@ -534,29 +614,70 @@
             updateInfo();
         });
 
-        // 异步补 blockstate 定义（朝向/属性参考）
-        if (window.api && window.api.blockState) {
-            window.api.blockState(pick.blockId).then((res) => {
+        // P13 方块状态属性（与 NBT 平级）：定义来自通用链路 blockStateAny（vanilla/内容包/数据包/mod jar），
+        // 实例值存在方块串 [props] 里 —— 改 select 即写回该格（palette Properties，导出游戏可直读）
+        const baseId = String(pick.blockId || '').split('[')[0];
+        if (window.api && window.api.blockState && baseId && baseId !== 'minecraft:air' && piece) {
+            window.api.blockState(baseId, state ? { packDir: state.packDir } : undefined).then((res) => {
                 if (menu.style.display === 'none') return;
                 const slot = menu.querySelector('.ed-ctx-bs');
                 if (!slot) return;
+                const inst = parsePropsInstance(pick.blockId);
                 if (!res || !res.ok || !res.data) {
-                    slot.innerHTML = `<div class="note">${t('structure.piece3d.bsMissing')}</div>`;
+                    // 无定义（自定义方块等）：实例值仍可读（只读展示）
+                    if (Object.keys(inst).length) {
+                        slot.innerHTML = `<div class="ed-ctx-sub">${t('structure.piece3d.propsSub')}</div>` +
+                            Object.entries(inst).map(([p, v]) => `<div class="ed-ctx-row"><b>${esc(p)}</b>: ${esc(v)}</div>`).join('');
+                    } else {
+                        slot.innerHTML = `<div class="note">${t('structure.piece3d.bsMissing')}</div>`;
+                    }
                     return;
                 }
                 const d = res.data;
                 const props = Object.entries(d.properties);
-                let line = `<div class="ed-ctx-sub">blockstate · ${esc(d.file)}</div>`;
+                let line = `<div class="ed-ctx-sub">${t('structure.piece3d.propsSub')} · ${esc(d.file)}</div>`;
                 if (!props.length) {
                     line += `<div class="note">${t('structure.piece3d.noProps')}</div>`;
                 } else {
                     for (const [p, vs] of props) {
-                        line += `<div class="ed-ctx-row"><b>${esc(p)}</b>: ${vs.map((v) => esc(v)).join(' / ')}</div>`;
+                        const cur = inst[p];
+                        line += `<div class="ed-ctx-row"><b>${esc(p)}</b>
+                            <select class="ed-ctx-in ed-prop-sel" data-prop="${esc(p)}">
+                                <option value="">&lt;${t('structure.piece3d.propsDefault')}&gt;</option>
+                                ${vs.map((v) => `<option${cur === v ? ' selected' : ''}>${esc(v)}</option>`).join('')}
+                            </select></div>`;
                     }
-                    line += `<div class="note">${t('structure.piece3d.propNote')}</div>`;
+                    for (const [p, v] of Object.entries(inst)) {
+                        if (!props.some(([k]) => k === p)) {
+                            line += `<div class="ed-ctx-row"><b>${esc(p)}</b>: ${esc(v)} <span class="note">${t('structure.piece3d.propUnknown')}</span></div>`;
+                        }
+                    }
+                    line += `<div class="ed-ctx-actions"><button class="btn ghost small" id="edPropsReset">${t('structure.piece3d.propsReset')}</button>
+                        <span class="note" id="edPropsMsg"></span></div>`;
+                    line += `<div class="note">${d.variantCount} variants</div>`;
                 }
-                line += `<div class="note">${d.variantCount} variants</div>`;
                 slot.innerHTML = line;
+                const commitProps = () => {
+                    const next = { ...inst };
+                    slot.querySelectorAll('.ed-prop-sel').forEach((s) => {
+                        const p = s.dataset.prop;
+                        if (s.value) next[p] = s.value; else delete next[p];
+                    });
+                    const newStr = buildBlockStr(baseId, next);
+                    pv.setVoxel(piece.name, [x, y, z], newStr);
+                    const head = menu.querySelector('.ed-ctx-head');
+                    if (head) head.innerHTML = `🧊 ${esc(newStr)}${isBe ? ` <span class="note">· ⚙ ${t('structure.piece3d.beBadge')}</span>` : ''}`;
+                    const brush = $('edBlock');
+                    if (brush) brush.value = newStr;
+                    const msg = $('edPropsMsg');
+                    if (msg) msg.textContent = t('structure.piece3d.propsApplied');
+                };
+                slot.querySelectorAll('.ed-prop-sel').forEach((s) => s.addEventListener('change', commitProps));
+                const rb = $('edPropsReset');
+                if (rb) rb.addEventListener('click', () => {
+                    slot.querySelectorAll('.ed-prop-sel').forEach((s) => { s.value = ''; });
+                    commitProps();
+                });
             }).catch(() => {});
         }
         $('edCtxUse').addEventListener('click', () => { $('edBlock').value = pick.blockId; setTool('paint'); hideCtx(); });

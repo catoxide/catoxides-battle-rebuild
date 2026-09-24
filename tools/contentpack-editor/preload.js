@@ -39,7 +39,7 @@ const api = {
     mcBlockFaces: (blockId) => ipcRenderer.invoke('core:mcBlockFaces', blockId),
     importRegion: () => ipcRenderer.invoke('core:importRegion'),
     mcBlockList: (opts) => ipcRenderer.invoke('core:mcBlockList', opts),
-    blockState: (blockId) => ipcRenderer.invoke('core:blockState', blockId),
+    blockState: (blockId, opts) => ipcRenderer.invoke('core:blockState', blockId, opts),
 
     // P11 片段 3D 编辑器窗口（独立窗口）
     openPieceEditor: (payload) => ipcRenderer.invoke('pieceEditor:open', payload),

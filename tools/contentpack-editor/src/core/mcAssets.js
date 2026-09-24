@@ -21,6 +21,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 
 /** 探测到的资源根（懒加载一次） */
 let resolvedRoot = null;
@@ -118,6 +119,9 @@ const MISSING = Symbol('missing');
  */
 function blockFaces(root, blockId) {
     let id = blockId;
+    // 方块串可带状态属性（如 minecraft:oak_log[axis=y]）——贴图只取决于基础名，剥掉 [props]
+    const br = id ? id.indexOf('[') : -1;
+    if (br > 0) id = id.slice(0, br);
     if (id && !id.includes(':')) id = 'minecraft:' + id;
     if (!id) return {};
     if (facesCache.has(id)) return facesCache.get(id);
@@ -207,20 +211,19 @@ function blockList(root) {
     return list;
 }
 
-/**
- * P11 右键查方块：读 blockstate 定义（1.21.1 数据集）
- * variants 键格式：`"a=1,b=2"` 或 `{ prop: { value: model } }`（或单模型）
- * @returns {{file:string, properties:Object<string,string[]>, variantCount:number}|null}
- */
-function blockState(root, blockId) {
+/** 剥掉状态属性："minecraft:oak_log[axis=y]" → "minecraft:oak_log"（定义/贴图只取决于基础名） */
+function stripProps(blockId) {
     const s = String(blockId || '');
-    const i = s.indexOf(':');
-    const ns = i >= 0 ? s.slice(0, i) : 'minecraft';
-    const name = i >= 0 ? s.slice(i + 1) : s;
-    if (!name || name.includes('/') || name.includes('\\')) return null;
-    const file = path.join(root, 'assets', ns, 'blockstates', name + '.json');
-    let raw;
-    try { raw = JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { return null; }
+    const i = s.indexOf('[');
+    return i > 0 ? s.slice(0, i) : s;
+}
+
+/**
+ * 解析 blockstate JSON（1.21.1 数据集格式）
+ * variants 键格式：`"a=1,b=2"` 或 `{ prop: { value: model } }`（或单模型）
+ * @returns {{properties:Object<string,string[]>, variantCount:number}}
+ */
+function parseBlockstateJson(raw) {
     const props = {};
     const addProp = (p, v) => {
         if (!props[p]) props[p] = [];
@@ -248,11 +251,134 @@ function blockState(root, blockId) {
     }
     const out = {};
     for (const [p, vs] of Object.entries(props)) out[p] = vs.sort();
+    return { properties: out, variantCount };
+}
+
+/**
+ * P11 右键查方块：读 blockstate 定义（资源根 = vanilla 数据集）
+ * @returns {{file:string, properties:Object<string,string[]>, variantCount:number}|null}
+ */
+function blockState(root, blockId) {
+    const s = stripProps(blockId);
+    const i = s.indexOf(':');
+    const ns = i >= 0 ? s.slice(0, i) : 'minecraft';
+    const name = i >= 0 ? s.slice(i + 1) : s;
+    if (!name || name.includes('/') || name.includes('\\')) return null;
+    const file = path.join(root, 'assets', ns, 'blockstates', name + '.json');
+    let raw;
+    try { raw = JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { return null; }
     return {
         file: 'assets/' + ns + '/blockstates/' + name + '.json',
-        properties: out,
-        variantCount,
+        ...parseBlockstateJson(raw),
     };
+}
+
+// ===== P13 通用链路：任意方块（vanilla/数据驱动/mod）的 blockstate 定义查找 =====
+
+/**
+ * 读 zip 条目内容（中央目录定位 + inflateRaw；零第三方依赖）
+ * @returns {Buffer|null}
+ */
+function readZipEntry(jarPath, entryName) {
+    let buf;
+    try { buf = fs.readFileSync(jarPath); } catch { return null; }
+    if (buf.length < 22) return null;
+    let eocd = -1;
+    for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65558); i--) {
+        if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) return null;
+    const count = buf.readUInt16LE(eocd + 10);
+    let off = buf.readUInt32LE(eocd + 16);
+    for (let n = 0; n < count; n++) {
+        if (off + 46 > buf.length || buf.readUInt32LE(off) !== 0x02014b50) return null;
+        const method = buf.readUInt16LE(off + 10);
+        const clen = buf.readUInt32LE(off + 20);
+        const csize = buf.readUInt32LE(off + 24);
+        const nlen = buf.readUInt16LE(off + 28);
+        const elen = buf.readUInt16LE(off + 30);
+        const loff = buf.readUInt32LE(off + 42);
+        const name = buf.toString('utf8', off + 46, off + 46 + nlen);
+        if (name === entryName) {
+            if (loff + 30 > buf.length || buf.readUInt32LE(loff) !== 0x04034b50) return null;
+            const lnlen = buf.readUInt16LE(loff + 26);
+            const lelen = buf.readUInt16LE(loff + 28);
+            const start = loff + 30 + lnlen + lelen;
+            if (start + csize > buf.length) return null;
+            const raw = buf.slice(start, start + csize);
+            try { return method === 8 ? zlib.inflateRawSync(raw) : Buffer.from(raw); }
+            catch { return null; }
+        }
+        off += 46 + nlen + elen + clen;
+    }
+    return null;
+}
+
+function tryReadJson(p) {
+    try { return JSON.parse(fs.readFileSync(p, 'utf-8')); } catch { return null; }
+}
+
+/**
+ * 通用 blockstate 定义查找（P13）——按优先级：
+ *   1. vanilla 数据集（resolveRoot）
+ *   2. 正在编辑的内容包 opts.packDir
+ *   3. run/resourcepacks/ 各包、run/saves/<world>/datapacks/ 各包、run/data（隐式数据包）
+ *   4. run/mods/*.jar 内 assets/<ns>/blockstates/<name>.json（zip 条目读取）
+ * @returns {{data:{file,properties,variantCount}, source:'vanilla'|'pack'|'datapack'|'mod'}|null}
+ */
+function blockStateAny(projectRoot, blockId, opts = {}) {
+    const s = stripProps(blockId);
+    const i = s.indexOf(':');
+    const ns = i >= 0 ? s.slice(0, i) : 'minecraft';
+    const name = i >= 0 ? s.slice(i + 1) : s;
+    if (!name || name.includes('/') || name.includes('\\')) return null;
+    const rel = 'assets/' + ns + '/blockstates/' + name + '.json';
+
+    // 1) vanilla 数据集
+    const root = resolveRoot(projectRoot);
+    if (root) {
+        const d = blockState(root, s);
+        if (d) return { data: d, source: 'vanilla' };
+    }
+    // 2) 正在编辑的内容包
+    if (opts.packDir) {
+        const raw = tryReadJson(path.join(opts.packDir, rel));
+        if (raw) return { data: { file: rel, ...parseBlockstateJson(raw) }, source: 'pack' };
+    }
+    // 3) 资源包 / 数据包 / 隐式 data
+    if (projectRoot) {
+        const dirs = [];
+        const rp = path.join(projectRoot, 'run', 'resourcepacks');
+        try { for (const en of fs.readdirSync(rp, { withFileTypes: true })) if (en.isDirectory()) dirs.push([path.join(rp, en.name), 'datapack']); } catch {}
+        const saves = path.join(projectRoot, 'run', 'saves');
+        try {
+            for (const w of fs.readdirSync(saves, { withFileTypes: true })) {
+                if (!w.isDirectory()) continue;
+                const dp = path.join(saves, w.name, 'datapacks');
+                try { for (const d of fs.readdirSync(dp, { withFileTypes: true })) if (d.isDirectory()) dirs.push([path.join(dp, d.name), 'datapack']); } catch {}
+            }
+        } catch {}
+        dirs.push([path.join(projectRoot, 'run', 'data'), 'datapack']);
+        for (const [dir, src] of dirs) {
+            const raw = tryReadJson(path.join(dir, rel));
+            if (raw) return { data: { file: rel, ...parseBlockstateJson(raw) }, source: src };
+        }
+    }
+    // 4) mod jar
+    if (projectRoot) {
+        const mods = path.join(projectRoot, 'run', 'mods');
+        let files;
+        try { files = fs.readdirSync(mods); } catch { files = []; }
+        for (const f of files) {
+            if (!f.toLowerCase().endsWith('.jar')) continue;
+            const rawBuf = readZipEntry(path.join(mods, f), rel);
+            if (!rawBuf) continue;
+            let raw;
+            try { raw = JSON.parse(rawBuf.toString('utf-8')); } catch { raw = null; }
+            if (raw) return { data: { file: rel + '  [' + f + ']', ...parseBlockstateJson(raw) }, source: 'mod' };
+        }
+    }
+    return null;
 }
 
 module.exports = {
@@ -262,5 +388,9 @@ module.exports = {
     blockFaces,
     blockList,
     blockState,
+    parseBlockstateJson,
+    readZipEntry,
+    blockStateAny,
+    stripProps,
     texturePath,
 };

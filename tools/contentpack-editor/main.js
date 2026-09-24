@@ -770,12 +770,12 @@ ipcMain.handle('core:mcBlockFaces', (event, blockId) => {
     return { ok: true, data: Object.keys(faces).length ? faces : null };
 });
 
-// P11 右键查方块：读数据集 blockstate 定义（属性/朝向/变体数）
-ipcMain.handle('core:blockState', (event, blockId) => {
+// P11 右键查方块：读 blockstate 定义（属性/朝向/变体数）
+// P13 通用链路：vanilla 数据集 → 内容包 → 资源包/数据包 → mod jar
+ipcMain.handle('core:blockState', (event, blockId, opts) => {
     try {
-        const root = McAssets.resolveRoot(ROOT);
-        if (!root) return { ok: true, data: null };
-        return { ok: true, data: McAssets.blockState(root, blockId) };
+        const r = McAssets.blockStateAny(ROOT, blockId, opts || {});
+        return { ok: true, data: r && r.data, source: r && r.source, file: r && r.data && r.data.file };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
     }

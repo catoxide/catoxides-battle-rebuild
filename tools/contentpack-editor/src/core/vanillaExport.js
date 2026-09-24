@@ -6,7 +6,9 @@
 //                    （1.20.x 旧位置 assets/<ns>/structures/（复数）在 1.21.1 不会被加载）
 //                    【1.21.1 模板格式】（对照解包源码 StructureTemplate.save/load）：
 //                      size: [w,h,d]（IntList）
-//                      palette: [{Name: str, properties?: str}]（properties 为 "k=v,k2=v2" 字符串）
+//                      palette: [{Name: str, Properties?: compound{prop: str}}]
+//                        （1.21.1 真实格式：大写 P 的 compound！对照 1180 个 vanilla 模板实测；
+//                          NbtUtils.readBlockState 只认 Properties，小写 properties 字符串是 ≤1.16 旧格式）
 //                      blocks: [{pos: [x,y,z], state: Int, nbt?: Compound}]
 //                        - 普通方块：仅 pos + state（或 nbt = blockNbt 覆盖层，见下）
 //                        - jigsaw：state 指向 minecraft:jigsaw[orientation=...]，
@@ -30,7 +32,10 @@
 const NBT = require('./nbt');
 const S = require('./structureSchema');
 
-/** 解析 "minecraft:stone_bricks[minecraft:axis=y]" → { name, properties } */
+/**
+ * 解析 "minecraft:stone_bricks[minecraft:axis=y]" → { name, properties }
+ * 属性键归一化：剥掉 `minecraft:` 前缀（游戏 StateDefinition 的属性名是裸名，如 "axis"）
+ */
 function parseBlockId(blockStr) {
     const s = String(blockStr || '').trim();
     const m = s.match(/^([a-z0-9_.\-:]+?)(?:\[([^\]]*)\])?$/);
@@ -41,7 +46,8 @@ function parseBlockId(blockStr) {
             if (!kv.trim()) continue;
             const idx = kv.indexOf('=');
             if (idx === -1) throw new Error('非法方块属性: ' + kv);
-            properties[kv.slice(0, idx).trim()] = kv.slice(idx + 1).trim();
+            const k = kv.slice(0, idx).trim().replace(/^minecraft:/, '');
+            properties[k] = kv.slice(idx + 1).trim();
         }
     }
     return { name: m[1], properties };
@@ -81,7 +87,7 @@ function buildTemplateNbt(piece, namespace) {
     }
 
     // ---- palette：0 = air，然后填充方块（去重），然后 jigsaw（按 orientation 去重）
-    // 1.21.1 格式：{Name: str, properties?: str}（properties 为 "k=v,..." 字符串，见 NbtUtils.writeBlockState）
+    // 1.21.1 格式：{Name: str, Properties?: compound{prop: str}}（见 NbtUtils.writeBlockState 反编译源码）
     const palette = []; // [{name, props:{}}]
     const paletteIndex = new Map();
     function addPalette(name, properties) {
@@ -123,11 +129,18 @@ function buildTemplateNbt(piece, namespace) {
         });
     }
 
-    // palette NBT
+    // palette NBT —— 1.21.1 真实格式（对照 1180 个 vanilla 模板实测 + NbtUtils.writeBlockState 反编译源码）：
+    //   { Name: str, Properties?: compound{ propName: str } }
+    //   【大写 P、compound！】游戏 load 端只认 Properties(tag 10)，不读小写 properties 字符串
+    //   （旧字符串格式为 ≤1.16 产物；写成字符串会被游戏静默忽略 → jigsaw 朝向全丢）
     const paletteTags = palette.map((e) => {
         const c = { Name: NBT.str(e.name) };
-        const propStr = Object.entries(e.props).map(([k, v]) => k + '=' + v).join(',');
-        if (propStr) c.properties = NBT.str(propStr);
+        const entries = Object.entries(e.props || {});
+        if (entries.length) {
+            const pv = {};
+            for (const [k, v] of entries) pv[k] = NBT.str(String(v));
+            c.Properties = { $t: NBT.T.COMPOUND, v: pv };
+        }
         return { $t: NBT.T.COMPOUND, v: c };
     });
 

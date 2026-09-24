@@ -13,7 +13,7 @@ const NBT = require('../src/core/nbt');
 let pass = 0, fail = 0, skip = 0;
 function test(name, fn) {
     try { fn(); pass++; console.log('  ✓ ' + name); }
-    catch (e) { fail++; console.log('  ✓ ' + name + '  → ' + e.message); }
+    catch (e) { fail++; console.log('  ✗ ' + name + '  → ' + e.message); }
 }
 function exists(p) { return fs.existsSync(p); }
 
@@ -142,6 +142,48 @@ console.log('=== 5. 数据集结构模板（大端；缺失则跳过）===');
     }
 }
 test('数据集 bridge.nbt 解析与 nbtlib 基准一致', () => {});
+
+console.log('=== 6. plainToTagged（decode 树 → tagged 树，圈地读取捕获 BE NBT 用）===');
+test('plainToTagged：byte 约定 / long / bool / 往返', () => {
+    // 箱子 NBT（1.21.1 实测形状：id + Items[{Slot,count,id}]，count 小写、byte）
+    const chestPlain = {
+        id: 'minecraft:chest',
+        Items: [
+            { Slot: 0, count: 1, id: 'minecraft:dirt' },
+            { Slot: 1, count: 64, id: 'minecraft:iron_ingot' },
+        ],
+    };
+    const tagged = NBT.plainToTagged(chestPlain);
+    assert.strictEqual(tagged.$t, NBT.T.COMPOUND, '根 = compound');
+    assert.strictEqual(tagged.v.id.$t, NBT.T.STRING, 'id = str');
+    assert.strictEqual(tagged.v.Items.$t, NBT.T.LIST, 'Items = list');
+    assert.strictEqual(tagged.v.Items.elemType, NBT.T.COMPOUND, 'Items 元素 = compound');
+    assert.strictEqual(tagged.v.Items.v[0].v.Slot.$t, NBT.T.BYTE, 'Slot 字段约定 → byte');
+    assert.strictEqual(tagged.v.Items.v[0].v.count.$t, NBT.T.BYTE, 'count 字段约定 → byte（1.21.1 小写）');
+    assert.strictEqual(tagged.v.Items.v[1].v.count.v, 64);
+    // 二进制往返：encode → decode 应还原 plain 树
+    const rt = NBT.decode(NBT.encode(tagged.v, 'LE'), 'LE');
+    assert.deepStrictEqual(rt, chestPlain, '往返: ' + JSON.stringify(rt));
+
+    // long（decode 把 long 变字符串；纯大整数串 → long）
+    const lt = NBT.plainToTagged({ t: '1234567890123', small: '123' });
+    assert.strictEqual(lt.v.t.$t, NBT.T.LONG, '大整数串 → long');
+    assert.strictEqual(lt.v.small.$t, NBT.T.STRING, '小整数串保持 str（无法区分，按 str 安全）');
+    const lrt = NBT.decode(NBT.encode(lt.v, 'LE'), 'LE');
+    assert.strictEqual(lrt.t, '1234567890123', 'long 往返（decode 仍为字符串）');
+
+    // 其他标量
+    const st = NBT.plainToTagged({ i: 42, s: 'x', b: true, f: 1.5, ints: [1, 2, 3] });
+    assert.strictEqual(st.v.i.$t, NBT.T.INT, '整数 → int（游戏 1.21.1 数字读取器 byte/int 互转宽松）');
+    assert.strictEqual(st.v.b.$t, NBT.T.BYTE, 'bool → byte（NBT 无 bool 类型）');
+    assert.strictEqual(st.v.f.$t, NBT.T.DOUBLE, '非整数 → double');
+    assert.strictEqual(st.v.ints.elemType, NBT.T.INT, 'int 列表');
+});
+test('plainToTagged：异型 list 抛错', () => {
+    let threw = false;
+    try { NBT.plainToTagged({ l: [1, 'a'] }); } catch (e) { threw = /类型不一致/.test(e.message); }
+    assert.ok(threw, '异型 list 应抛错');
+});
 
 console.log('\nNBT 测试: ' + pass + ' 通过, ' + fail + ' 失败, ' + skip + ' 跳过');
 process.exit(fail ? 1 : 0);

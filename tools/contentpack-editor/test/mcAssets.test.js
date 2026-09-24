@@ -86,5 +86,96 @@ console.log('=== 4. 其他命名空间存在时可读 ===');
     fs.rmSync(root, { recursive: true, force: true });
 }
 
+console.log('=== 5. blockFaces：带 [props] 的方块串剥属性后查贴图 ===');
+{
+    const root = mkRoot();
+    fs.mkdirSync(path.join(root, 'assets', 'minecraft', 'models', 'block'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'assets', 'minecraft', 'textures', 'block'), { recursive: true });
+    writeBs(root, 'minecraft', 'props_test', { variants: { 'axis=y': { model: 'minecraft:block/props_test' } } });
+    fs.writeFileSync(path.join(root, 'assets', 'minecraft', 'models', 'block', 'props_test.json'),
+        JSON.stringify({ parent: 'minecraft:block/cube_column', textures: { side: 'minecraft:block/props_tex', top: 'minecraft:block/props_tex' } }));
+    fs.writeFileSync(path.join(root, 'assets', 'minecraft', 'textures', 'block', 'props_tex.png'),
+        Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64'));
+    const plain = M.blockFaces(root, 'minecraft:props_test');
+    const withProps = M.blockFaces(root, 'minecraft:props_test[axis=y]');
+    const withProps2 = M.blockFaces(root, 'minecraft:props_test[facing=north,waterlogged=false]');
+    ok('基础名有贴图', plain && plain.side, JSON.stringify(plain));
+    ok('[axis=y] 剥属性后同贴图', withProps && withProps.side === plain.side, JSON.stringify(withProps));
+    ok('多属性串同样可查', withProps2 && withProps2.side === plain.side, JSON.stringify(withProps2));
+    fs.rmSync(root, { recursive: true, force: true });
+}
+
+console.log('=== 6. blockStateAny 通用链路（vanilla → 内容包 → 数据包 → mod jar）===');
+{
+    const zlib = require('zlib');
+    // 最小 zip（STORE 无压缩）：local header + central directory + EOCD
+    function makeZip(entries) {
+        const chunks = [], central = [];
+        let offset = 0;
+        for (const e of entries) {
+            const nameBuf = Buffer.from(e.name);
+            const crc = typeof zlib.crc32 === 'function' ? (zlib.crc32(e.buf) >>> 0) : 0;
+            const lh = Buffer.alloc(30);
+            lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0, 6); lh.writeUInt16LE(0, 8);
+            lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(e.buf.length, 18); lh.writeUInt32LE(e.buf.length, 22);
+            lh.writeUInt16LE(nameBuf.length, 26); lh.writeUInt16LE(0, 28);
+            chunks.push(lh, nameBuf, e.buf);
+            const ch = Buffer.alloc(46);
+            ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6);
+            ch.writeUInt32LE(crc, 16); ch.writeUInt32LE(e.buf.length, 20); ch.writeUInt32LE(e.buf.length, 24);
+            ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(offset, 42);
+            central.push(Buffer.concat([ch, nameBuf]));
+            offset += 30 + nameBuf.length + e.buf.length;
+        }
+        const cdBuf = Buffer.concat(central);
+        const eocd = Buffer.alloc(22);
+        eocd.writeUInt32LE(0x06054b50, 0);
+        eocd.writeUInt16LE(entries.length, 8); eocd.writeUInt16LE(entries.length, 10);
+        eocd.writeUInt32LE(cdBuf.length, 12); eocd.writeUInt32LE(offset, 16);
+        return Buffer.concat([...chunks, cdBuf, eocd]);
+    }
+
+    const root = mkRoot();
+    M.setRootOverride(root); // vanilla 根锁定为本测试临时目录（独立进程，无需还原）
+    writeBs(root, 'minecraft', 'any_test', { variants: { 'axis=y': { model: 'm' } } });
+
+    // 内容包
+    const pack = fs.mkdtempSync(path.join(os.tmpdir(), 'mcassets-pack-'));
+    fs.mkdirSync(path.join(pack, 'assets', 'example', 'blockstates'), { recursive: true });
+    fs.writeFileSync(path.join(pack, 'assets', 'example', 'blockstates', 'pack_block.json'),
+        JSON.stringify({ variants: { facing: { north: { model: 'm' }, south: { model: 'm' } } } }));
+
+    // 数据包（run/saves/w/datapacks/dp）
+    const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'mcassets-proj-'));
+    const dpDir = path.join(proj, 'run', 'saves', 'w', 'datapacks', 'dp', 'assets', 'example', 'blockstates');
+    fs.mkdirSync(dpDir, { recursive: true });
+    fs.writeFileSync(path.join(dpDir, 'dp_block.json'), JSON.stringify({ variants: { 'lit=true': { model: 'm' } } }));
+
+    // mod jar（zip 内 assets/example2/blockstates/jar_block.json）
+    const modsDir = path.join(proj, 'run', 'mods');
+    fs.mkdirSync(modsDir, { recursive: true });
+    const jarContent = JSON.stringify({ variants: { 'power=1': { model: 'm' }, 'power=2': { model: 'm' } } });
+    fs.writeFileSync(path.join(modsDir, 'testmod.jar'),
+        makeZip([{ name: 'assets/example2/blockstates/jar_block.json', buf: Buffer.from(jarContent) },
+                 { name: 'data/example2/blockstate/jar_block.json', buf: Buffer.from('{}') }]));
+
+    let r = M.blockStateAny('/nonexistent', 'minecraft:any_test');
+    ok('vanilla 数据集命中', r && r.source === 'vanilla' && r.data.properties.axis, JSON.stringify(r));
+    r = M.blockStateAny('/nonexistent', 'minecraft:any_test[axis=y]');
+    ok('[props] 串剥属性后命中', r && r.source === 'vanilla', JSON.stringify(r && r.source));
+    r = M.blockStateAny('/nonexistent', 'example:pack_block', { packDir: pack });
+    ok('内容包命中', r && r.source === 'pack' && r.data.properties.facing && r.data.properties.facing.length === 2, JSON.stringify(r));
+    r = M.blockStateAny(proj, 'example:dp_block');
+    ok('数据包命中', r && r.source === 'datapack' && r.data.properties.lit, JSON.stringify(r));
+    r = M.blockStateAny(proj, 'example2:jar_block');
+    ok('mod jar 命中（zip 条目读取）', r && r.source === 'mod' && r.data.properties.power && r.data.properties.power.length === 2
+        && r.data.file.includes('testmod.jar'), JSON.stringify(r));
+    r = M.blockStateAny(proj, 'example2:no_such');
+    ok('全链路未命中 → null', r === null, JSON.stringify(r));
+    fs.rmSync(pack, { recursive: true, force: true });
+    fs.rmSync(proj, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+}
+
 console.log('\nmcAssets 测试: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

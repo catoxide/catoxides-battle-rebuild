@@ -51,6 +51,56 @@ console.log('=== 1. 往返：export → import ===');
     const piece2 = RI.regionToPiece(region, 'rt2');
     ok('regionToPiece fillBlocks', piece2.fillBlocks.length === 17);
     ok('regionToPiece jigsaws', piece2.jigsaws.length === 1 && piece2.jigsaws[0].name === 'top');
+    // 2026-09-24：状态属性往返（Properties 大写 compound，对照 1180 个 vanilla 模板实测格式）
+    const pieceSt = {
+        name: 'st', size: [3, 2, 3], boxFills: [],
+        fillBlocks: [
+            { x: 0, y: 0, z: 0, block: 'minecraft:oak_stairs[minecraft:facing=east,minecraft:shape=straight,minecraft:half=bottom]' },
+            { x: 1, y: 0, z: 0, block: 'minecraft:oak_fence[north=true,south=true,east=false,west=false,waterlogged=false]' },
+        ],
+        jigsaws: [],
+    };
+    const decSt = NBT.decode(VE.buildTemplateNbt(pieceSt, 'ns'));
+    const stairsPal = decSt.palette.find((e) => e.Name === 'minecraft:oak_stairs');
+    ok('导出 palette：Properties 大写 compound（游戏只认这个）', stairsPal && stairsPal.Properties
+        && stairsPal.Properties.facing === 'east' && stairsPal.Properties.shape === 'straight' && stairsPal.Properties.half === 'bottom',
+        JSON.stringify(stairsPal));
+    const rSt = RI.parseRegionNbt(VE.buildTemplateNbt(pieceSt, 'ns'));
+    const pSt = RI.regionToPiece(rSt, 'st2');
+    const stairB = pSt.fillBlocks.find((b) => b.block.startsWith('minecraft:oak_stairs'));
+    ok('导入保留属性实例值（→ block 串 [props]）', stairB && stairB.block === 'minecraft:oak_stairs[facing=east,shape=straight,half=bottom]',
+        JSON.stringify(pSt.fillBlocks));
+    const fenceB = pSt.fillBlocks.find((b) => b.block.startsWith('minecraft:oak_fence'));
+    ok('栅栏连接保留（north/south=true）', fenceB && fenceB.block.includes('north=true') && fenceB.block.includes('south=true'),
+        JSON.stringify(fenceB));
+
+    // 2026-09-24：BE NBT 捕获（导入 = 读取游戏里现成的 NBT）：export → import 往返
+    // 蓝图格式：nbt = tagged compound { $t:10, v: <tagged 值映射> }
+    const chestNbt = {
+        $t: NBT.T.COMPOUND,
+        v: {
+            id: NBT.str('minecraft:chest'),
+            Items: NBT.list(NBT.T.COMPOUND, [
+                { $t: NBT.T.COMPOUND, v: { Slot: NBT.byte(0), count: NBT.byte(1), id: NBT.str('minecraft:dirt') } },
+                { $t: NBT.T.COMPOUND, v: { Slot: NBT.byte(2), count: NBT.byte(64), id: NBT.str('minecraft:iron_ingot') } },
+            ]),
+        },
+    };
+    const pieceC = {
+        name: 'chest_rt', size: [2, 2, 2], boxFills: [],
+        fillBlocks: [{ x: 0, y: 0, z: 0, block: 'minecraft:chest' }, { x: 1, y: 0, z: 0, block: 'minecraft:oak_planks' }],
+        jigsaws: [], blockNbt: [{ x: 0, y: 0, z: 0, nbt: chestNbt }],
+    };
+    const rC = RI.parseRegionNbt(VE.buildTemplateNbt(pieceC, 'ns'));
+    ok('导入捕获非 jigsaw BE NBT（chest）', rC.blockNbts && rC.blockNbts.length === 1
+        && rC.blockNbts[0].x === 0 && rC.blockNbts[0].block === 'minecraft:chest'
+        && rC.blockNbts[0].nbt.id === 'minecraft:chest', JSON.stringify(rC.blockNbts));
+    const pC = RI.regionToPiece(rC, 'chest_rt2');
+    const bn = pC.blockNbt && pC.blockNbt[0];
+    ok('blockNbt 还原为 tagged compound', bn && bn.nbt.$t === NBT.T.COMPOUND, JSON.stringify(bn && bn.nbt.$t));
+    ok('Items 往返（count byte 保持 byte）', bn && bn.nbt.v.Items && bn.nbt.v.Items.v.length === 2
+        && bn.nbt.v.Items.v[1].v.count.$t === NBT.T.BYTE && bn.nbt.v.Items.v[1].v.count.v === 64
+        && bn.nbt.v.Items.v[1].v.id.v === 'minecraft:iron_ingot', JSON.stringify(bn && bn.nbt.v.Items));
     // 占位符 #empty 导出为 air → 导入后无该位置
     const piece3 = {
         name: 'ph', size: [2, 1, 1], boxFills: [],
@@ -78,9 +128,10 @@ if (!hasDS) {
         ok('bridge.nbt 非 air 普通块 = 1942', r.blocks.filter((b) => b.block !== 'minecraft:air').length === 1942);
         ok('bridge.nbt jigsaw = 4', r.jigsaws.length === 4, String(r.jigsaws.length));
         const bj = r.jigsaws.find((j) => j.x === 6 && j.y === 0 && j.z === 8);
-        ok('jigsaw[6,0,8] 字段正确', bj && bj.name === 'minecraft:empty' && bj.pool === 'minecraft:bastion/bridge/legs'
+        // orientation 对照真实文件实测：[6,0,8] 的 jigsaw 是 down_west（旧代码丢 Properties 误报默认 north_up）
+    ok('jigsaw[6,0,8] 字段正确', bj && bj.name === 'minecraft:empty' && bj.pool === 'minecraft:bastion/bridge/legs'
             && bj.target === 'minecraft:leg_connector' && bj.joint === 'aligned'
-            && bj.finalState === 'minecraft:polished_blackstone_bricks' && bj.orientation === 'north_up', JSON.stringify(bj));
+            && bj.finalState === 'minecraft:polished_blackstone_bricks' && bj.orientation === 'down_west', JSON.stringify(bj));
     }
     const ac = file(path.join(DS, 'data', 'minecraft', 'structure', 'ancient_city', 'city', 'entrance', 'entrance_connector.nbt'));
     if (!ac) { skip++; console.log('  - 跳过（entrance_connector.nbt 不存在）'); }
@@ -90,8 +141,23 @@ if (!hasDS) {
         const j = r.jigsaws[0];
         ok('jigsaw name/target 正确', j.name === 'minecraft:empty' && j.target === 'minecraft:entrance_middle', JSON.stringify(j));
         ok('jigsaw pool 正确', j.pool === 'minecraft:ancient_city/city/entrance');
-        ok('jigsaw 默认 orientation = north_up', j.orientation === 'north_up');
+        // 对照真实文件实测：首个 jigsaw [0,0,19] orientation = west_up（从 Properties 读取，非默认）
+        ok('jigsaw orientation 从 Properties 读取（实测 west_up）', j.orientation === 'west_up', JSON.stringify(j));
         ok('jigsaw final_state', j.finalState === 'minecraft:deepslate_tiles');
+    }
+    // 2026-09-24：真实村庄 BE NBT 捕获（savanna 小屋：chest 带 LootTable、bed、banner）
+    const sh = file(path.join(DS, 'data', 'minecraft', 'structure', 'village', 'savanna', 'houses', 'savanna_small_house_4.nbt'));
+    if (!sh) { skip++; console.log('  - 跳过（savanna_small_house_4.nbt 不存在）'); }
+    else {
+        const r = RI.parseRegionNbt(sh);
+        ok('村庄 BE NBT 捕获 = 14', r.blockNbts && r.blockNbts.length === 14, String(r.blockNbts && r.blockNbts.length));
+        const chest = r.blockNbts.find((b) => b.block === 'minecraft:chest');
+        ok('chest NBT 含 LootTable（游戏原版形状）', chest && chest.nbt.id === 'minecraft:chest'
+            && chest.nbt.LootTable === 'minecraft:chests/village/village_savanna_house', JSON.stringify(chest && chest.nbt));
+        const p = RI.regionToPiece(r, 'savanna_house');
+        const bn = p.blockNbt && p.blockNbt.find((b) => b.x === chest.x && b.y === chest.y && b.z === chest.z);
+        ok('regionToPiece blockNbt（tagged，LootTable 为 str）', bn && bn.nbt.$t === NBT.T.COMPOUND
+            && bn.nbt.v.LootTable && bn.nbt.v.LootTable.$t === NBT.T.STRING, JSON.stringify(bn && bn.nbt.v.LootTable));
     }
 }
 

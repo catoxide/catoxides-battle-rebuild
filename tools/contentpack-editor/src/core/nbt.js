@@ -228,11 +228,78 @@ function decodeAuto(input) {
     return best;
 }
 
+// ===== plain → tagged（解码树 → 构建器树）=====
+//
+// decode 输出是无 tag 的普通树：number = byte/short/int/float/double 之一，
+// string = str 或 long（long 被 toString），array = list，object = compound。
+// 反向推断规则（对照 vanilla 1.21.1 BE NBT 实测：chest/spawner/vault/sculk_sensor 等）：
+//   - number：
+//       * 字段名 Slot/count/Count → byte（游戏物品槽约定，1.21.1 用小写 count）
+//       * 整数且 |v| ≤ 2^31-1 → int（1.21.1 NBT 数字读取器对 byte/int 互转宽松，
+//         int 是最安全的默认；short/byte 字段极罕见）
+//       * |v| > 2^31-1 → long；非整数 → double
+//   - string：纯整数串且 |v| > 2^31-1 → long（decode 的 long 会 toString，
+//     小数值串无法与 str 区分，按 str 处理——BE NBT 里 long 多为时间戳/ID，超出 int 范围）；否则 str
+//   - boolean（JS）→ byte 0/1（NBT 无 bool 类型，putBoolean 即 putByte）
+//   - array → list，元素类型按首元素推断（真实 NBT 列表元素同型；异型抛错）
+//   - object → compound
+
+function looksLikeLong(s) {
+    if (typeof s !== 'string' || !/^[+-]?\d+$/.test(s)) return false;
+    const n = s.startsWith('-') ? -BigInt(s.slice(1)) : BigInt(s);
+    return n > 2147483647n || n < -2147483648n;
+}
+
+function inferScalarTag(v, fieldName) {
+    if (typeof v === 'number') {
+        if (fieldName === 'Slot' || fieldName === 'count' || fieldName === 'Count') return byte(v);
+        if (Number.isInteger(v)) return Math.abs(v) > 2147483647 ? long(v) : int(v);
+        return dbl(v);
+    }
+    if (typeof v === 'boolean') return byte(v ? 1 : 0);
+    if (typeof v === 'string') return looksLikeLong(v) ? { $t: T_LONG, v: BigInt(v) } : str(v);
+    return null;
+}
+
+/**
+ * plain 树（decode 输出）→ tagged 树（encode 输入）。
+ * @param {*} v plain 值
+ * @param {string} [fieldName] 字段名（用于 Slot/count 等 byte 约定）
+ * @returns {{$t, v}} tagged 值
+ */
+function plainToTagged(v, fieldName) {
+    if (Array.isArray(v)) {
+        if (!v.length) return list(T_INT, []);
+        let first = inferScalarTag(v[0], fieldName);
+        if (!first) {
+            // 复合/列表元素：递归推断首元素类型
+            const ft = Array.isArray(v[0]) ? T_LIST : T_COMPOUND;
+            first = { $t: ft };
+        }
+        const items = v.map((it, i) => {
+            const t = plainToTagged(it, i === 0 ? fieldName : undefined);
+            if (t.$t !== first.$t) throw new Error('NBT: list 元素类型不一致（首个 $t=' + first.$t + '，第' + (i + 1) + '个 $t=' + t.$t + '）');
+            return t;
+        });
+        return { $t: T_LIST, elemType: first.$t, v: items };
+    }
+    if (v && typeof v === 'object') {
+        const o = {};
+        for (const [k, val] of Object.entries(v)) o[k] = plainToTagged(val, k);
+        return { $t: T_COMPOUND, v: o };
+    }
+    const t = inferScalarTag(v, fieldName);
+    if (t) return t;
+    return str(String(v));
+}
+
 module.exports = {
     // 构建器
     str, byte, int, long, flt, dbl, list,
     // 编解码
     encode, gzip, decode, decodeAuto,
+    // plain ↔ tagged
+    plainToTagged,
     // 类型号（调用方/测试用）
     T: { END: T_END, BYTE: T_BYTE, SHORT: T_SHORT, INT: T_INT, LONG: T_LONG, FLOAT: T_FLOAT, DOUBLE: T_DOUBLE, STRING: T_STRING, LIST: T_LIST, COMPOUND: T_COMPOUND },
 };

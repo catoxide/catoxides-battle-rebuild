@@ -2,20 +2,24 @@
  * regionImport.js - 圈地读取：原版结构模板 .nbt → 蓝图片段（纯函数）
  *
  * 解析两种结构模板格式：
- *   1. 【1.21.1 当前格式】（对照解包源码 StructureTemplate.load / JigsawBlockEntity）：
+ *   1. 【1.21.1 当前格式】（对照 1180 个 vanilla 模板实测 + NbtUtils.readBlockState 反编译源码）：
  *        size: [w,h,d]（IntList）
- *        palette: [{Name, properties?}]（properties 为 "k=v,..." 字符串）
+ *        palette: [{Name, Properties?}]（Properties 为 compound{prop:str}，大写 P！
+ *          例：{"Properties":{"half":"bottom","facing":"east"},"Name":"minecraft:oak_stairs"}）
  *        blocks: [{pos:[x,y,z], state:Int, nbt?:Compound}]
- *          - jigsaw 块：state 指向 minecraft:jigsaw[orientation=...]，
+ *          - jigsaw 块：state 指向 minecraft:jigsaw，Properties.orientation 为朝向，
  *            nbt = {name,target,pool,joint,final_state,placement_priority,selection_priority}
  *   2. 【1.20.x 旧格式】（兼容旧工具/旧游戏版本产物）：
  *        blocks: [[state,x,y,z], ...]
  *        nbtData: [{pos, id, name, pool, target, joint, final_state, ...}]
  *
  * 产物（regionToPiece）与蓝图片段字段一一对应：
- *   fillBlocks: [{x,y,z,block}]（air 跳过；jigsaw 位置不入 fillBlocks）
+ *   fillBlocks: [{x,y,z,block}]（air 跳过；jigsaw 位置不入 fillBlocks；
+ *              block 串可带状态属性 "name[props]"，来自 palette Properties）
  *   jigsaws:    [{x,y,z,name,orientation,target,finalState,joint,
  *                 selectionPriority,placementPriority,pool}]
+ *   blockNbt:   [{x,y,z,nbt}]（非 jigsaw 方块的 BE NBT，plain→tagged compound；
+ *                 导入即"读取游戏里现成的 NBT"，编辑器可改后随导出写回 block.nbt）
  */
 'use strict';
 
@@ -54,9 +58,14 @@ function parseRegionNbt(input) {
     const [w, h, d] = [size[0], size[1], size[2]];
 
     // ---- palette（现代格式）
+    // 1.21.1 真实格式：Properties（大写 P，compound{prop:str}）——对照 1180 个 vanilla 模板实测 +
+    // NbtUtils.readBlockState 反编译源码（只认 Properties）。小写 properties（字符串）为 ≤1.16 旧格式兜底。
     let palette = null; // [{name, props}]
     if (Array.isArray(root.palette)) {
-        palette = root.palette.map((e) => ({ name: e.Name, props: parsePropertiesStr(e.properties) }));
+        palette = root.palette.map((e) => ({
+            name: e.Name,
+            props: (e.Properties && typeof e.Properties === 'object') ? { ...e.Properties } : parsePropertiesStr(e.properties),
+        }));
     }
     const hasModernPalette = !!palette && palette.length > 0;
     const blocksRaw = root.blocks || [];
@@ -64,6 +73,8 @@ function parseRegionNbt(input) {
 
     const blocks = [];   // {x,y,z,block,properties}
     const jigsaws = [];  // {x,y,z,name,orientation,target,finalState,joint,selectionPriority,placementPriority,pool}
+    const blockNbts = []; // {x,y,z,block,nbt(plain)} —— 非 jigsaw 方块的 BE NBT（箱子/刷怪笼/酿造台等，
+                          // “读取现成 NBT”的数据源；jigsaw 的 nbt 归 jigsaws[] 管）
 
     function addJigsaw(x, y, z, o) {
         // o: {name?, orientation?, target?, pool?, joint?, finalState?, selectionPriority?, placementPriority?}
@@ -106,6 +117,9 @@ function parseRegionNbt(input) {
                 });
             } else {
                 blocks.push({ x, y, z, block: entry.name, properties: entry.props });
+                if (b.nbt && entry.name !== 'minecraft:air') {
+                    blockNbts.push({ x, y, z, block: entry.name, nbt: b.nbt });
+                }
             }
         }
         // 旧格式 nbtData（个别混合文件）
@@ -113,7 +127,13 @@ function parseRegionNbt(input) {
             for (const e of root.nbtData) {
                 const pos = e.pos || [];
                 if (jigsawPos.has(pos[0] + ',' + pos[1] + ',' + pos[2])) continue;
-                if (e.id && e.id !== 'minecraft:jigsaw') continue;
+                if (e.id && e.id !== 'minecraft:jigsaw') {
+                    // 非 jigsaw 的 BE NBT（旧格式 nbtData 条目 = {pos, id, ...BE字段}）
+                    const nbt = { id: e.id };
+                    for (const [k, val] of Object.entries(e)) if (k !== 'pos' && k !== 'id') nbt[k] = val;
+                    blockNbts.push({ x: pos[0], y: pos[1], z: pos[2], block: e.id, nbt });
+                    continue;
+                }
                 addJigsaw(pos[0], pos[1], pos[2], {
                     name: e.name, target: e.target, pool: e.pool, joint: e.joint,
                     finalState: e.final_state,
@@ -169,6 +189,7 @@ function parseRegionNbt(input) {
         size: [w, h, d],
         blocks,
         jigsaws,
+        blockNbts,
         entities: Array.isArray(root.entities) ? root.entities.length : 0,
         format: isLegacy ? 'legacy' : 'modern',
         dataVersion: root.DataVersion || null,
@@ -180,7 +201,8 @@ function parseRegionNbt(input) {
  * region → 蓝图片段
  * @param {Object} region parseRegionNbt 的结果
  * @param {string} pieceName
- * @returns {Object} 片段 {name, size, boxFills:[], fillBlocks, jigsaws}
+ * @returns {Object} 片段 {name, size, boxFills:[], fillBlocks, jigsaws, blockNbt?}
+ *         blockNbt：非 jigsaw 方块的 BE NBT（plain → tagged compound，P12 蓝图格式）
  */
 function regionToPiece(region, pieceName) {
     const [w, h, d] = region.size;
@@ -206,7 +228,14 @@ function regionToPiece(region, pieceName) {
             o.placementPriority = j.placementPriority;
             return o;
         });
-    return { name: pieceName, size: [w, h, d], boxFills: [], fillBlocks, jigsaws };
+    // BE NBT（plain → tagged）：导入 = 读取游戏里现成的 NBT（箱子内容物等），可再经编辑器修改后导出
+    const blockNbt = (region.blockNbts || [])
+        .filter((b) => b.x >= 0 && b.y >= 0 && b.z >= 0 && b.x < w && b.y < h && b.z < d)
+        .filter((b) => b.block && b.block !== 'minecraft:air' && b.nbt && typeof b.nbt === 'object')
+        .map((b) => ({ x: b.x, y: b.y, z: b.z, nbt: NBT.plainToTagged(b.nbt) }));
+    const piece = { name: pieceName, size: [w, h, d], boxFills: [], fillBlocks, jigsaws };
+    if (blockNbt.length) piece.blockNbt = blockNbt;
+    return piece;
 }
 
 const API = { parseRegionNbt, regionToPiece, parsePropertiesStr, blockIdStr };
