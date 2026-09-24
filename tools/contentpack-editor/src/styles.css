@@ -418,20 +418,25 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
   display: flex; align-items: center; gap: 10px;
   padding: 4px 10px; background: var(--card); border-top: 1px solid var(--border); font-size: 12px;
 }
-/* 右键组件/NBT 菜单 */
+/* 中键组件/NBT 编辑菜单（P12：可编辑） */
 .ed-ctx {
-  position: absolute; z-index: 50; min-width: 240px; max-width: 310px;
+  position: absolute; z-index: 50; min-width: 240px; max-width: 330px; max-height: 78vh; overflow-y: auto;
   background: var(--card); border: 1px solid var(--border); border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0,0,0,.45); padding: 10px; font-size: 12px;
 }
 .ed-ctx-head { font-weight: 600; margin-bottom: 6px; word-break: break-all; }
-.ed-ctx-row { margin: 2px 0; }
+.ed-ctx-row { margin: 3px 0; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.ed-ctx-row b { min-width: 62px; font-weight: 600; color: var(--accent); }
+.ed-ctx-in {
+  flex: 1; min-width: 80px; background: rgba(0,0,0,.35); color: inherit;
+  border: 1px solid var(--border); border-radius: 4px; padding: 2px 5px; font-size: 12px; font-family: inherit;
+}
 .ed-ctx-sub { margin: 8px 0 4px; font-weight: 600; color: var(--accent); }
 .ed-ctx-nbt {
   margin: 4px 0; padding: 8px; background: rgba(0,0,0,.35); border-radius: 6px;
   font-size: 11px; line-height: 1.5; overflow-x: auto; white-space: pre;
 }
-.ed-ctx-actions { display: flex; gap: 6px; margin-top: 8px; }
+.ed-ctx-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .struct-hud { user-select: none; }
 .struct-legend {
   background: var(--card); border: 1px solid var(--border); border-radius: 10px;

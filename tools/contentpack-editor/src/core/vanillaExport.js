@@ -8,10 +8,13 @@
 //                      size: [w,h,d]（IntList）
 //                      palette: [{Name: str, properties?: str}]（properties 为 "k=v,k2=v2" 字符串）
 //                      blocks: [{pos: [x,y,z], state: Int, nbt?: Compound}]
-//                        - 普通方块：仅 pos + state
+//                        - 普通方块：仅 pos + state（或 nbt = blockNbt 覆盖层，见下）
 //                        - jigsaw：state 指向 minecraft:jigsaw[orientation=...]，
 //                          nbt = jigsaw 方块实体数据 {name,target,pool,joint,final_state,
 //                               placement_priority,selection_priority}
+//                        - P12 方块实体 NBT：piece.blockNbt [{x,y,z,nbt}] → 对应位置 block.nbt
+//                          （1.21.1 格式对照 vanilla 实测：chest 等带 id 字段 + Items 列表，
+//                            Item 用 {count:Byte, Slot:Byte, id:str}——小写 count）
 //                      entities: []
 //                      DataVersion: 3465
 //                    注意：1.20.x 旧格式（blocks=[state,x,y,z] + nbtData 列表）在 1.21.1 无法读取。
@@ -61,7 +64,9 @@ function expandFills(piece) {
 
 /**
  * 构建单个片段的模板 NBT（gzip Buffer）。
- * @param {Object} piece { name, size:[w,h,d], boxFills, fillBlocks, jigsaws }
+ * @param {Object} piece { name, size:[w,h,d], boxFills, fillBlocks, jigsaws, blockNbt? }
+ *   blockNbt: [{x,y,z,nbt:{ $t:10, v:{...} }}]（方块实体 NBT 覆盖层；long 的 v 为字符串，
+ *   NBT 编码器对字符串 long 直接 BigInt() 编码，无需转换层）
  * @param {string} namespace
  * @returns {Buffer}
  */
@@ -69,6 +74,11 @@ function buildTemplateNbt(piece, namespace) {
     const size = piece.size;
     const fills = expandFills(piece);
     const jigsaws = piece.jigsaws || [];
+    // P12：blockNbt（方块实体 NBT）→ 对应位置的 block.nbt（tagged 值映射）
+    const nbtMap = new Map();
+    for (const bn of piece.blockNbt || []) {
+        if (bn && bn.nbt && bn.nbt.v) nbtMap.set(bn.x + ',' + bn.y + ',' + bn.z, bn.nbt.v);
+    }
 
     // ---- palette：0 = air，然后填充方块（去重），然后 jigsaw（按 orientation 去重）
     // 1.21.1 格式：{Name: str, properties?: str}（properties 为 "k=v,..." 字符串，见 NbtUtils.writeBlockState）
@@ -91,7 +101,7 @@ function buildTemplateNbt(piece, namespace) {
         const [x, y, z] = posStr.split(',').map(Number);
         const { name, properties } = parseBlockId(blockStr);
         const idx = addPalette(name, properties);
-        blocks.push({ pos: [x, y, z], state: idx, nbt: null });
+        blocks.push({ pos: [x, y, z], state: idx, nbt: nbtMap.get(posStr) || null });
     }
     // jigsaw：palette minecraft:jigsaw[orientation=...]，实体数据放 block.nbt
     // （1.21.1 JigsawBlockEntity.saveAdditional 字段：name/target/pool/joint/final_state/

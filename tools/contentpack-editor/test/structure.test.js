@@ -134,6 +134,67 @@ test('模板含 air + 填充 + jigsaw 调色板与 blocks（1.21.1 格式）', (
     assert.deepStrictEqual(dec.entities, []);
 });
 
+// ===== 3b. P12 方块实体 NBT（blockNbt）=====
+console.log('=== 3b. P12 方块实体 NBT（blockNbt）===');
+// 1.21.1 格式（对照 vanilla ancient_city 模板实测）：
+//   chest = { id: "minecraft:chest", Items: [ { count: Byte, Slot: Byte, id: str } ] }
+//   —— 小写 count；每个 BE 带 id 字段；long 在 blueprint JSON 里用字符串
+const chestNbt = {
+    $t: 10,
+    v: {
+        id: { $t: 8, v: 'minecraft:chest' },
+        Items: { $t: 9, elemType: 10, v: [
+            { $t: 10, v: {
+                Slot: { $t: 1, v: 13 },
+                count: { $t: 1, v: 5 },
+                id: { $t: 8, v: 'minecraft:golden_apple' },
+            } },
+        ] },
+        TestLong: { $t: 4, v: '1234567890123' },
+    },
+};
+const pieceNbt = {
+    name: 'hall_nbt',
+    size: [4, 3, 4],
+    boxFills: [{ from: [0, 0, 0], to: [3, 0, 3], block: 'minecraft:stone_bricks' }],
+    fillBlocks: [{ x: 1, y: 1, z: 1, block: 'minecraft:chest' }],
+    blockNbt: [{ x: 1, y: 1, z: 1, nbt: chestNbt }],
+};
+test('模板导出：blockNbt 写入对应位置 block.nbt（往返一致）', () => {
+    const dec = NBT.decode(V.buildTemplateNbt(pieceNbt, 'testns'));
+    const chest = dec.blocks.find((b) => b.nbt && b.nbt.id === 'minecraft:chest');
+    assert.ok(chest, 'chest 块应带 nbt');
+    assert.deepStrictEqual(chest.pos, [1, 1, 1]);
+    assert.strictEqual(chest.nbt.id, 'minecraft:chest');
+    assert.strictEqual(chest.nbt.Items.length, 1);
+    assert.strictEqual(chest.nbt.Items[0].Slot, 13);
+    assert.strictEqual(chest.nbt.Items[0].count, 5);
+    assert.strictEqual(chest.nbt.Items[0].id, 'minecraft:golden_apple');
+    // long（JSON 字符串）→ BigInt 编码 → 读回字符串
+    assert.strictEqual(chest.nbt.TestLong, '1234567890123');
+    // 普通方块不受影响（无 nbt）
+    const plain = dec.blocks.find((b) => b.pos[0] === 0 && b.pos[1] === 0 && b.pos[2] === 0);
+    assert.ok(plain && plain.nbt === undefined, '普通方块不应有 nbt');
+});
+const mkNbtBp = (blockNbt) => {
+    const bp = S.defaultBlueprint();
+    bp.structureId = 't';
+    bp.pieces = [Object.assign(S.defaultPiece(), { name: 'p1', blockNbt })];
+    return bp;
+};
+test('schema：合法 blockNbt 通过校验', () => {
+    const v = S.validateBlueprint(mkNbtBp([{ x: 0, y: 0, z: 0, nbt: chestNbt }]));
+    assert.deepStrictEqual(v.errors.filter((e) => e.includes('blockNbt')), []);
+});
+test('schema：blockNbt 位置越界 → error', () => {
+    const v = S.validateBlueprint(mkNbtBp([{ x: 99, y: 0, z: 0, nbt: chestNbt }]));
+    assert.ok(v.errors.some((e) => e.includes('blockNbt') && e.includes('超出模板尺寸')), JSON.stringify(v.errors));
+});
+test('schema：blockNbt 非 tagged compound → error', () => {
+    const v = S.validateBlueprint(mkNbtBp([{ x: 0, y: 0, z: 0, nbt: { $t: 8, v: 'x' } }]));
+    assert.ok(v.errors.some((e) => e.includes('blockNbt') && e.includes('tagged compound')), JSON.stringify(v.errors));
+});
+
 // ===== 4. blueprint → 原版文件映射 =====
 console.log('=== 4. blueprint → 原版文件映射 ===');
 const bp = S.defaultBlueprint();

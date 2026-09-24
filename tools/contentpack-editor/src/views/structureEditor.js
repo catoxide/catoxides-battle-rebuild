@@ -1065,7 +1065,11 @@ window.StructureEditor = (function () {
                 for (const pe of payload.pieces || []) {
                     const i = (tab.bp.pieces || []).findIndex((p) => p.name === pe.name);
                     if (i < 0) continue;
-                    tab.bp.pieces[i] = Object.assign({}, tab.bp.pieces[i], { boxFills: pe.boxFills || [], fillBlocks: pe.fillBlocks || [] });
+                    // P12：jigsaws（组件编辑）/ blockNbt（方块实体 NBT）仅在有编辑时回传，存在才覆盖
+                    const merged = { boxFills: pe.boxFills || [], fillBlocks: pe.fillBlocks || [] };
+                    if (pe.jigsaws) merged.jigsaws = pe.jigsaws;
+                    if (pe.blockNbt) merged.blockNbt = pe.blockNbt;
+                    tab.bp.pieces[i] = Object.assign({}, tab.bp.pieces[i], merged);
                     n++;
                 }
                 if (n) {

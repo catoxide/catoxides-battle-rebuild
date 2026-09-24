@@ -190,6 +190,19 @@ function validateBlueprint(bp) {
             if (!ORIENTATIONS.includes(j.orientation)) errors.push(jtag + ': orientation 非法: ' + j.orientation);
             if (j.joint && !JOINTS.includes(j.joint)) errors.push(jtag + ': joint 非法: ' + j.joint);
         });
+        // P12: blockNbt（方块实体 NBT，tagged JSON：顶层 {$t:10, v:{...}}；long 的 v 用字符串以保 JSON 安全）
+        (p.blockNbt || []).forEach((bn, bi) => {
+            const btag = tag + ' blockNbt#' + bi;
+            if (!bn || typeof bn !== 'object' ||
+                !Number.isInteger(bn.x) || !Number.isInteger(bn.y) || !Number.isInteger(bn.z) ||
+                bn.x < 0 || bn.y < 0 || bn.z < 0 || bn.x >= size[0] || bn.y >= size[1] || bn.z >= size[2]) {
+                errors.push(btag + ': 位置 (' + (bn && bn.x) + ',' + (bn && bn.y) + ',' + (bn && bn.z) + ') 非法或超出模板尺寸 ' + size.join('x'));
+            }
+            if (!bn.nbt || typeof bn.nbt !== 'object' || Array.isArray(bn.nbt) || bn.nbt.$t !== 10 ||
+                !bn.nbt.v || typeof bn.nbt.v !== 'object' || Array.isArray(bn.nbt.v)) {
+                errors.push(btag + ': nbt 须为 tagged compound {$t:10, v:{...}}');
+            }
+        });
         // 同一位置不能既有填充方块又有 jigsaw
         const occ = new Set();
         (p.fillBlocks || []).forEach((fb) => occ.add(fb.x + ',' + fb.y + ',' + fb.z));

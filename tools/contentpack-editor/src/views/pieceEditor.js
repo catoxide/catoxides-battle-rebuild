@@ -1,6 +1,10 @@
-// pieceEditor.js - P11 片段 3D 编辑器窗口（独立窗口渲染进程）
-// 布局：顶栏（片段选择/方块搜索/快捷按钮/撤销/写回）+ 左侧工具栏（工具/笔刷/剖切/视角）+ 画布 + 状态栏
-// 交互：左键单击 = 应用当前工具；右键单击方块 = 查组件/NBT（jigsaw 组件含朝向；blockstate 属性参考）
+// pieceEditor.js - P11/P12 片段 3D 编辑器窗口（独立窗口渲染进程）
+// 布局：顶栏（片段选择/方块搜索/快捷按钮/撤销/写回）+ 左侧工具栏（工具/剖切/视角）+ 画布 + 状态栏
+// 交互（P12 定稿，不复合）：
+//   移动工具：左键拖拽=旋转 · 右键拖拽/Shift=平移 · WASD=平移 · 滚轮=缩放
+//   笔刷/擦除/占位：左键单击=替换命中格 · 左键拖拽=笔触(连续替换) · 右键单击=命中面相邻格放置 ·
+//                   中键单击=编辑菜单(可编辑 jigsaw 组件) · WASD=平移 · 角度锁死
+//   悬停高亮：左键落点(命中格,白线框) + 右键落点(相邻格,工具色)
 // 数据流：主窗口 push blueprint（pieceEditor:load）→ 本地编辑 → 写回（pieceEditor:saveEdits）
 'use strict';
 (function () {
@@ -13,12 +17,95 @@
     let pv = null;         // 预览器实例
     let tool = 'move';     // 默认"移动"（先摆视角）；笔刷/擦除/占位 = 写入模式（左键不转视角）
     let initialized = false;
+    // P12 jigsaw 字段编辑：记录被改过的片段 + 原始快照（撤销用）
+    let jigsawEdited = new Set();
+    let jigsawBackup = new Map();
+    // P12 方块实体 NBT 编辑：同上（blockNbt 列表）
+    let blockNbtEdited = new Set();
+    let blockNbtBackup = new Map();
 
-    // 工具切换：更新按钮高亮 + 预览器左键拖拽门控（移动=转视角；写入=左键点按，不与视角冲突）
+    // ===== P12 方块实体 NBT（1.21.1 格式，对照 vanilla 结构模板实测数据）=====
+    // 实测（ancient_city 模板）：chest = {"Items":[{"count":1,"Slot":13,"id":"..."}], "id":"minecraft:chest"}
+    //   —— 注意：小写 count；每个 BE 带 id 字段（BE 类型 ID）；1.21.1 熔炉用 Items（非旧 Contents）
+    const BE_TEMPLATES = {
+        chest: '{"id": "minecraft:chest", "Items": []}',
+        barrel: '{"id": "minecraft:barrel", "Items": []}',
+        hopper: '{"id": "minecraft:hopper", "Items": []}',
+        dispenser: '{"id": "minecraft:dispenser", "Items": []}',
+        dropper: '{"id": "minecraft:dropper", "Items": []}',
+        shulker_box: '{"id": "minecraft:shulker_box", "Items": []}',
+        decorated_pot: '{"id": "minecraft:decorated_pot", "Items": []}',
+        furnace: '{"id": "minecraft:furnace", "Items": [], "BurnTime": 0, "CookTime": 0, "CookTimeTotal": 0}',
+        blast_furnace: '{"id": "minecraft:blast_furnace", "Items": [], "BurnTime": 0, "CookTime": 0, "CookTimeTotal": 0}',
+        smoker: '{"id": "minecraft:smoker", "Items": [], "BurnTime": 0, "CookTime": 0, "CookTimeTotal": 0}',
+    };
+    const BE_TYPES = new Set(Object.keys(BE_TEMPLATES));
+    // 字段名 → NBT 类型（类型推断覆盖；对照 vanilla 数据：Slot/count 为 byte）
+    const NBT_FIELD_TYPES = { Slot: 1, count: 1, Count: 1 };
+
+    // plain JSON → tagged NBT（类型推断；blueprint 存储格式 = tagged，long 的 v 用字符串）
+    function inferTag(value, fieldName) {
+        const forced = fieldName ? NBT_FIELD_TYPES[fieldName] : null;
+        if (forced) return { $t: forced, v: Math.trunc(Number(value)) };
+        if (typeof value === 'string') return { $t: 8, v: value };
+        if (typeof value === 'boolean') return { $t: 1, v: value ? 1 : 0 };
+        if (typeof value === 'number') {
+            if (Number.isInteger(value)) return { $t: 3, v: value };
+            return { $t: 6, v: value };
+        }
+        if (Array.isArray(value)) {
+            // 空列表：元素类型按 compound（Items 等惯例）
+            const elemType = value.length ? inferTag(value[0]).$t : 10;
+            return { $t: 9, elemType, v: value.map((it) => inferTag(it)) };
+        }
+        if (value && typeof value === 'object') return inferCompound(value);
+        throw new Error('无法推断 NBT 类型: ' + JSON.stringify(value));
+    }
+    function inferCompound(obj) {
+        const v = {};
+        for (const [k, val] of Object.entries(obj || {})) v[k] = inferTag(val, k);
+        return { $t: 10, v };
+    }
+    // 用户输入解析：plain JSON（推断）或 tagged JSON（带 $t，原样采用）
+    function parseNbtInput(text) {
+        let obj;
+        try { obj = JSON.parse(text); } catch (e) { return { ok: false, error: 'JSON 解析失败: ' + e.message }; }
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { ok: false, error: '顶层必须是 JSON 对象（NBT compound）' };
+        try {
+            if (obj.$t !== undefined) {
+                if (obj.$t !== 10) return { ok: false, error: 'tagged 格式顶层须为 $t:10（compound）' };
+                return { ok: true, nbt: { $t: 10, v: obj.v && typeof obj.v === 'object' && !Array.isArray(obj.v) ? obj.v : {} } };
+            }
+            return { ok: true, nbt: inferCompound(obj) };
+        } catch (e) {
+            return { ok: false, error: e.message };
+        }
+    }
+    // tagged → plain 展示（菜单文本域回显用，去掉 $t；long 显示为字符串）
+    function taggedToPlainDisplay(tagged) {
+        const conv = (t) => {
+            if (!t || typeof t !== 'object' || !Number.isInteger(t.$t)) return t;
+            let v = t.v;
+            if (t.$t === 4) return String(v);
+            if (t.$t === 9) return (v || []).map(conv);
+            if (t.$t === 10) { const o = {}; for (const [k, val] of Object.entries(v || {})) o[k] = conv(val); return o; }
+            return v;
+        };
+        return conv(tagged);
+    }
+
+    // 工具切换：按钮高亮 + 左键拖拽门控（移动=转视角；笔刷=画，不转）+ 悬停高亮（随工具配色）
     function setTool(name) {
         tool = name;
         document.querySelectorAll('.ed-tool[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
-        if (pv) pv.setOrbitOnLeft(name === 'move');
+        if (!pv) return;
+        pv.setOrbitOnLeft(name === 'move');
+        if (name === 'move') {
+            pv.setHoverEnabled(false);
+        } else {
+            pv.setHoverEnabled(true);
+            pv.setHoverColor(name === 'erase' ? 0xf38ba8 : name === 'placeholder' ? 0x89b4fa : 0xa6e3a1);
+        }
     }
 
     // ===== 状态栏 =====
@@ -43,6 +130,10 @@
         if (!initialized) { init(); return; }
         // 再次打开（换结构/换片段）→ 重置本地编辑并加载新数据
         if (pv) pv.clearEdits();
+        jigsawEdited.clear();
+        jigsawBackup.clear();
+        blockNbtEdited.clear();
+        blockNbtBackup.clear();
         syncPieceSelect();
         selectPiece(state.pieceName);
         status(t('structure.piece3d.loaded') + ' — ' + (state.structureId || '') + (state.pieceName ? ' / ' + state.pieceName : ''));
@@ -56,6 +147,7 @@
                 pv: () => pv,
                 getState: () => state,
                 inspect: inspectVoxel,
+                openMenuAt: openMenuAtCell, // P12 E2E：指定格开中键菜单
             }; // E2E/调试钩子
             pv.start();
             // 编辑器窗口用按需渲染（交互/编辑时渲染，不跑 60fps 连续循环）：
@@ -130,8 +222,6 @@
     }
 
     // ===== UI 绑定 =====
-    function brushSize() { return parseInt($('edBrushSize').value, 10) || 1; }
-
     function wireUI() {
         // 左侧工具按钮（移动 / 笔刷 / 擦除 / 占位）
         document.querySelectorAll('.ed-tool[data-tool]').forEach((btn) => {
@@ -145,42 +235,112 @@
         // 撤销 / 写回
         $('edUndo').addEventListener('click', () => {
             if (!pv) return;
+            // P12：撤销 jigsaw 字段编辑（还原原始快照）
+            for (const [name, orig] of jigsawBackup) {
+                const i = (state.blueprint.pieces || []).findIndex((p) => p.name === name);
+                if (i >= 0) state.blueprint.pieces[i].jigsaws = JSON.parse(JSON.stringify(orig));
+            }
+            jigsawEdited.clear();
+            jigsawBackup.clear();
+            // P12：撤销方块实体 NBT 编辑
+            for (const [name, orig] of blockNbtBackup) {
+                const i = (state.blueprint.pieces || []).findIndex((p) => p.name === name);
+                if (i >= 0) {
+                    if (orig.length) state.blueprint.pieces[i].blockNbt = JSON.parse(JSON.stringify(orig));
+                    else delete state.blueprint.pieces[i].blockNbt;
+                }
+            }
+            blockNbtEdited.clear();
+            blockNbtBackup.clear();
             pv.clearEdits().then(() => { updateInfo(); status(t('structure.3d.edit.undoDone'), false); });
         });
         $('edSave').addEventListener('click', () => saveEdits());
 
-        // 画布：左键单击 = 工具；右键单击 = 组件菜单（右键拖拽 = 平移，不弹菜单）
+        // 画布（P12 定稿，不复合）：
+        //   左键：笔刷工具 单击=替换命中格 / 拖拽=笔触(连续替换)；移动工具 拖拽=旋转
+        //   右键：单击=命中面相邻格放置（仅单击）；拖拽=平移
+        //   中键：单击=编辑菜单（移动/笔刷模式一致）
         const canvas = $('edCanvas');
-        let down = null, rdown = null;
-        canvas.addEventListener('pointerdown', (e) => {
-            if (e.button === 0) down = { x: e.clientX, y: e.clientY, t: Date.now() };
-            else if (e.button === 2) rdown = { x: e.clientX, y: e.clientY };
-        });
-        canvas.addEventListener('pointerup', (e) => {
-            if (!down || !pv) { down = null; return; }
-            const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
-            const dt = Date.now() - down.t;
-            down = null;
-            if (e.button !== 0 || moved > 4 || dt > 450) return;
-            if (tool === 'move') return; // 移动工具：左键只管视角，单击不写入
-            const pick = pv.pickVoxel(e.clientX, e.clientY);
-            if (!pick) return;
+        let down = null, rdown = null, mdown = null;
+        let painting = false, lastPaintKey = '';
+        const blockIdForTool = () => {
             const inp = $('edBlock');
             const blockId = (inp.value || '').trim() || 'minecraft:stone_bricks';
-            const bid = tool === 'erase' ? 'minecraft:air' : (tool === 'placeholder' ? '#empty' : blockId);
-            pv.brushVoxel(pick, bid, brushSize()).then(() => updateInfo());
+            return tool === 'erase' ? 'minecraft:air' : (tool === 'placeholder' ? '#empty' : blockId);
+        };
+        // 在 (cx,cy) 落一笔：action 'replace'=命中格 / 'place'=相邻格；同格去重（笔触不重复写）
+        const paintAt = (cx, cy, action) => {
+            if (!pv || tool === 'move') return;
+            const pick = pv.pickVoxel(cx, cy);
+            if (!pick) return;
+            const key = pick.piece + '|' + pick.local.join(',') + '|' + action;
+            if (key === lastPaintKey) return;
+            lastPaintKey = key;
+            pv.brushVoxel(pick, blockIdForTool(), action).then(() => updateInfo());
+        };
+        canvas.addEventListener('pointerdown', (e) => {
+            if (e.button === 0) {
+                down = { x: e.clientX, y: e.clientY };
+                if (tool !== 'move') { painting = true; lastPaintKey = ''; paintAt(e.clientX, e.clientY, 'replace'); }
+            } else if (e.button === 1) {
+                mdown = { x: e.clientX, y: e.clientY };
+                e.preventDefault(); // 防中键自动滚屏
+            } else if (e.button === 2) {
+                rdown = { x: e.clientX, y: e.clientY };
+            }
         });
-        canvas.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            if (rdown) {
+        canvas.addEventListener('pointermove', (e) => {
+            if (painting && (e.buttons & 1)) paintAt(e.clientX, e.clientY, 'replace'); // 笔触
+        });
+        canvas.addEventListener('pointerup', (e) => {
+            if (e.button === 0) { painting = false; down = null; }
+            else if (e.button === 1) {
+                if (!mdown) return;
+                const moved = Math.hypot(e.clientX - mdown.x, e.clientY - mdown.y);
+                mdown = null;
+                if (moved > 4 || !pv) return;
+                const pick = pv.pickVoxel(e.clientX, e.clientY);
+                showCtxMenu(e.clientX, e.clientY, pick);
+            } else if (e.button === 2) {
+                if (!rdown) return;
                 const moved = Math.hypot(e.clientX - rdown.x, e.clientY - rdown.y);
                 rdown = null;
-                if (moved > 4) return; // 右键拖拽 = 平移，不弹菜单
+                if (moved > 4 || !pv || tool === 'move') return; // 右键拖拽=平移，不放置
+                const pick = pv.pickVoxel(e.clientX, e.clientY);
+                if (!pick) return;
+                lastPaintKey = '';
+                pv.brushVoxel(pick, blockIdForTool(), 'place').then(() => updateInfo());
             }
-            if (!pv) return;
-            const pick = pv.pickVoxel(e.clientX, e.clientY);
-            showCtxMenu(e.clientX, e.clientY, pick);
         });
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // P12：菜单改中键，右键只放置
+        canvas.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); }); // 中键自动滚屏兜底
+
+        // WASD 平移（相机相对地面平移，角度不变；两种模式通用；输入框聚焦时不触发）
+        const heldKeys = new Set();
+        let panTimer = null;
+        const isTyping = (e) => {
+            const el = e.target;
+            return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
+        };
+        const panStep = () => {
+            if (!heldKeys.size || !pv) { panTimer = null; return; }
+            let fwd = 0, right = 0;
+            if (heldKeys.has('w')) fwd++;
+            if (heldKeys.has('s')) fwd--;
+            if (heldKeys.has('d')) right++;
+            if (heldKeys.has('a')) right--;
+            if (fwd || right) pv.panBy(fwd, right);
+        };
+        window.addEventListener('keydown', (e) => {
+            if (isTyping(e) || e.ctrlKey || e.metaKey || e.altKey) return;
+            const k = (e.key || '').toLowerCase();
+            if (!'wasd'.includes(k) || heldKeys.has(k)) return;
+            heldKeys.add(k);
+            if (!panTimer) panTimer = setInterval(panStep, 50);
+            panStep();
+        });
+        window.addEventListener('keyup', (e) => { heldKeys.delete((e.key || '').toLowerCase()); });
+        window.addEventListener('blur', () => { heldKeys.clear(); });
 
         // 菜单外点击 / Esc 关闭
         document.addEventListener('click', (e) => { if (!e.target.closest('#edCtx')) hideCtx(); });
@@ -270,18 +430,37 @@
         const piece = currentPiece();
         const [x, y, z] = pick.local;
         const jg = (piece && piece.jigsaws || []).find((j) => j.x === x && j.y === y && j.z === z);
-        let html = `<div class="ed-ctx-head">🧊 ${esc(pick.blockId)}</div>`;
+        let html = `<div class="ed-ctx-head">🧊 ${esc(pick.blockId || 'air（空）')}</div>`;
         html += `<div class="ed-ctx-row">${t('structure.piece3d.pos')} <b>${x}, ${y}, ${z}</b> <span class="note">· ${esc(pick.piece)}</span></div>`;
         if (jg) {
-            html += `<div class="ed-ctx-sub">minecraft:jigsaw <span class="note">${t('structure.piece3d.component')}</span></div>`;
-            html += `<pre class="ed-ctx-nbt">name: "${esc(jg.name || '')}"
-pool: "${esc(jg.pool || '')}"
-target: "${esc(jg.target || '')}"
-orientation: "${esc(jg.orientation || '')}"
-final_state: "${esc(jg.finalState || 'minecraft:air')}"
-selection_priority: ${jg.selectionPriority != null ? jg.selectionPriority : 10}
-placement_priority: ${jg.placementPriority != null ? jg.placementPriority : 10}</pre>`;
+            // P12：jigsaw 组件可编辑（change 即落本地蓝图，写回时随 payload 上主窗口）
+            html += `<div class="ed-ctx-sub">minecraft:jigsaw · <span class="note">${t('structure.piece3d.component')}</span></div>`;
+            html += `
+            <div class="ed-ctx-row"><b>name</b> <input class="ed-ctx-in" id="edJgName" value="${esc(jg.name || '')}"></div>
+            <div class="ed-ctx-row"><b>pool</b> <input class="ed-ctx-in" id="edJgPool" value="${esc(jg.pool || '')}"></div>
+            <div class="ed-ctx-row"><b>target</b> <input class="ed-ctx-in" id="edJgTarget" value="${esc(jg.target || '')}"></div>
+            <div class="ed-ctx-row"><b>orientation</b> <select class="ed-ctx-in" id="edJgOrient">
+                ${['north', 'south', 'west', 'east', 'up', 'down'].map((o) => `<option${(jg.orientation || '') === o ? ' selected' : ''}>${o}</option>`).join('')}
+            </select></div>
+            <div class="ed-ctx-row"><b>final_state</b> <input class="ed-ctx-in" id="edJgFinal" value="${esc(jg.finalState || 'minecraft:air')}"></div>
+            <div class="ed-ctx-row"><b>sel_prio</b> <input class="ed-ctx-in" id="edJgSelP" type="number" min="0" max="999" value="${jg.selectionPriority != null ? jg.selectionPriority : 10}">
+            <b>place_prio</b> <input class="ed-ctx-in" id="edJgPlaceP" type="number" min="0" max="999" value="${jg.placementPriority != null ? jg.placementPriority : 10}"></div>`;
         }
+        // P12 方块实体 NBT（箱子/熔炉等功能方块：精确编辑实体数据，1.21.1 格式对照 vanilla 实测）
+        const beName = String(pick.blockId || '').split('[')[0].split(':').pop();
+        const isBe = BE_TYPES.has(beName);
+        const curNbt = (piece && piece.blockNbt || []).find((b) => b.x === x && b.y === y && b.z === z);
+        const nbtInit = curNbt
+            ? JSON.stringify(taggedToPlainDisplay(curNbt.nbt), null, 1)
+            : (isBe ? BE_TEMPLATES[beName] : '{ }');
+        html += `<div class="ed-ctx-sub">NBT · ${t('structure.piece3d.nbtSub')}${isBe ? '' : ` <span class="note">${t('structure.piece3d.nbtNotBe')}</span>`}</div>`;
+        html += `<textarea class="ed-ctx-in ed-ctx-nbtarea" id="edNbtArea" rows="6" spellcheck="false">${esc(nbtInit)}</textarea>`;
+        html += `<div class="ed-ctx-row"><span class="note" id="edNbtMsg"></span></div>`;
+        html += `<div class="ed-ctx-actions">
+            <button class="btn ghost small" id="edNbtTpl">${t('structure.piece3d.nbtTpl')}</button>
+            <button class="btn small" id="edNbtApply">${t('structure.piece3d.nbtApply')}</button>
+            ${curNbt ? `<button class="btn ghost small" id="edNbtDel">${t('structure.piece3d.nbtDel')}</button>` : ''}
+        </div>`;
         html += `<div class="ed-ctx-bs"><div class="note ed-ctx-loading">${t('structure.piece3d.bsLoading')}</div></div>`;
         html += `<div class="ed-ctx-actions">
             <button class="btn ghost small" id="edCtxUse">🖌 ${t('structure.piece3d.useAsBrush')}</button>
@@ -292,6 +471,68 @@ placement_priority: ${jg.placementPriority != null ? jg.placementPriority : 10}<
         const wrap = $('edCanvasWrap').getBoundingClientRect();
         menu.style.left = Math.max(4, Math.min(cx - wrap.left + 4, wrap.width - 320)) + 'px';
         menu.style.top = Math.max(4, Math.min(cy - wrap.top + 4, wrap.height - 260)) + 'px';
+
+        // P12：jigsaw 字段编辑 —— change 即落本地蓝图（首次改前备份，撤销可还原）
+        if (jg) {
+            const commitJg = () => {
+                const i = (piece.jigsaws || []).indexOf(jg);
+                if (i < 0) return;
+                if (!jigsawBackup.has(piece.name)) jigsawBackup.set(piece.name, JSON.parse(JSON.stringify(piece.jigsaws || [])));
+                piece.jigsaws[i] = {
+                    name: $('edJgName').value.trim(),
+                    pool: $('edJgPool').value.trim(),
+                    target: $('edJgTarget').value.trim(),
+                    orientation: $('edJgOrient').value,
+                    finalState: $('edJgFinal').value.trim() || 'minecraft:air',
+                    selectionPriority: Math.max(0, Math.min(999, parseInt($('edJgSelP').value, 10) || 0)),
+                    placementPriority: Math.max(0, Math.min(999, parseInt($('edJgPlaceP').value, 10) || 0)),
+                };
+                jigsawEdited.add(piece.name);
+                updateInfo();
+            };
+            ['edJgName', 'edJgPool', 'edJgTarget', 'edJgOrient', 'edJgFinal', 'edJgSelP', 'edJgPlaceP'].forEach((id) => {
+                const el = $(id);
+                if (el) el.addEventListener('change', commitJg);
+            });
+        }
+
+        // P12：NBT 编辑 —— 应用/模板/删除（change 即落本地蓝图，写回时随 payload 上主窗口）
+        const nbtMsg = (text, isError) => {
+            const el = $('edNbtMsg');
+            if (!el) return;
+            el.textContent = text;
+            el.style.color = isError ? '#f38ba8' : '';
+        };
+        $('edNbtApply').addEventListener('click', () => {
+            if (!piece) return;
+            const r = parseNbtInput($('edNbtArea').value);
+            if (!r.ok) { nbtMsg(r.error, true); return; }
+            // 1.21.1 每个 BE 都带 id 字段（vanilla 实测）：用户没写则按当前方块自动补
+            const v = r.nbt.v || (r.nbt.v = {});
+            if (!v.id && pick.blockId) v.id = { $t: 8, v: String(pick.blockId).split('[')[0] };
+            if (!blockNbtBackup.has(piece.name)) blockNbtBackup.set(piece.name, JSON.parse(JSON.stringify(piece.blockNbt || [])));
+            if (!Array.isArray(piece.blockNbt)) piece.blockNbt = [];
+            const i = piece.blockNbt.findIndex((b) => b.x === x && b.y === y && b.z === z);
+            const entry = { x, y, z, nbt: r.nbt };
+            if (i >= 0) piece.blockNbt[i] = entry; else piece.blockNbt.push(entry);
+            blockNbtEdited.add(piece.name);
+            nbtMsg(t('structure.piece3d.nbtApplied'));
+            updateInfo();
+        });
+        const tplBtn = $('edNbtTpl');
+        if (tplBtn) tplBtn.addEventListener('click', () => {
+            $('edNbtArea').value = isBe ? BE_TEMPLATES[beName] : '{ }';
+            nbtMsg('');
+        });
+        const delBtn = $('edNbtDel');
+        if (delBtn) delBtn.addEventListener('click', () => {
+            if (!piece) return;
+            if (!blockNbtBackup.has(piece.name)) blockNbtBackup.set(piece.name, JSON.parse(JSON.stringify(piece.blockNbt || [])));
+            piece.blockNbt = (piece.blockNbt || []).filter((b) => !(b.x === x && b.y === y && b.z === z));
+            blockNbtEdited.add(piece.name);
+            hideCtx();
+            updateInfo();
+        });
 
         // 异步补 blockstate 定义（朝向/属性参考）
         if (window.api && window.api.blockState) {
@@ -326,19 +567,40 @@ placement_priority: ${jg.placementPriority != null ? jg.placementPriority : 10}<
     }
     function hideCtx() { const m = $('edCtx'); if (m) m.style.display = 'none'; }
 
-    // ===== 写回主窗口 =====
+    // E2E/调试：直接在指定局部坐标开中键菜单（合成 pick，画布中心定位）
+    function openMenuAtCell(x, y, z) {
+        const piece = currentPiece();
+        if (!piece || !pv) return false;
+        const pl = (pv.getPlacements ? (pv.getPlacements() || [])[0] : null) || { piece, name: piece.name, off: [0, 0, 0], rot: 0 };
+        const map = pv.getPieceVoxelMap(piece.name);
+        const bid = map.get(x + ',' + y + ',' + z) || 'minecraft:air';
+        const rect = $('edCanvas').getBoundingClientRect();
+        const pick = { piece: piece.name, local: [x, y, z], world: [x, y, z], blockId: bid, face: [0, 1, 0], placement: pl };
+        showCtxMenu(rect.left + rect.width / 2, rect.top + rect.height / 2, pick);
+        return true;
+    }
+
+    // ===== 写回主窗口（P12：voxel 编辑 + jigsaw 字段编辑 一起回传）=====
     function collectEdits() {
         if (!pv || !state) return [];
         const st = pv.debugStats();
+        const names = [...new Set([...st.editedPieces, ...jigsawEdited, ...blockNbtEdited])];
         const out = [];
-        for (const name of st.editedPieces) {
+        for (const name of names) {
             const i = (state.blueprint.pieces || []).findIndex((p) => p.name === name);
             if (i < 0) continue;
-            const map = pv.getPieceVoxelMap(name);
-            if (!map) continue;
-            const merged = window.Voxel.mergePieceEdits(state.blueprint.pieces[i], map);
-            state.blueprint.pieces[i] = merged;
-            out.push({ name, boxFills: merged.boxFills || [], fillBlocks: merged.fillBlocks || [] });
+            const entry = { name };
+            if (st.editedPieces.includes(name)) {
+                const map = pv.getPieceVoxelMap(name);
+                if (!map) continue;
+                const merged = window.Voxel.mergePieceEdits(state.blueprint.pieces[i], map);
+                state.blueprint.pieces[i] = merged;
+                entry.boxFills = merged.boxFills || [];
+                entry.fillBlocks = merged.fillBlocks || [];
+            }
+            if (jigsawEdited.has(name)) entry.jigsaws = (state.blueprint.pieces[i].jigsaws || []).slice();
+            if (blockNbtEdited.has(name)) entry.blockNbt = (state.blueprint.pieces[i].blockNbt || []).slice();
+            out.push(entry);
         }
         return out;
     }

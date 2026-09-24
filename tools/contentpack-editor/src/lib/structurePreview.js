@@ -372,15 +372,18 @@ export function createStructurePreview(canvas) {
         lastPlacements = built;
     }
     /** 用最后一次构建参数重建（编辑/切片后调用；不重置相机）；rebuilding 防重入；
-     *  重建期间若切片翻转（sliceFlipPending），完成后自动补一轮 */
+     *  重建期间若切片翻转（sliceFlipPending）或又有新编辑（editsDirty，P12 笔触），完成后自动补一轮 */
     let rebuilding = false;
     let sliceFlipPending = false;
+    let editsDirty = false; // P12：重建期间又有新编辑（笔触连续写格）→ 完成后自动补一轮，不丢格
     async function rebuild() {
-        if (!lastBuild || rebuilding) return;
+        if (!lastBuild) return;
+        if (rebuilding) { editsDirty = true; return; }
         rebuilding = true;
         try {
             for (;;) {
                 sliceFlipPending = false;
+                editsDirty = false;
                 const b = lastBuild;
                 const opts = { hiddenPieces: b.hidden, reframe: false };
                 await ensureFacesForEdited(); // 先取新刷方块的贴图，再构建
@@ -390,11 +393,10 @@ export function createStructurePreview(canvas) {
                 } else {
                     await setBlueprint(b.bp, opts);
                 }
-                if (!sliceFlipPending) break;
+                // 重建后强制渲染一帧：rAF 循环停摆（窗口失焦/被节流）时也立即看到编辑结果
+                renderOnce();
+                if (!sliceFlipPending && !editsDirty) break;
             }
-            // 重建后强制渲染一帧：rAF 循环停摆（窗口失焦/被节流）时也立即看到编辑结果，
-            // 不必等下一次交互（拖拽/滚轮）触发按需渲染
-            renderOnce();
         } finally {
             rebuilding = false;
         }
@@ -439,6 +441,7 @@ export function createStructurePreview(canvas) {
      */
     async function setPiece(piece, opts = {}) {
         if (!piece) return;
+        clearHover(); // P12：换片段 → 旧悬停高亮失效（函数声明已提升，此处可安全调用）
         await setBlueprint({ pieces: [piece] }, Object.assign({ reframe: true }, opts));
     }
 
@@ -562,26 +565,79 @@ export function createStructurePreview(canvas) {
         return [x, y0, z];
     }
 
-    /** 射线拾取体素（含命中的片段/局部坐标/世界法线） */
+    /** 射线拾取体素（含命中的片段/局部坐标/世界法线）。
+     *  2026-09-24 修复（用户报告"右键方向反了 / Y 面不生效"）：
+     *  - 命中点恰好落在网格边界上，Math.floor 的浮点结果不稳定（±ε 决定落在哪一侧）：
+     *    一旦落进面【前方】的空气格，该格查不到体素 → continue → 落穿到更远处
+     *    （常是背后方块的面向相机的面）→ 编辑/放置落到结构深处 = "背向"。
+     *    修复：floor 前沿命中面法线（朝外）微移 EPS → 恒命中命中面背后的实体格。
+     *  - 切片模式：平面拾取（射线 ∩ 切片板）→ 目标恒为切片层那格（空气格也可选中，
+     *    "只编辑最外面的那个面"；空气也可左键编辑）。切片模式下射线不命中切片板 → null，
+     *    不回退 3D 拾取（否则又穿到切面背后去了）。 */
     const raycaster = new THREE.Raycaster();
+    const PICK_EPS = 0.001;
     function pickVoxel(clientX, clientY) {
         const rect = canvas.getBoundingClientRect();
         if (!rect.width || !rect.height) return null;
         const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
         const ny = -((clientY - rect.top) / rect.height) * 2 + 1;
         raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera);
+
+        // —— 切片模式（单片 rot=0 才启用剖切渲染）：平面拾取 ——
+        if (slice && lastPlacements.length === 1 && !lastPlacements[0].rot) {
+            const pl = lastPlacements[0];
+            const [w, h, d] = pl.piece.size || [1, 1, 1];
+            const ai = slice.axis === 'x' ? 0 : slice.axis === 'y' ? 1 : 2;
+            const k = Math.trunc(slice.index || 0);
+            const dim = ai === 0 ? w : ai === 1 ? h : d;
+            if (k >= 0 && k < dim) {
+                const off = pl.off;
+                const camC = camera.position[ai === 0 ? 'x' : ai === 1 ? 'y' : 'z'];
+                // 切片板（局部 c=k 那一层）的相机侧边界面（世界坐标沿轴）
+                const nA = (camC - (off[ai] + k + 0.5)) >= 0 ? 1 : -1;
+                const planeC = off[ai] + k + (nA === 1 ? 1 : 0);
+                const D = raycaster.ray.direction;
+                const dA = D[ai === 0 ? 'x' : ai === 1 ? 'y' : 'z'];
+                if (Math.abs(dA) > 1e-8) {
+                    const O = camera.position;
+                    const t = (planeC - O[ai === 0 ? 'x' : ai === 1 ? 'y' : 'z']) / dA;
+                    if (t > 0) {
+                        const px = O.x + D.x * t, py = O.y + D.y * t, pz = O.z + D.z * t;
+                        const cell = [
+                            Math.floor(px - (ai === 0 ? nA * PICK_EPS : 0)),
+                            Math.floor(py - (ai === 1 ? nA * PICK_EPS : 0)),
+                            Math.floor(pz - (ai === 2 ? nA * PICK_EPS : 0)),
+                        ];
+                        const local = [cell[0] - off[0], cell[1] - off[1], cell[2] - off[2]];
+                        if (local[0] >= 0 && local[0] < w && local[1] >= 0 && local[1] < h && local[2] >= 0 && local[2] < d) {
+                            const vox = editMaps.get(pl.name) || Voxel.expandPiece(pl.piece);
+                            const bid = vox.get(local[0] + ',' + local[1] + ',' + local[2]) || null;
+                            const face = [0, 0, 0];
+                            face[ai] = nA;
+                            return { piece: pl.name, local, world: cell, blockId: bid, face, placement: pl };
+                        }
+                    }
+                }
+                return null; // 射线平行切片板 / 未穿入 / 出界 → 切片模式只认切面
+            }
+        }
+
+        // —— 3D 模式：面拾取（命中面背后的实体格，普通 3D 实体方块逻辑）——
         const targets = gFills.children.filter((c) => c.isInstancedMesh);
         const hits = raycaster.intersectObjects(targets, false);
         for (const h of hits) {
             if (!h.instanceId || h.object.visible === false) continue;
-            const wx = Math.floor(h.point.x), wy = Math.floor(h.point.y), wz = Math.floor(h.point.z);
+            const n = h.face ? h.face.normal : new THREE.Vector3(0, 1, 0);
+            // 沿法线微移后再 floor：命中点必落回命中面背后的格（消除边界浮点落穿）
+            const wx = Math.floor(h.point.x - n.x * PICK_EPS);
+            const wy = Math.floor(h.point.y - n.y * PICK_EPS);
+            const wz = Math.floor(h.point.z - n.z * PICK_EPS);
             for (const pl of lastPlacements) {
                 const local = worldToLocal(pl, wx, wy, wz);
                 if (!local) continue;
                 const vox = editMaps.get(pl.name) || Voxel.expandPiece(pl.piece);
                 const bid = vox.get(local[0] + ',' + local[1] + ',' + local[2]);
                 if (!bid) continue;
-                const n = h.face ? h.face.normal : new THREE.Vector3(0, 1, 0);
                 return {
                     piece: pl.name,
                     local: local,
@@ -613,62 +669,168 @@ export function createStructurePreview(canvas) {
     }
 
     /**
-     * 笔刷：以命中面为基准，在面上画 size×size 的块
-     * @param {Object} pick pickVoxel 的结果
-     * @param {string} blockId
-     * @param {number} size 1 | 3 | 5
+     * P12 笔刷落点（一次一格）：
+     *  - 'replace'（左键）：命中格本身 —— 直接替换你指着的方块（切片模式=切面那格）
+     *  - 'place'（右键）：命中面的相邻格 —— MC 传统放置逻辑
+     * @returns {number[][]} 局部坐标列表（0 或 1 格）
      */
-    function brushVoxel(pick, blockId, size) {
-        if (!pick) return Promise.resolve();
+    /** 'place' 目标格（不做边界检查；边界检查在 brushTargetCells）
+     *  2026-09-24 修复：逆旋转之前 case 整体错位（switch 在 (rot+3)&3 上）→
+     *  rot≠0 时相邻格方向算错。正确逆（rotPos 线性部分的逆）：
+     *  r1 前向 (x,z)→(-z,x) ⇒ 逆 (a,b)→(b,-a)；r2 (a,b)→(-a,-b)；r3 前向 (x,z)→(z,-x) ⇒ 逆 (a,b)→(-b,a) */
+    function brushPlaceCell(pick) {
+        if (!pick) return null;
         const pl = pick.placement;
-        const [w, h, d] = pl.piece.size || [1, 1, 1];
-        // 世界法线 → 局部法线（逆旋转 = 前向 (4-r)%4 的向量版）
-        // 前向向量：r1 (vx,vz)→(-vz,vx)；r2 →(-vx,-vz)；r3 →(vz,-vx)
         const [nx, ny, nz] = pick.face;
         const invVec = (vx, vz) => {
-            switch ((pl.rot + 3) & 3) {
-                case 1: return [-vz, vx];   // 逆 r3
-                case 2: return [vz, -vx];   // 逆 r1
-                case 3: return [-vx, -vz];  // 逆 r2
+            switch (pl.rot & 3) {
+                case 1: return [vz, -vx];
+                case 2: return [-vx, -vz];
+                case 3: return [-vz, vx];
                 default: return [vx, vz];
             }
         };
         const [lnx, lnz] = invVec(nx, nz);
-        // 切平面两个轴
-        let t1, t2;
-        if (ny !== 0) { t1 = [1, 0, 0]; t2 = [0, 0, 1]; }
-        else if (nx !== 0) { t1 = [0, 1, 0]; t2 = [0, 0, 1]; }
-        else { t1 = [1, 0, 0]; t2 = [0, 1, 0]; }
-        // t 轴也要旋到局部
-        const toLocal = (v) => {
-            const [a, b] = invVec(v[0], v[2]);
-            return [a, v[1], b];
-        };
-        t1 = toLocal(t1); t2 = toLocal(t2);
-        const k = Math.floor((size - 1) / 2);
-        const map = ensureEditMap(pl.name);
-        const sAi = slice ? (slice.axis === 'x' ? 0 : slice.axis === 'y' ? 1 : 2) : -1;
-        const apply = (lx, ly, lz) => {
-            if (lx < 0 || ly < 0 || lz < 0 || lx >= w || ly >= h || lz >= d) return;
-            // P9：切片启用时只在切片层内编辑（rot=0 单片模式，局部轴 = 世界轴）
-            if (slice && !pl.rot && [lx, ly, lz][sAi] !== slice.index) return;
+        const [ax, ay, az] = pick.local;
+        return [ax + lnx, ay + ny, az + lnz];
+    }
+    function brushTargetCells(pick, action) {
+        if (!pick) return [];
+        const pl = pick.placement;
+        const [w, h, d] = pl.piece.size || [1, 1, 1];
+        const inB = (lx, ly, lz) => lx >= 0 && ly >= 0 && lz >= 0 && lx < w && ly < h && lz < d;
+        if (action === 'replace') {
+            const [lx, ly, lz] = pick.local;
+            return inB(lx, ly, lz) ? [[lx, ly, lz]] : [];
+        }
+        // 'place'：命中面的面向侧相邻格（MC 放置逻辑）
+        const t = brushPlaceCell(pick);
+        return t && inB(t[0], t[1], t[2]) ? [t] : [];
+    }
+
+    /**
+     * P12 笔刷：左键 'replace'=命中格；右键 'place'=命中面相邻格（一次一格，无大笔刷）
+     * @param {Object} pick pickVoxel 的结果
+     * @param {string} blockId 'minecraft:air' 删除；'#empty' 占位；其他=放置该方块
+     * @param {string} action 'replace' | 'place'（默认 'replace'）
+     */
+    function brushVoxel(pick, blockId, action) {
+        if (!pick) return Promise.resolve();
+        const map = ensureEditMap(pick.placement.name);
+        for (const [lx, ly, lz] of brushTargetCells(pick, action || 'replace')) {
             const key = lx + ',' + ly + ',' + lz;
             if (!blockId || blockId === 'minecraft:air' || blockId === 'air') map.delete(key);
             else map.set(key, blockId);
-        };
-        if (size <= 1) {
-            // 单格：命中面外的相邻格
-            const [ax, ay, az] = pick.local;
-            apply(ax + lnx, ay + ny, az + lnz);
-        } else {
-            for (let a = -k; a <= k; a++) for (let b = -k; b <= k; b++) {
-                const ax = pick.local[0] + lnx + t1[0] * a + t2[0] * b;
-                const ay = pick.local[1] + ny + t1[1] * a + t2[1] * b;
-                const az = pick.local[2] + lnz + t1[2] * a + t2[2] * b;
-                apply(ax, ay, az);
-            }
         }
         return rebuild();
+    }
+
+    // ===== P12 悬停高亮：实时显示左键落点（命中格，白线框）与右键落点（相邻格，工具色半透明）=====
+    const gHover = new THREE.Group();
+    scene.add(gHover);
+    const hoverBoxGeo = new THREE.BoxGeometry(1.02, 1.02, 1.02);
+    const hoverHitMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 });
+    const hoverPlaceMat = new THREE.MeshBasicMaterial({ color: 0xa6e3a1, transparent: true, opacity: 0.4, depthWrite: false });
+    const hoverHit = new THREE.LineSegments(new THREE.EdgesGeometry(hoverBoxGeo), hoverHitMat);
+    const hoverPlace = new THREE.Mesh(hoverBoxGeo, hoverPlaceMat);
+    hoverHit.visible = false;
+    hoverPlace.visible = false;
+    gHover.add(hoverHit, hoverPlace);
+    let hoverEnabled = false;
+    let hoverInfo = null;      // 调试/E2E：{hit:[x,y,z], place:[x,y,z]|null, placeOut?:[x,y,z]}
+    let hoverToolColor = 0xa6e3a1;
+    let lastHoverKey = '';
+    let hoverEvt = null, hoverTimer = null, hoverTs = 0;
+    function setHoverEnabled(on) {
+        hoverEnabled = !!on;
+        if (!hoverEnabled) clearHover();
+    }
+    function setHoverColor(hex) {
+        hoverToolColor = hex;
+        hoverPlaceMat.color.setHex(hex);
+    }
+    /** 局部坐标 → 世界中心（与 buildPieceMeshes/rotPos 同算法；worldToLocal 的逆） */
+    function localToWorld(pl, local) {
+        const [w, h, d] = pl.piece.size || [1, 1, 1];
+        const [rx, rz] = rotPos(local[0], local[2], w, d, pl.rot || 0);
+        return [pl.off[0] + rx + 0.5, pl.off[1] + local[1] + 0.5, pl.off[2] + rz + 0.5];
+    }
+    function updateHover(clientX, clientY) {
+        if (!hoverEnabled) return;
+        const pick = pickVoxel(clientX, clientY);
+        if (!pick) { clearHover(); return; }
+        const key = pick.piece + '|' + pick.local.join(',') + '|' + pick.face.join(',');
+        if (key === lastHoverKey) return;
+        lastHoverKey = key;
+        const hw = localToWorld(pick.placement, pick.local);
+        hoverHit.position.set(hw[0], hw[1], hw[2]);
+        hoverHit.visible = true;
+        const placeCells = brushTargetCells(pick, 'place');
+        if (placeCells.length) {
+            const wp = localToWorld(pick.placement, placeCells[0]);
+            hoverPlace.position.set(wp[0], wp[1], wp[2]);
+            hoverPlace.visible = true;
+            hoverPlaceMat.color.setHex(hoverToolColor);
+            hoverInfo = { hit: pick.local.slice(), place: placeCells[0].slice() };
+        } else {
+            // 2026-09-24：'place' 目标出界（超片段尺寸）→ 在"应放置处"显示红色标记，
+            // 不再静默无效果（用户报告"Y 方向右键不生效"多为顶/底面出界）
+            const out = brushPlaceCell(pick);
+            if (out) {
+                const wp = localToWorld(pick.placement, out);
+                hoverPlace.position.set(wp[0], wp[1], wp[2]);
+                hoverPlace.visible = true;
+                hoverPlaceMat.color.setHex(0xf38ba8);
+                hoverInfo = { hit: pick.local.slice(), place: null, placeOut: out.slice() };
+            } else {
+                hoverPlace.visible = false;
+                hoverInfo = { hit: pick.local.slice(), place: null };
+            }
+        }
+    }
+    function clearHover() {
+        hoverHit.visible = false;
+        hoverPlace.visible = false;
+        hoverPlaceMat.color.setHex(hoverToolColor);
+        hoverInfo = null;
+        lastHoverKey = '';
+    }
+    // pointermove 节流（~30ms）：pickVoxel 要对全部实例做射线测试，逐帧跑会卡
+    function scheduleHover(x, y) {
+        const now = performance.now();
+        if (now - hoverTs >= 30) {
+            hoverTs = now;
+            updateHover(x, y);
+            renderNow();
+        } else {
+            hoverEvt = { x, y };
+            if (hoverTimer == null) {
+                hoverTimer = setTimeout(() => {
+                    hoverTimer = null;
+                    hoverTs = performance.now();
+                    if (hoverEvt) { updateHover(hoverEvt.x, hoverEvt.y); renderNow(); hoverEvt = null; }
+                }, 32);
+            }
+        }
+    }
+    canvas.addEventListener('pointermove', (e) => {
+        if (dragging || !hoverEnabled) return;
+        scheduleHover(e.clientX, e.clientY);
+    });
+    canvas.addEventListener('pointerleave', () => { if (hoverEnabled) { clearHover(); renderNow(); } });
+
+    /** P12 WASD 平移：相机相对的地面平移（fwd +1=W/-1=S；right +1=D/-1=A；角度不变） */
+    function panBy(fwd, right) {
+        const th = orbit.theta;
+        const sp = Math.sin(orbit.phi);
+        const fx = -sp * Math.sin(th), fz = -sp * Math.cos(th); // 相机前向的水平分量
+        const fl = Math.hypot(fx, fz) || 1;
+        const rx = Math.cos(th), rz = -Math.sin(th);            // 相机右向（与 applyDrag 一致）
+        const s = Math.max(0.5, orbit.radius * 0.0016);
+        orbit.target.x += (fx / fl) * fwd * s + rx * right * s;
+        orbit.target.z += (fz / fl) * fwd * s + rz * right * s;
+        orbit.target.y = Math.max(0, Math.min(200, orbit.target.y));
+        renderNow();
     }
 
     /** 3D 切片：null 关闭；否则 {axis, dir(1=隐 axis>threshold, -1=隐 axis<threshold), threshold} */
@@ -726,9 +888,11 @@ export function createStructurePreview(canvas) {
     //   - 经典 mouse 事件兜底（pointer 事件异常时仍可拖拽）
     //   - HUD 实时显示轨道参数 + 事件计数（诊断：拖拽时 → 计数不涨 = 事件未到达）
     let dragging = false, panning = false, lastX = 0, lastY = 0, activePointer = null;
-    // 左键拖拽是否旋转视角：true = "移动"工具；false = 笔刷/擦除工具（左键不带动相机，
-    // 避免"想点方块写像素、手一抖变成转视角"的冲突；右键拖拽平移/滚轮缩放始终可用）
-    let orbitOnLeft = true;
+    // 交互模型（2026-09-24 定稿）——不复合：
+    //   移动工具：左键拖拽=旋转、右键/Shift拖拽=平移、滚轮=缩放（纯相机）
+    //   笔刷/擦除/占位：左键=画（单击替换命中格 / 拖拽沿路径连续替换）、
+    //                   右键单击=命中面相邻格放置、中键单击=编辑菜单；左键不带动相机
+    let orbitOnLeft = true;   // 移动工具=true；笔刷类=false（由 pieceEditor.setTool 切换）
     function setOrbitOnLeft(on) { orbitOnLeft = !!on; }
     function dragAllowed(e) {
         const isPan = (e.buttons & 2) || e.shiftKey || e.button === 2;
@@ -928,6 +1092,8 @@ export function createStructurePreview(canvas) {
     function dispose() {
         stop();
         clearGroups();
+        if (hoverTimer != null) { clearTimeout(hoverTimer); hoverTimer = null; } // P12
+        hoverBoxGeo.dispose(); hoverHit.geometry.dispose(); hoverHitMat.dispose(); hoverPlaceMat.dispose();
         for (const set of texSets.values()) {
             [set.top, set.side, set.bottom].forEach((t) => { if (t) t.dispose(); });
         }
@@ -973,6 +1139,7 @@ export function createStructurePreview(canvas) {
             ghosts: gGhosts.children.length,
             // 相机实际位置（拖拽验证用：应随 orbit 变化）
             camera: camera ? { x: +camera.position.x.toFixed(2), y: +camera.position.y.toFixed(2), z: +camera.position.z.toFixed(2) } : null,
+            hover: hoverInfo, // P12 悬停落点（命中格 + 相邻格）
             running,
             hud: hud ? { display: hud.style.display, text: hud.textContent } : null,
         };
@@ -982,6 +1149,13 @@ export function createStructurePreview(canvas) {
     function getOrbit() {
         return { theta: orbit.theta, phi: orbit.phi, radius: orbit.radius,
                  target: { x: orbit.target.x, y: orbit.target.y, z: orbit.target.z } };
+    }
+
+    /** 2026-09-24：世界坐标 → 画布 client 坐标（E2E 精确瞄准 / 未来 UI 用） */
+    function projectToScreen(x, y, z) {
+        const v = new THREE.Vector3(x, y, z).project(camera);
+        const rect = canvas.getBoundingClientRect();
+        return { x: rect.left + (v.x * 0.5 + 0.5) * rect.width, y: rect.top + (-v.y * 0.5 + 0.5) * rect.height };
     }
 
     return {
@@ -997,14 +1171,20 @@ export function createStructurePreview(canvas) {
         resetView,
         setAutoRotate,
         setContinuous, // P11 编辑器窗口按需渲染
-        setOrbitOnLeft, // P11 移动/笔刷工具解耦
+        setOrbitOnLeft, // P11 移动/笔刷工具解耦（P12 保留：不复合）
+        setHoverEnabled, // P12 悬停高亮开关
+        setHoverColor, // P12 悬停右键落点颜色（随工具）
+        panBy, // P12 WASD 平移（相机相对地面平移，角度不变）
         start,
         stop,
         dispose,
-        // 体素编辑（P3）
+        // 体素编辑（P3/P12）
         pickVoxel,
         setVoxel,
-        brushVoxel,
+        brushVoxel, // P12: (pick, blockId, 'replace'|'place')
+        brushTargetCells,
+        brushPlaceCell, // 'place' 目标（不检查边界；悬停红标用）
+        projectToScreen, // 世界坐标 → 画布 client 坐标
         setClip,
         getClip,
         setSlice, // P9 编辑切片（剖切面）

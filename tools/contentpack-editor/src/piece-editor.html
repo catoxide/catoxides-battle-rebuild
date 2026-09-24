@@ -32,10 +32,6 @@
         <button class="ed-tool" data-tool="placeholder" data-i18n-title="structure.3d.edit.toolPlaceholder">▣<span data-i18n="structure.piece3d.toolPlaceholder">占位</span></button>
       </div>
       <div class="ed-toolgroup">
-        <div class="ed-group-title" data-i18n="structure.3d.edit.brushSize">笔刷</div>
-        <select id="edBrushSize"><option>1</option><option selected>3</option><option>5</option></select>
-      </div>
-      <div class="ed-toolgroup">
         <div class="ed-group-title" data-i18n-title="structure.3d.edit.sliceTip"><span data-i18n="structure.3d.edit.slice">剖切</span></div>
         <select id="edSliceAxis">
           <option value="off" data-i18n="structure.3d.edit.sliceOff">关</option>
@@ -51,7 +47,7 @@
         <button class="ed-tool" id="edResetView" data-i18n-title="structure.3d.reset">⌂<span data-i18n="structure.3d.reset">重置视角</span></button>
       </div>
       <div class="ed-toolgroup ed-toolgroup-tip">
-        <div class="note" data-i18n="structure.piece3d.rightTip">右键方块 = 查组件/NBT（jigsaw 含朝向）</div>
+        <div class="note" data-i18n="structure.piece3d.rightTip">中键方块 = 编辑组件/NBT（jigsaw 朝向等）· 右键单击 = 相邻格放置</div>
       </div>
     </aside>
     <div class="ed-canvaswrap" id="edCanvasWrap">
@@ -62,7 +58,7 @@
   <footer class="ed-statusbar">
     <span class="note" id="edStatus"></span>
     <span class="note ed-spacer"></span>
-    <span class="note" data-i18n="structure.piece3d.footerHint">移动工具：左键拖拽=旋转 · 右键/Shift拖拽=平移 · 滚轮=缩放 ｜ 笔刷/擦除工具：左键点按方块=写入 · 左键不转视角</span>
+    <span class="note" data-i18n="structure.piece3d.footerHint">移动：左键拖拽=旋转 · 右键/Shift拖拽=平移 · WASD=平移 · 滚轮=缩放 ｜ 笔刷：左键=替换命中格(拖拽=笔触) · 右键单击=相邻格放置 · 中键=编辑菜单</span>
   </footer>
   <script src="i18n.js"></script>
   <script src="core/voxel.js"></script>
