@@ -728,6 +728,8 @@ window.StructureEditor = (function () {
                 showStatus(tf('dyn.grownStats', { n: g.placements.length, d: g.deadEnds.length }), true);
             }
         }
+        updateGhostUI(tab); // P16：源实例下拉/切片范围随视图刷新
+        applyGhost(tab);    // P16：虚影随生长结果/模式重算
         renderLegend(tab);
     }
 
@@ -739,6 +741,168 @@ window.StructureEditor = (function () {
             ? g.deadEnds.filter((d) => d.ghost).map((d) => d.ghost)
             : [];
         pv.setGhosts(ghosts);
+    }
+
+    // ===== P16：jigsaw 虚影拼合（1:1 单次附着，非生长模拟）=====
+    // 虚影 = 源片段放置实例的 jigsaw 块按池逻辑附着的模板，半透明渲染（pv.setGhostPlacements）。
+    // 池逻辑：每个实例的每个 jigsaw → poolPick1to1 一次（确定性种子，🎲 重掷）→ 全部同时显示；
+    // 手动：选单个源实例，上一个/下一个循环其全部 1:1 候选（jigsaw × 模板 × 旋转 展平）。
+    // 世界切片（sel3dSliceAxis/inp3dSliceI）：实体+虚影同切（pv.setWorldSlice）。
+    let ghostSeed = 1;
+    let sliceDebounce = null;
+
+    /** 当前视图的放置实例（生长模式=生长结果；并排=定义序原点） */
+    function viewPlacements(tab) {
+        if (previewMode() === 'side') {
+            let x = 0;
+            return (tab.bp.pieces || []).map((p) => {
+                const off = [x, 0, 0];
+                x += (p.size || [1, 1, 1])[0] + 12;
+                return { pieceName: p.name, offset: off, rotation: 0 };
+            });
+        }
+        if (!tab._growth) return [];
+        return (tab._growth.placements || []).map((pl) => ({
+            pieceName: pl.pieceName, offset: pl.offset, rotation: pl.rotation || 0,
+        }));
+    }
+
+    /** 有带池 jigsaw 块的源实例（含 1:1 候选总数） */
+    function ghostInstances(tab) {
+        const G = window.StructureGrowth;
+        if (!G) return [];
+        const out = [];
+        const pls = viewPlacements(tab);
+        for (let i = 0; i < pls.length; i++) {
+            const pl = pls[i];
+            const piece = (tab.bp.pieces || []).find((p) => p.name === pl.pieceName);
+            if (!piece) continue;
+            const jis = (piece.jigsaws || []).map((j, ji) => ({ j, ji })).filter(({ j }) => j && j.pool);
+            if (!jis.length) continue;
+            let ncand = 0;
+            for (const { ji } of jis) {
+                const r = G.jigsawCandidates(tab.bp, pl.pieceName, ji, pl.offset);
+                ncand += r.cands.length;
+            }
+            out.push({ idx: i, pieceName: pl.pieceName, offset: pl.offset, rotation: pl.rotation || 0, jis, ncand });
+        }
+        return out;
+    }
+
+    /** 单实例的 1:1 候选展平（手动模式循环列表；顺序=池元素序→旋转→目标块，确定性） */
+    function instanceCandidates(tab, inst) {
+        const G = window.StructureGrowth;
+        const out = [];
+        for (const { ji } of inst.jis) {
+            const r = G.jigsawCandidates(tab.bp, inst.pieceName, ji, inst.offset);
+            for (const c of r.cands) out.push(Object.assign({ srcJi: ji }, c));
+        }
+        return out;
+    }
+
+    function ghostInfo(s) {
+        const el = document.getElementById('ghostInfo');
+        if (el) el.textContent = s || '';
+    }
+
+    function hashStr(s) {
+        let h = 2166136261;
+        for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+        return h >>> 0;
+    }
+
+    /** 计算当前虚影放置列表（模式+状态）并应用 pv */
+    function applyGhost(tab) {
+        if (!pv || !pv.setGhostPlacements) return;
+        const chk = document.getElementById('chk3dGhost');
+        if (!chk || !chk.checked) {
+            pv.setGhostPlacements([]);
+            ghostInfo('');
+            return;
+        }
+        const G = window.StructureGrowth;
+        if (!G) { ghostInfo('growth module missing'); return; }
+        const op = Math.max(10, Math.min(80, +document.getElementById('inp3dGhostOp').value || 35)) / 100;
+        const mode = document.getElementById('sel3dGhostMode').value;
+        const insts = ghostInstances(tab);
+        const list = [];
+        if (mode === 'pool') {
+            // 池逻辑：每个源实例的每个 jigsaw → 1 个 1:1 附着（确定性种子 = seed ^ 位置哈希）
+            for (const inst of insts) {
+                for (const { ji } of inst.jis) {
+                    const seed = (ghostSeed ^ (hashStr(inst.pieceName + '#' + inst.idx + ':' + ji) >>> 0)) >>> 0;
+                    const c = G.poolPick1to1(tab.bp, inst.pieceName, ji, inst.offset, G.mulberry32(seed));
+                    if (c) list.push({ pieceName: c.template, offset: c.offset, rotation: c.rotation });
+                }
+            }
+            ghostInfo(`池逻辑 · ${list.length} 个 1:1 附着（🎲 换种子）`);
+        } else {
+            // 手动：单源实例，循环 1:1 候选
+            if (!insts.length) { ghostInfo('无可用源（片段没有带池的 jigsaw 块）'); pv.setGhostPlacements([]); return; }
+            const selIdx = Math.min(tab._ghostInstIdx || 0, insts.length - 1);
+            tab._ghostInstIdx = selIdx;
+            const inst = insts[selIdx];
+            const cands = instanceCandidates(tab, inst);
+            if (!cands.length) { ghostInfo('该源无匹配候选（池/目标/orientation 对不上）'); return; }
+            tab._ghostCandIdx = (((tab._ghostCandIdx || 0) % cands.length) + cands.length) % cands.length;
+            const c = cands[tab._ghostCandIdx];
+            list.push({ pieceName: c.template, offset: c.offset, rotation: c.rotation });
+            ghostInfo(`[${tab._ghostCandIdx + 1}/${cands.length}] ${inst.pieceName}·${c.jigsawName} → ${c.template} · rot${c.rotation} · 目标 ${c.targetName} · offset[${c.offset.join(',')}]`);
+        }
+        pv.setGhostPlacements(list, { opacity: op });
+    }
+
+    /** 源实例下拉 + 切片滑杆范围（随视图刷新） */
+    function updateGhostUI(tab) {
+        const insts = ghostInstances(tab);
+        const sel = document.getElementById('sel3dGhostPiece');
+        const cur = sel.value;
+        sel.innerHTML = '';
+        insts.forEach((inst, k) => {
+            const o = document.createElement('option');
+            o.value = String(k);
+            o.textContent = `${inst.pieceName} #${k + 1} · ${inst.jis.length} jigsaw · ${inst.ncand} 候选`;
+            sel.appendChild(o);
+        });
+        sel.value = (cur !== '' && insts[+cur]) ? cur : '0';
+        // 视图包围盒（世界坐标，含负 offset）
+        const pieces = tab.bp.pieces || [];
+        let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+        for (const pl of viewPlacements(tab)) {
+            const piece = pieces.find((p) => p.name === pl.pieceName);
+            if (!piece) continue;
+            const [w, h, d] = piece.size || [1, 1, 1];
+            mn = [Math.min(mn[0], pl.offset[0]), Math.min(mn[1], pl.offset[1]), Math.min(mn[2], pl.offset[2])];
+            mx = [Math.max(mx[0], pl.offset[0] + w), Math.max(mx[1], pl.offset[1] + h), Math.max(mx[2], pl.offset[2] + d)];
+        }
+        tab._viewBound = { mn, mx };
+        refreshSliceRange(tab);
+    }
+
+    /** 切片滑杆：按轴设范围（世界格坐标） */
+    function refreshSliceRange(tab) {
+        const axis = document.getElementById('sel3dSliceAxis').value;
+        const rng = document.getElementById('inp3dSliceI');
+        const b = tab._viewBound;
+        const info = document.getElementById('sliceInfo');
+        if (axis === 'off' || !b || !isFinite(b.mn[0])) {
+            rng.min = 0; rng.max = 0; rng.value = 0;
+            info.textContent = '';
+            return;
+        }
+        const ai = axis === 'x' ? 0 : axis === 'y' ? 1 : 2;
+        const lo = Math.floor(b.mn[ai]), hi = Math.max(lo, Math.ceil(b.mx[ai]) - 1);
+        const keep = +rng.value;
+        rng.min = lo; rng.max = hi;
+        rng.value = (keep >= lo && keep <= hi) ? keep : lo;
+        info.textContent = `${axis.toUpperCase()} = ${rng.value}`;
+    }
+
+    function applyWorldSlice(tab) {
+        if (!pv || !pv.setWorldSlice) return;
+        const axis = document.getElementById('sel3dSliceAxis').value;
+        if (axis === 'off') { pv.setWorldSlice(null); return; }
+        pv.setWorldSlice({ axis, index: +document.getElementById('inp3dSliceI').value });
     }
 
     function schedulePreviewUpdate(tab) {
@@ -999,6 +1163,68 @@ window.StructureEditor = (function () {
         document.getElementById('chk3dGhosts').addEventListener('change', () => {
             const tab = activeTab();
             if (tab) applyGhosts(tab._growth);
+        });
+
+        // ===== P16 jigsaw 虚影拼合 + 世界切片 =====
+        document.getElementById('chk3dGhost').addEventListener('change', () => {
+            const tab = activeTab();
+            if (tab && activeStab === '3d') applyGhost(tab);
+        });
+        document.getElementById('sel3dGhostMode').addEventListener('change', () => {
+            const tab = activeTab();
+            if (!tab || activeStab !== '3d') return;
+            tab._ghostCandIdx = 0;
+            applyGhost(tab);
+        });
+        document.getElementById('sel3dGhostPiece').addEventListener('change', (e) => {
+            const tab = activeTab();
+            if (!tab || activeStab !== '3d') return;
+            tab._ghostInstIdx = +e.target.value || 0;
+            tab._ghostCandIdx = 0;
+            applyGhost(tab);
+        });
+        document.getElementById('btn3dGhostPrev').addEventListener('click', () => {
+            const tab = activeTab();
+            if (!tab || activeStab !== '3d') return;
+            const insts = ghostInstances(tab);
+            const inst = insts[Math.min(tab._ghostInstIdx || 0, insts.length - 1)];
+            if (!inst) return;
+            const n = instanceCandidates(tab, inst).length;
+            if (n) tab._ghostCandIdx = ((((tab._ghostCandIdx || 0) - 1) % n) + n) % n;
+            applyGhost(tab);
+        });
+        document.getElementById('btn3dGhostNext').addEventListener('click', () => {
+            const tab = activeTab();
+            if (!tab || activeStab !== '3d') return;
+            const insts = ghostInstances(tab);
+            const inst = insts[Math.min(tab._ghostInstIdx || 0, insts.length - 1)];
+            if (!inst) return;
+            const n = instanceCandidates(tab, inst).length;
+            if (n) tab._ghostCandIdx = (tab._ghostCandIdx || 0) + 1; // applyGhost 内取模回绕
+            applyGhost(tab);
+        });
+        document.getElementById('btn3dGhostReroll').addEventListener('click', () => {
+            ghostSeed = (Math.imul(ghostSeed, 1103515245) + 12345) >>> 0;
+            const tab = activeTab();
+            if (tab && activeStab === '3d') applyGhost(tab);
+        });
+        document.getElementById('inp3dGhostOp').addEventListener('input', () => {
+            const tab = activeTab();
+            if (tab && activeStab === '3d' && document.getElementById('chk3dGhost').checked) applyGhost(tab);
+        });
+        document.getElementById('sel3dSliceAxis').addEventListener('change', () => {
+            const tab = activeTab();
+            if (!tab || activeStab !== '3d') return;
+            refreshSliceRange(tab);
+            applyWorldSlice(tab);
+        });
+        document.getElementById('inp3dSliceI').addEventListener('input', () => {
+            const tab = activeTab();
+            if (!tab || activeStab !== '3d') return;
+            const axis = document.getElementById('sel3dSliceAxis').value;
+            document.getElementById('sliceInfo').textContent = axis !== 'off' ? axis.toUpperCase() + ' = ' + document.getElementById('inp3dSliceI').value : '';
+            clearTimeout(sliceDebounce);
+            sliceDebounce = setTimeout(() => applyWorldSlice(tab), 150); // setWorldSlice 触发整重建 → 防抖
         });
 
         // ===== P5 拼合诊断：可生成性检验（N 种子）+ 报告 =====

@@ -114,7 +114,8 @@ export function createStructurePreview(canvas, hooks = {}) {
     const gFills = new THREE.Group();
     const gJigsaws = new THREE.Group();
     const gGhosts = new THREE.Group(); // P5 死端幽灵盒
-    scene.add(gFills, gJigsaws, gGhosts);
+    const gGhostVox = new THREE.Group(); // P16 jigsaw 虚影拼合（半透明体素，独立于 gFills → 不可拾取）
+    scene.add(gFills, gJigsaws, gGhosts, gGhostVox);
 
     // 轨道相机状态（球坐标：target + radius/phi/theta）
     const orbit = { target: new THREE.Vector3(0, 4, 0), radius: 40, theta: Math.PI / 4, phi: Math.PI / 3 };
@@ -159,6 +160,9 @@ export function createStructurePreview(canvas, hooks = {}) {
     let clip = null;             // 3D 切片 {axis:'x'|'y'|'z', dir:-1|1, threshold:number}（P3）
     let slice = null;            // P9 编辑切片 {axis:'x'|'y'|'z', index:number}（剖切面：隐藏面向相机一侧，仅 rot=0 单片模式）
     let sliceSide = 1;           // 当前剖切方向（相机所在侧），相机越过分界面时翻转并重建
+    // P16 世界坐标切片（主 3D 预览：实体+虚影同切，任意 rot）：{axis, index}，index = 世界格坐标
+    let worldSlice = null;       // null 关闭
+    let worldSliceSide = 1;      // +1 = 相机在 +axis 侧（隐 coord>index）
 
     /** 共享单位立方体（所有体素 InstancedMesh 复用；clearGroups 不 dispose） */
     const unitBox = new THREE.BoxGeometry(1, 1, 1);
@@ -381,7 +385,7 @@ export function createStructurePreview(canvas, hooks = {}) {
     }
 
     function clearGroups() {
-        for (const g of [gFills, gJigsaws, gGhosts]) {
+        for (const g of [gFills, gJigsaws, gGhosts, gGhostVox]) {
             while (g.children.length) {
                 const c = g.children.pop();
                 if (c.isInstancedMesh) {
@@ -427,7 +431,8 @@ export function createStructurePreview(canvas, hooks = {}) {
         // 体素：展开（或编辑表）→ P9 剖切过滤（仅 rot=0，即单片模式）→ 表面 → 世界坐标 → 切片 → 按 blockId 实例化
         let vox = editMaps.get(piece.name) || Voxel.expandPiece(piece);
         if (slice && !rot) vox = Voxel.cutOf(vox, slice, sliceSide);
-        const world = Voxel.applyClip(Voxel.worldSurface(vox, off, rot, [w, h, d]), clip);
+        let world = Voxel.applyClip(Voxel.worldSurface(vox, off, rot, [w, h, d]), clip);
+        if (worldSlice) world = worldSliceCut(world, worldSlice, worldSliceSide); // P16 世界切片（任意 rot，实体+虚影同切）
         const groups = new Map();
         for (const [x, y, z, bid] of world) {
             if (!groups.has(bid)) groups.set(bid, []);
@@ -540,6 +545,7 @@ export function createStructurePreview(canvas, hooks = {}) {
                 } else {
                     await buildBlueprint(bp, { hiddenPieces: hidden, reframe });
                 }
+                rebuildGhosts(); // P16：虚影层随整重建同步（世界切片/新片段）
                 if (pendingBuild === b) pendingBuild = null; // 本目标构建完成 → 清除请求
                 // 重建后强制渲染一帧：rAF 循环停摆（窗口失焦/被节流）时也立即看到编辑结果
                 renderOnce();
@@ -694,6 +700,126 @@ export function createStructurePreview(canvas, hooks = {}) {
         }
         if (!running) renderOnce();
     }
+
+    // ===== P16：jigsaw 虚影拼合（半透明体素层）+ 世界坐标切片 =====
+
+    /** 世界坐标切片过滤（cutOf 的世界版）：切片层恒显示，隐藏面向相机一侧 */
+    function worldSliceCut(world, ws, side) {
+        if (!ws) return world;
+        const ai = ws.axis === 'x' ? 0 : ws.axis === 'y' ? 1 : 2;
+        const idx = Math.trunc(ws.index || 0);
+        const s = (side || 1) >= 0 ? 1 : -1;
+        return world.filter((v) => {
+            const c = v[ai];
+            if (c === idx) return true;
+            return s === 1 ? c < idx : c > idx;
+        });
+    }
+
+    /** 相机在 +axis 侧（世界切片平面之外）= +1（与 currentCamSide 类似，但相对世界平面） */
+    function worldSliceCamSide(axis) {
+        const ai = axis === 'x' ? 'x' : axis === 'y' ? 'y' : 'z';
+        return (camera.position[ai] - worldSlice.index) >= 0 ? 1 : -1;
+    }
+
+    /** 相机越过分界面 → 翻转剖切方向并重建（无翻转时零成本；拖拽/循环中调用） */
+    function checkWorldSliceFlip() {
+        if (!worldSlice) return;
+        const s = worldSliceCamSide(worldSlice.axis);
+        if (s !== worldSliceSide) {
+            worldSliceSide = s;
+            if (!rebuilding) rebuild();
+        }
+    }
+
+    /**
+     * P16 虚影拼合层：[{pieceName, offset:[x,y,z], rotation:0..3}] 半透明渲染。
+     * 独立组 gGhostVox（不在 pickVoxel 目标内 → 不可拾取）；真实贴图克隆材质
+     * （transparent + opacity + depthWrite:false）；受世界切片过滤（切片切虚影）。
+     * @param {Array} ghosts 虚影放置（1:1 附着候选，来自 structureGrowth.jigsawCandidates/poolPick1to1）
+     * @param {{opacity?:number}} opts 0.05..1，默认 0.35
+     */
+    function setGhostPlacements(ghosts, opts = {}) {
+        ghostPlacements = (ghosts || []).slice();
+        if (opts && isFinite(opts.opacity)) ghostOpacity = Math.max(0.05, Math.min(1, opts.opacity));
+        trace('setGhostPlacements [' + ghostPlacements.length + '] op=' + ghostOpacity);
+        rebuildGhosts();
+    }
+    function getGhostPlacements() { return ghostPlacements.map((g) => Object.assign({}, g)); }
+    let ghostPlacements = [];   // [{pieceName, offset, rotation}]
+    let ghostOpacity = 0.35;
+
+    /** 清空并重建虚影层（轻量：不触碰实体构建/相机取景） */
+    function rebuildGhosts() {
+        for (let i = gGhostVox.children.length - 1; i >= 0; i--) {
+            const c = gGhostVox.children[i];
+            if (c.isInstancedMesh) c.dispose();
+            if (c.material && !sharedMats.has(c.material)) {
+                (Array.isArray(c.material) ? c.material : [c.material]).forEach((m) => { if (!sharedMats.has(m)) m.dispose(); });
+            }
+            gGhostVox.remove(c);
+        }
+        if (!ghostPlacements.length) { if (!running) renderOnce(); return; }
+        const pieces = new Map();
+        for (const p of (lastBuild && lastBuild.pieces) || []) pieces.set(p.name, p);
+        const m4 = new THREE.Matrix4();
+        for (const gh of ghostPlacements) {
+            const piece = pieces.get(gh.pieceName);
+            if (!piece) continue;
+            const [w, h, d] = piece.size || [1, 1, 1];
+            const vox = Voxel.expandPiece(piece); // 虚影 = 定义几何（不带编辑表）
+            let world = Voxel.worldSurface(vox, gh.offset || [0, 0, 0], gh.rotation || 0, [w, h, d]);
+            if (worldSlice) world = worldSliceCut(world, worldSlice, worldSliceSide); // 切片切虚影
+            const groups = new Map();
+            for (const [x, y, z, bid] of world) {
+                if (!groups.has(bid)) groups.set(bid, []);
+                groups.get(bid).push([x, y, z]);
+            }
+            for (const [bid, positions] of groups) {
+                if (!positions.length) continue;
+                const spec = specCache.get(bid);
+                const assets = spec && spec.ok ? specMeshAssets(bid) : null;
+                const geo = assets ? assets.geometry : unitBox;
+                // 克隆材质 → 半透明（共享材质不可改）
+                const base = assets ? assets.materials : getMats(bid, faceCache.get(bid) || null);
+                const mats = (Array.isArray(base) ? base : [base]).map((m) => {
+                    const c = m.clone();
+                    c.transparent = true;
+                    c.opacity = ghostOpacity;
+                    c.depthWrite = false;
+                    return c;
+                });
+                const im = new THREE.InstancedMesh(geo, Array.isArray(base) ? mats : mats[0], positions.length);
+                im.renderOrder = 10;
+                for (let i = 0; i < positions.length; i++) {
+                    m4.makeTranslation(positions[i][0] + 0.5, positions[i][1] + 0.5, positions[i][2] + 0.5);
+                    im.setMatrixAt(i, m4);
+                }
+                im.instanceMatrix.needsUpdate = true;
+                im.userData.blockId = bid;
+                im.userData.ghost = true;
+                gGhostVox.add(im);
+            }
+        }
+        if (!running) renderOnce();
+    }
+
+    /**
+     * P16 世界坐标切片：null 关闭；否则 {axis:'x'|'y'|'z', index:世界格坐标}
+     * 实体+虚影同切（切片层恒显示、隐藏面向相机一侧）；相机越面自动翻转。
+     */
+    function setWorldSlice(c) {
+        const next = (c && c.axis && isFinite(c.index))
+            ? { axis: c.axis, index: Math.trunc(c.index) } : null;
+        const same = (next === null && worldSlice === null)
+            || (next && worldSlice && next.axis === worldSlice.axis && next.index === worldSlice.index);
+        if (same) return;
+        trace('setWorldSlice ' + (next ? next.axis + '=' + next.index : 'null'));
+        worldSlice = next;
+        if (next) worldSliceSide = worldSliceCamSide(next.axis);
+        return rebuild(); // 实体也要切 → 走整构建（UI 侧防抖）
+    }
+    function getWorldSlice() { return worldSlice ? Object.assign({}, worldSlice, { side: worldSliceSide }) : null; }
 
     // ===== 显隐控制 =====
     let layers = { fills: true, jigsaws: true, grid: true };
@@ -1247,6 +1373,7 @@ export function createStructurePreview(canvas, hooks = {}) {
             orbit.phi = Math.max(0.05, Math.min(Math.PI / 2 - 0.02, orbit.phi));
         }
         checkSliceFlip();
+        checkWorldSliceFlip();
         renderNow();
     }
 
@@ -1318,6 +1445,7 @@ export function createStructurePreview(canvas, hooks = {}) {
         const f = e.deltaY > 0 ? 1.1 : 0.9;
         orbit.radius = Math.max(2, Math.min(2000, orbit.radius * f));
         checkSliceFlip();
+        checkWorldSliceFlip();
         updateHud();
         renderNow();
     }, { passive: false });
@@ -1361,7 +1489,8 @@ export function createStructurePreview(canvas, hooks = {}) {
         if (!running) return;
         if (autoRotate) orbit.theta += 0.0035;
         applyCamera();
-        checkSliceFlip(); // P9：自动旋转等移动相机时，越过分界面自动翻转剖切
+        checkSliceFlip();
+        checkWorldSliceFlip(); // P9：自动旋转等移动相机时，越过分界面自动翻转剖切
         sizeCanvas();
         renderer.render(scene, camera);
         lastFrameTime = performance.now();
@@ -1429,6 +1558,12 @@ export function createStructurePreview(canvas, hooks = {}) {
         specCache.clear();
         specPending.clear();
         editMaps.clear();
+        for (const c of [...gGhostVox.children]) { // P16 虚影材质（克隆的，非共享）
+            if (c.material && !sharedMats.has(c.material)) {
+                (Array.isArray(c.material) ? c.material : [c.material]).forEach((m) => m.dispose());
+            }
+        }
+        ghostPlacements = [];
         if (gSelBox) { gSelBox.geometry.dispose(); selBoxMat.dispose(); gSelBox = null; } // P15 框选预览盒
         for (const t of cubeTexs) t.dispose(); // P14 视图立方体面贴图
         cubeTexs.length = 0;
@@ -1479,6 +1614,9 @@ export function createStructurePreview(canvas, hooks = {}) {
             clip,
             slice,
             sliceSide,
+            worldSlice, // P16 世界坐标切片（含 side）
+            ghostPlacements: ghostPlacements.length, // P16 虚影放置数
+            ghostVoxels: gGhostVox.children.reduce((n, c) => n + (c.isInstancedMesh ? c.count : 0), 0), // P16 虚影体素数
             ghosts: gGhosts.children.length,
             // 相机实际位置（拖拽验证用：应随 orbit 变化）
             camera: camera ? { x: +camera.position.x.toFixed(2), y: +camera.position.y.toFixed(2), z: +camera.position.z.toFixed(2) } : null,
@@ -1548,6 +1686,10 @@ export function createStructurePreview(canvas, hooks = {}) {
         clearEdits,
         getPlacements,
         setGhosts,
+        setGhostPlacements, // P16 jigsaw 虚影拼合（半透明体素层）
+        getGhostPlacements, // P16
+        setWorldSlice, // P16 世界坐标切片（实体+虚影同切）
+        getWorldSlice, // P16
         debugStats,
     };
 }

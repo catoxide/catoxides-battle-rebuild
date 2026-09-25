@@ -313,6 +313,32 @@
           <span class="note" data-i18n="structure.3d.hint">左键拖拽 = 旋转 · 右键/Shift拖拽 = 平移 · 滚轮 = 缩放</span>
           <span class="note" style="margin-left:auto;opacity:.55">v0.2</span>
         </div>
+        <div class="row struct-toolbar">
+          <label class="chk"><input type="checkbox" id="chk3dGhost"> <span data-i18n="structure.3d.ghostAsm">jigsaw 虚影拼合</span></label>
+          <select id="sel3dGhostMode" title="">
+            <option value="pool" data-i18n="structure.3d.ghostPool">池逻辑</option>
+            <option value="manual" data-i18n="structure.3d.ghostManual">手动</option>
+          </select>
+          <select id="sel3dGhostPiece" title="" style="max-width:230px"></select>
+          <button class="btn ghost small" id="btn3dGhostPrev" title="">◀ <span data-i18n="structure.3d.ghostPrev">上一个</span></button>
+          <button class="btn ghost small" id="btn3dGhostNext" title="">▶ <span data-i18n="structure.3d.ghostNext">下一个</span></button>
+          <button class="btn ghost small" id="btn3dGhostReroll" title="" data-i18n-title="structure.3d.ghostReroll">🎲</button>
+          <label class="chk"><span data-i18n="structure.3d.ghostOp">虚化</span></label>
+          <input id="inp3dGhostOp" type="range" min="10" max="80" value="35" style="width:90px" title="">
+          <span id="ghostInfo" class="note" style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        </div>
+        <div class="row struct-toolbar">
+          <label class="chk" data-i18n="structure.3d.slice">切片</label>
+          <select id="sel3dSliceAxis" title="">
+            <option value="off" data-i18n="structure.3d.sliceOff">关</option>
+            <option value="x">X</option>
+            <option value="y">Y</option>
+            <option value="z">Z</option>
+          </select>
+          <input id="inp3dSliceI" type="range" min="0" max="0" value="0" style="width:180px" title="">
+          <span id="sliceInfo" class="note"></span>
+          <span class="note" style="opacity:.6" data-i18n="structure.3d.sliceHint">世界坐标切片：实体与虚影同切，切片层恒显示</span>
+        </div>
         <div class="card" id="diagReport" style="display:none; margin-top:8px"></div>
         <div class="struct-3d-layout">
           <div id="struct3dWrap"><canvas id="structCanvas" width="800" height="520"></canvas></div>

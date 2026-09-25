@@ -166,5 +166,97 @@ console.log('=== 7. 错误路径 ===');
     ok('startPool 空 → error', G.growStructure(emptyStart, { rng: rng50 }).error !== undefined);
 }
 
+console.log('=== 8. P16 jigsaw 虚影 1:1 候选 ===');
+{
+    // src 'a' 2x8x2，顶部 jigsaw 'out'（up_north）+ 侧墙 'east_out'（east_up）
+    // tpl 'b' 3x3x3，'in'@(1,0,1) down_south（接顶面）+ 'side_in'@(0,1,1) west_up（接东墙）
+    // tpl 'c' 3x3x3，'side_in'@(0,1,1) west_up（同池竞争，权重低）
+    const bp16 = {
+        structureId: 't16', namespace: 't', structure: { startPool: 's' },
+        pieces: [
+            { name: 'a', size: [2, 8, 2], boxFills: [], fillBlocks: [], jigsaws: [
+                { name: 'top_out', x: 1, y: 7, z: 1, orientation: 'up_north', pool: 'p', target: 'in', joint: 'aligned' },
+                { name: 'east_out', x: 1, y: 1, z: 1, orientation: 'east_up', pool: 'p', target: 'side_in', joint: 'rollable' },
+            ] },
+            { name: 'b', size: [3, 3, 3], boxFills: [], fillBlocks: [], jigsaws: [
+                { name: 'in', x: 1, y: 0, z: 1, orientation: 'down_south', target: 'x', selection_priority: 0 },
+                { name: 'side_in', x: 0, y: 1, z: 1, orientation: 'west_up', target: 'x', selection_priority: 5 },
+                { name: 'side_in', x: 1, y: 1, z: 1, orientation: 'west_up', target: 'x', selection_priority: 1 },
+            ] },
+            { name: 'c', size: [3, 3, 3], boxFills: [], fillBlocks: [], jigsaws: [
+                { name: 'side_in', x: 0, y: 1, z: 1, orientation: 'west_up', target: 'x', selection_priority: 0 },
+            ] },
+        ],
+        templatePools: [
+            { name: 's', elements: [{ template: 'a', weight: 1, projection: 'rigid' }], fallback: 'minecraft:empty_pool_element' },
+            { name: 'p', elements: [
+                { template: 'b', weight: 9, projection: 'rigid' },
+                { template: 'c', weight: 1, projection: 'rigid' },
+            ], fallback: 'minecraft:empty_pool_element' },
+        ],
+    };
+
+    // 8a. 顶面 1:1：src a 在 [5,3,7]，top_out@(1,7,1) up_north → 生长 +Y
+    const top = G.jigsawCandidates(bp16, 'a', 0, [5, 3, 7]);
+    ok('顶面无错误', !top.error, top.error);
+    ok('顶面候选=1（b 的 in，r0）', top.cands.length === 1, JSON.stringify(top.cands));
+    if (top.cands.length === 1) {
+        const c = top.cands[0];
+        ok('顶面模板=b rot=0', c.template === 'b' && c.rotation === 0);
+        // a 世界顶格 (1+5, 7+3, 1+7)=(6,10,8) +D(0,1,0) → (6,11,8) = b.in 世界坐标
+        // b.in 局部 (1,0,1) → offset = (6-1, 11-0, 8-1) = (5,11,7)
+        ok('顶面对齐 offset=[5,11,7]（in 恰落在源块+生长方向）', JSON.stringify(c.offset) === JSON.stringify([5, 11, 7]), JSON.stringify(c.offset));
+        ok('顶面 via=源块世界坐标', JSON.stringify(c.via) === JSON.stringify([6, 10, 8]), JSON.stringify(c.via));
+    }
+
+    // 8b. 东墙 1:1：east_out@(1,1,1) east_up → 生长 +X；b.side_in 与 b.side_in2、c.side_in 同向
+    const east = G.jigsawCandidates(bp16, 'a', 1, [0, 0, 0]);
+    ok('东墙无错误', !east.error, east.error);
+    // b: side_in@(0,1,1) r0 jPos=[0,1] offset=[2,0,0]；side_in@(1,1,1) jPos=[1,1] offset=[1,0,0]；c: [2,0,0]
+    ok('东墙候选=3（b×2 + c×1，均 r0）', east.cands.length === 3, JSON.stringify(east.cands.map((c) => c.template)));
+    ok('东墙 offset=[2,1,2]（x=源块+1 贴东面，z 不变）',
+        JSON.stringify(east.cands.map((c) => c.offset)) === JSON.stringify([[2, 0, 0], [1, 0, 0], [2, 0, 0]]),
+        JSON.stringify(east.cands.map((c) => c.offset)));
+
+    // 8c. 错误路径
+    ok('池不存在 → error', G.jigsawCandidates({ pieces: [{ name: 'a', size: [1, 1, 1], jigsaws: [{ name: 'j', x: 0, y: 0, z: 0, orientation: 'up', pool: 'nope', target: 't' }] }], templatePools: [] }, 'a', 0, [0, 0, 0]).error !== undefined);
+    ok('源片段不存在 → error', G.jigsawCandidates(bp16, 'ghost', 0, [0, 0, 0]).error !== undefined);
+    const missTpl = { pieces: bp16.pieces.filter((p) => p.name === 'a'), templatePools: [{ name: 'p', elements: [{ template: 'gone', weight: 1 }], fallback: 'minecraft:empty_pool_element' }] };
+    ok('模板缺失 → 空候选', G.jigsawCandidates(missTpl, 'a', 0, [0, 0, 0]).cands.length === 0);
+
+    // 8d. poolPick1to1 确定性（mulberry32 同种子同结果）
+    const pickA = G.poolPick1to1(bp16, 'a', 0, [0, 0, 0], G.mulberry32(42));
+    const pickB = G.poolPick1to1(bp16, 'a', 0, [0, 0, 0], G.mulberry32(42));
+    ok('池逻辑：同种子同结果', JSON.stringify(pickA) === JSON.stringify(pickB) && pickA !== null, JSON.stringify(pickA));
+    ok('池逻辑：顶面抽中 b（权重 9/10，rng0.01 段）', pickA.template === 'b', JSON.stringify(pickA));
+
+    // 8e. 加权：rng→0.001 段恒抽 b（roll=0.01 < 9）
+    let allB = true;
+    for (let i = 0; i < 5; i++) {
+        const p = G.poolPick1to1(bp16, 'a', 1, [0, 0, 0], () => 0.001);
+        if (p.template !== 'b') allB = false;
+    }
+    ok('池逻辑：高权重模板恒中（east 侧）', allB);
+
+    // 8f. rollable 旋转：rng 序列 [模板, 旋转, 同分] 全 0 → 取首个模板/首旋转/首同分
+    const p0 = G.poolPick1to1(bp16, 'a', 1, [0, 0, 0], () => 0);
+    ok('池逻辑：rollable r=0 且 priority=5 的 side_in 优先', p0.template === 'b' && p0.rotation === 0 && p0.targetName === 'side_in', JSON.stringify(p0));
+    // priority 同分（构造 c 与 b 同优先级场景用 rng50 → tied[0]… 用单元素池验证稳定）
+    const bpTie = JSON.parse(JSON.stringify(bp16));
+    bpTie.templatePools[1].elements = [{ template: 'c', weight: 1, projection: 'rigid' }];
+    const pTie = G.poolPick1to1(bpTie, 'a', 1, [0, 0, 0], () => 0);
+    ok('池逻辑：单模板池 → c', pTie && pTie.template === 'c', JSON.stringify(pTie));
+
+    // 8g. mulberry32 性质
+    const r1 = G.mulberry32(7), r2 = G.mulberry32(7);
+    let same = true;
+    for (let i = 0; i < 10; i++) if (r1() !== r2()) same = false;
+    ok('mulberry32 同种子同序列', same);
+    const r3 = G.mulberry32(8);
+    let inRange = true;
+    for (let i = 0; i < 100; i++) { const v = r3(); if (v < 0 || v >= 1) inRange = false; }
+    ok('mulberry32 值域 [0,1)', inRange);
+}
+
 console.log('\n生长模拟测试: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

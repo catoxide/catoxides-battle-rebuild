@@ -266,6 +266,125 @@ function growStructure(bp, opts = {}) {
     return { placements, deadEnds };
 }
 
+// ===== P16：jigsaw 虚影拼合（1:1 单次附着，不做生长模拟）=====
+
+/**
+ * 确定性伪随机（mulberry32）：同种子 → 同序列（池逻辑模式可复现；测试注入）
+ * @param {number} seed 任意整数
+ * @returns {Function} () => [0,1)
+ */
+function mulberry32(seed) {
+    let a = seed | 0;
+    return function () {
+        a = (a + 0x6D2B79F5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+/**
+ * P16：枚举源片段某 jigsaw 块的全部 1:1 候选附着（确定性，无 rng）。
+ * 对池内每个模板 × 每个旋转 r(0..3) × 每个匹配目标块（name==target 且
+ * rotatedOrientation==opposite(源朝向)），按对齐公式算放置偏移：
+ *   目标块 J′（旋转后）恰好落在 源块世界坐标 + 生长方向 上。
+ * @param {Object} bp 蓝图（pieces + templatePools）
+ * @param {string} srcPieceName 源片段名
+ * @param {number} srcJi 源 jigsaw 索引（片段 jigsaws 数组下标）
+ * @param {number[]} srcOffset 源片段当前放置的世界偏移 [x,y,z]
+ * @returns {{cands:Array, error?:string}}
+ *   cands[i] = {jigsawName, pool, template, weight, rotation, targetJi, targetName,
+ *               priority, offset:[x,y,z], via:[x,y,z]}
+ *   顺序 = 池元素序 → 旋转 0..3 → 目标块下标（确定性）
+ */
+function jigsawCandidates(bp, srcPieceName, srcJi, srcOffset) {
+    const byName = new Map();
+    for (const p of bp.pieces || []) byName.set(p.name, p);
+    const poolByName = new Map();
+    for (const pl of bp.templatePools || []) poolByName.set(pl.name, pl);
+    const src = byName.get(srcPieceName);
+    if (!src) return { cands: [], error: '源片段不存在: ' + srcPieceName };
+    const jg = (src.jigsaws || [])[srcJi];
+    if (!jg) return { cands: [], error: 'jigsaw 块不存在: ' + srcPieceName + '[' + srcJi + ']' };
+    const pool = poolByName.get(jg.pool);
+    if (!pool) return { cands: [], error: '池不存在: ' + jg.pool };
+    const targetOpp = oppositeOrientation(jg.orientation);
+    const D = orientationDir(jg.orientation);
+    const off0 = srcOffset || [0, 0, 0];
+    const srcWorld = [off0[0] + jg.x, off0[1] + jg.y, off0[2] + jg.z];
+    const cands = [];
+    for (const el of pool.elements || []) {
+        const tpl = byName.get(el.template);
+        if (!tpl) continue;
+        const [w, , d] = tpl.size;
+        for (let r = 0; r < 4; r++) {
+            const tJis = tpl.jigsaws || [];
+            for (let ji = 0; ji < tJis.length; ji++) {
+                const j = tJis[ji];
+                if (j.name !== jg.target) continue;
+                if (rotatedOrientation(j.orientation, r) !== targetOpp) continue;
+                const jPos = rotatedPos(j.x, j.z, w, d, r);
+                cands.push({
+                    jigsawName: jg.name,
+                    pool: jg.pool,
+                    template: tpl.name,
+                    weight: Math.max(1, el.weight || 1),
+                    rotation: r,
+                    targetJi: ji,
+                    targetName: j.name,
+                    priority: j.selection_priority || 0,
+                    offset: [
+                        srcWorld[0] + D[0] - jPos[0],
+                        srcWorld[1] + D[1] - j.y,
+                        srcWorld[2] + D[2] - jPos[1],
+                    ],
+                    via: srcWorld,
+                });
+            }
+        }
+    }
+    return { cands };
+}
+
+/**
+ * P16：池逻辑 1:1 附着（模拟原版单次抽取，不做生长）：
+ *   加权抽模板 → rollable 随机单旋转 / aligned 全部旋转 → selection_priority 高者优先（同分随机）
+ * @param {Function} rng 可注入（mulberry32(seed) 可复现）
+ * @returns 单个候选（同 jigsawCandidates.cands[i]）或 null（无池/无匹配/模板缺失）
+ */
+function poolPick1to1(bp, srcPieceName, srcJi, srcOffset, rng) {
+    const rnd = rng || Math.random;
+    const { cands, error } = jigsawCandidates(bp, srcPieceName, srcJi, srcOffset);
+    if (error || !cands.length) return null;
+    const byName = new Map();
+    for (const p of bp.pieces || []) byName.set(p.name, p);
+    const jg = (byName.get(srcPieceName).jigsaws || [])[srcJi];
+    const pool = (bp.templatePools || []).find((p) => p.name === jg.pool);
+    // 加权抽模板（池内同模板多元素 → 合并权重）
+    const tplEls = [];
+    for (const el of pool.elements || []) {
+        const hit = tplEls.find((e) => e.template === el.template);
+        if (hit) hit.weight = (hit.weight || 1) + (el.weight || 1);
+        else tplEls.push({ template: el.template, weight: el.weight || 1 });
+    }
+    const el = pickWeighted(tplEls, rnd);
+    if (!el) return null;
+    let pool2 = cands.filter((c) => c.template === el.template);
+    if (!pool2.length) return null;
+    // 旋转：rollable = 随机取一个可用旋转；aligned = 全部（已在 cands 中）
+    if (jg.joint !== 'aligned') {
+        const rs = [];
+        for (const c of pool2) if (!rs.includes(c.rotation)) rs.push(c.rotation);
+        const r = rs[Math.floor(rnd() * rs.length)];
+        pool2 = pool2.filter((c) => c.rotation === r);
+    }
+    // selection_priority 高者优先，同分随机
+    pool2.sort((a, b) => b.priority - a.priority);
+    const best = pool2[0].priority;
+    const tied = pool2.filter((c) => c.priority === best);
+    return tied[Math.floor(rnd() * tied.length)];
+}
+
 const API = {
     growStructure,
     oppositeOrientation,
@@ -273,6 +392,9 @@ const API = {
     rotatedPos,
     orientationDir,
     pickWeighted,
+    mulberry32, // P16
+    jigsawCandidates, // P16
+    poolPick1to1, // P16
     FACE_DIR,
 };
 
