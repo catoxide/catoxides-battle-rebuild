@@ -1,9 +1,13 @@
-// pieceEditor.js - P11/P12 片段 3D 编辑器窗口（独立窗口渲染进程）
-// 布局：顶栏（片段选择/方块搜索/快捷按钮/撤销/写回）+ 左侧工具栏（工具/剖切/视角）+ 画布 + 状态栏
-// 交互（P12 定稿，不复合）：
-//   移动工具：左键拖拽=旋转 · 右键拖拽/Shift=平移 · WASD=平移 · 滚轮=缩放
-//   笔刷/擦除/占位：左键单击=替换命中格 · 左键拖拽=笔触(连续替换) · 右键单击=命中面相邻格放置 ·
-//                   中键单击=编辑菜单(可编辑 jigsaw 组件) · WASD=平移 · 角度锁死
+// pieceEditor.js - P11/P12/P15 片段 3D 编辑器窗口（独立窗口渲染进程）
+// 布局：顶栏（片段选择/方块搜索/快捷按钮/撤销/写回）+ 左侧工具栏（工具/槽位行数/剖切/视角）
+//       + 画布（底部 9×N 方块槽位缓存栏）+ 状态栏（按工具提示）
+// 交互（P15 定稿，不复合）：
+//   移动工具：左键拖拽=旋转 · 右键/Ctrl+滚轮=平移/缩放 · WASD=平移 · 中键=NBT 编辑菜单
+//   笔刷/占位：左键单击=替换命中格 · 左键拖拽=笔触 · 右键单击=命中面相邻格放置 ·
+//              中键=补货当前槽位（悬停方块+NBT）
+//   框选工具：左键点角点 A → 悬停预览 → 左键点角点 B = 范围内填充当前槽位方块（Esc 取消）
+//   槽位（9×N，N 可配置）：1-9/滚轮=切槽 · +/-/PgUp/PgDn=切行 · Q=清槽 · E=当前槽导入搜索框
+//   全局：Delete/Backspace=删悬停格 · Ctrl+Z=撤销 · Shift=移动↔笔刷切换（按住 Shift 拖拽=平移，不触发切换）
 //   悬停高亮：左键落点(命中格,白线框) + 右键落点(相邻格,工具色)
 // 数据流：主窗口 push blueprint（pieceEditor:load）→ 本地编辑 → 写回（pieceEditor:saveEdits）
 'use strict';
@@ -15,8 +19,15 @@
 
     let state = null;      // { packDir, structureId, pieceName, blueprint }
     let pv = null;         // 预览器实例
-    let tool = 'move';     // 默认"移动"（先摆视角）；笔刷/擦除/占位 = 写入模式（左键不转视角）
+    let tool = 'move';     // 默认"移动"（先摆视角）；笔刷/框选/占位 = 写入模式（左键不转视角）
     let initialized = false;
+    // ===== P15 方块槽位缓存栏（9×N，N 可配置；槽位 = {id: 'block[props]', nbt: tagged|null}）=====
+    const SLOTS_PER_ROW = 9;
+    let slotRowsN = 3;
+    let slots = [];            // [row][col] → {id, nbt} | null
+    let slotRow = 0, slotCol = 0;
+    let boxA = null;           // 框选工具第一角点 [x,y,z]（局部坐标）
+    let lastMouse = null;      // 画布上的最后指针位置（Delete/快捷键拾取用）
     // P12 jigsaw 字段编辑：记录被改过的片段 + 原始快照（撤销用）
     let jigsawEdited = new Set();
     let jigsawBackup = new Map();
@@ -202,18 +213,34 @@
         return conv(tagged);
     }
 
-    // 工具切换：按钮高亮 + 左键拖拽门控（移动=转视角；笔刷=画，不转）+ 悬停高亮（随工具配色）
+    // 工具切换：按钮高亮 + 左键拖拽门控（移动=转视角；笔刷/框选/占位=写，不转）+ 悬停高亮（随工具配色）
     function setTool(name) {
         tool = name;
         document.querySelectorAll('.ed-tool[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
+        // 离开框选工具 → 丢弃未完成的角点
+        if (boxA) { boxA = null; if (pv) pv.setSelectionBox(null); }
         if (!pv) return;
         pv.setOrbitOnLeft(name === 'move');
+        // P15 用户补充：移动模式滚轮=缩放；笔刷/框选/占位滚轮=切槽（Ctrl+滚轮始终缩放）
+        pv.setWheelMode(name === 'move' ? 'zoom' : 'slots');
         if (name === 'move') {
             pv.setHoverEnabled(false);
         } else {
             pv.setHoverEnabled(true);
-            pv.setHoverColor(name === 'erase' ? 0xf38ba8 : name === 'placeholder' ? 0x89b4fa : 0xa6e3a1);
+            pv.setHoverColor(name === 'box' ? 0xf9e2af : name === 'placeholder' ? 0x89b4fa : 0xa6e3a1);
         }
+        updateHint();
+    }
+
+    // ===== P15 底部提示栏：按当前工具切换 =====
+    function updateHint() {
+        const el = $('edHint');
+        if (!el) return;
+        const key = tool === 'move' ? 'structure.piece3d.hintMove'
+            : tool === 'paint' ? 'structure.piece3d.hintPaint'
+            : tool === 'box' ? 'structure.piece3d.hintBox'
+            : 'structure.piece3d.hintPlaceholder';
+        el.textContent = t(key);
     }
 
     // ===== 状态栏 =====
@@ -260,7 +287,10 @@
     async function init() {
         try {
             const mod = await import('../lib/structurePreview.js');
-            pv = mod.createStructurePreview($('edCanvas'), { onChange: pushDirty }); // P14：dirty 通知
+            pv = mod.createStructurePreview($('edCanvas'), {
+                onChange: pushDirty, // P14：dirty 通知
+                onWheelSlot: (d) => selectSlot(slotRow, (slotCol + d + SLOTS_PER_ROW) % SLOTS_PER_ROW), // P15 滚轮切槽
+            });
             window.__pieceEditor = {
                 pv: () => pv,
                 getState: () => state,
@@ -268,15 +298,32 @@
                 openMenuAt: openMenuAtCell, // P12 E2E：指定格开中键菜单
                 dirtyCount: () => dirtyCount(), // P14 调试
                 loadSeq: () => loadSeq, // P14：payload 到达计数（E2E 等待用）
+                // P15 槽位/快捷键/框选（E2E + 调试）
+                palette: () => ({ rows: slotRowsN, row: slotRow, col: slotCol,
+                    slots: slots.map((r) => r.map((s) => (s ? { id: s.id, hasNbt: !!s.nbt } : null))) }),
+                refillSlot: (id, nbt) => { refillCurrentSlot(id, nbt); return currentSlot(); },
+                clearSlot: () => clearCurrentSlot(),
+                selectSlot,
+                toggleTool: () => toggleMovePaint(),
+                undoAll,
+                deleteHovered,
+                boxFill: (a, b) => doBoxFill(a, b),
+                boxState: () => boxA,
+                importSlotToSearch,
+                hint: () => ($('edHint') ? $('edHint').textContent : ''),
             }; // E2E/调试钩子
             pv.start();
             // 编辑器窗口用按需渲染（交互/编辑时渲染，不跑 60fps 连续循环）：
             // 省主线程 → 搜索输入/右键菜单不卡；rebuild 末尾强制 renderOnce → 编辑即时可见
             pv.setContinuous(false);
+            // 滚轮模式随工具（setTool 维护）：移动=缩放，笔刷/框选/占位=切槽（默认工具=移动）
+            pv.setWheelMode(tool === 'move' ? 'zoom' : 'slots');
             pv.setOrbitOnLeft(tool === 'move');
             syncPieceSelect();
             selectPiece(state.pieceName);
             wireUI();
+            initPalette();
+            updateHint();
             loadBlocks();
             initialized = true;
             status(t('structure.piece3d.ready'));
@@ -345,7 +392,7 @@
 
     // ===== UI 绑定 =====
     function wireUI() {
-        // 左侧工具按钮（移动 / 笔刷 / 擦除 / 占位）
+        // 左侧工具按钮（移动 / 笔刷 / 框选 / 占位）
         document.querySelectorAll('.ed-tool[data-tool]').forEach((btn) => {
             btn.addEventListener('click', () => setTool(btn.dataset.tool));
         });
@@ -366,55 +413,63 @@
             window.__peSwitchLog.push({ decided: 'direct' });
         });
 
-        // 撤销 / 写回
-        $('edUndo').addEventListener('click', () => {
-            if (!pv) return;
-            // P12：撤销 jigsaw 字段编辑（还原原始快照）
-            for (const [name, orig] of jigsawBackup) {
-                const i = (state.blueprint.pieces || []).findIndex((p) => p.name === name);
-                if (i >= 0) state.blueprint.pieces[i].jigsaws = JSON.parse(JSON.stringify(orig));
-            }
-            jigsawEdited.clear();
-            jigsawBackup.clear();
-            // P12：撤销方块实体 NBT 编辑
-            for (const [name, orig] of blockNbtBackup) {
-                const i = (state.blueprint.pieces || []).findIndex((p) => p.name === name);
-                if (i >= 0) {
-                    if (orig.length) state.blueprint.pieces[i].blockNbt = JSON.parse(JSON.stringify(orig));
-                    else delete state.blueprint.pieces[i].blockNbt;
-                }
-            }
-            blockNbtEdited.clear();
-            blockNbtBackup.clear();
-            pv.clearEdits().then(() => { updateInfo(); status(t('structure.3d.edit.undoDone'), false); });
-        });
+        // 撤销（按钮 + P15 Ctrl+Z 共用）/ 写回
+        $('edUndo').addEventListener('click', () => undoAll());
         $('edSave').addEventListener('click', () => saveEdits());
 
-        // 画布（P12 定稿，不复合）：
-        //   左键：笔刷工具 单击=替换命中格 / 拖拽=笔触(连续替换)；移动工具 拖拽=旋转
+        // 画布（P15 定稿，不复合）：
+        //   左键：笔刷/占位 单击=替换命中格 / 拖拽=笔触；框选 点两角点=填充；移动 拖拽=旋转
         //   右键：单击=命中面相邻格放置（仅单击）；拖拽=平移
-        //   中键：单击=编辑菜单（移动/笔刷模式一致）
+        //   中键：移动模式=编辑菜单（NBT/jigsaw/props）；笔刷/框选/占位=补货当前槽位（悬停方块+NBT）
         const canvas = $('edCanvas');
         let down = null, rdown = null, mdown = null;
         let painting = false, lastPaintKey = '';
-        const blockIdForTool = () => {
-            const inp = $('edBlock');
-            const blockId = (inp.value || '').trim() || 'minecraft:stone_bricks';
-            return tool === 'erase' ? 'minecraft:air' : (tool === 'placeholder' ? '#empty' : blockId);
+        // 在 (cx,cy) 落一笔：action 'replace'=命中格 / 'place'=相邻格
+        // 槽位带 NBT 时同步写入目标格 blockNbt（同块备份，撤销可还原）
+        const strokeAt = (cx, cy, action) => {
+            if (!pv) return;
+            const pick = pv.pickVoxel(cx, cy);
+            if (!pick) return;
+            const id = blockIdForTool();
+            pv.brushVoxel(pick, id, action).then(() => {
+                const s = currentSlot();
+                const piece = currentPiece();
+                if (s && s.nbt && piece && id !== 'minecraft:air' && id !== '#empty') {
+                    writeNbtToCells(piece, pv.brushTargetCells(pick, action), s.nbt);
+                }
+                updateInfo();
+            });
         };
-        // 在 (cx,cy) 落一笔：action 'replace'=命中格 / 'place'=相邻格；同格去重（笔触不重复写）
+        // 笔触去重：同一命中格+同动作不重复写
         const paintAt = (cx, cy, action) => {
-            if (!pv || tool === 'move') return;
+            if (!pv || tool === 'move' || tool === 'box') return;
             const pick = pv.pickVoxel(cx, cy);
             if (!pick) return;
             const key = pick.piece + '|' + pick.local.join(',') + '|' + action;
             if (key === lastPaintKey) return;
             lastPaintKey = key;
-            pv.brushVoxel(pick, blockIdForTool(), action).then(() => updateInfo());
+            strokeAt(cx, cy, action);
         };
+        // 框选：左键第一下=角点 A；第二下=角点 B → 填充 [min..max] 当前槽位方块
         canvas.addEventListener('pointerdown', (e) => {
             if (e.button === 0) {
                 down = { x: e.clientX, y: e.clientY };
+                lastMouse = { x: e.clientX, y: e.clientY };
+                if (tool === 'box') {
+                    if (!pv) return;
+                    const pick = pv.pickVoxel(e.clientX, e.clientY);
+                    if (!pick) return;
+                    if (!boxA) {
+                        boxA = pick.local.slice();
+                        pv.setSelectionBox(boxA, boxA);
+                    } else {
+                        const a = boxA;
+                        boxA = null;
+                        pv.setSelectionBox(null);
+                        doBoxFill(a, pick.local);
+                    }
+                    return;
+                }
                 if (tool !== 'move') { painting = true; lastPaintKey = ''; paintAt(e.clientX, e.clientY, 'replace'); }
             } else if (e.button === 1) {
                 mdown = { x: e.clientX, y: e.clientY };
@@ -424,7 +479,13 @@
             }
         });
         canvas.addEventListener('pointermove', (e) => {
+            lastMouse = { x: e.clientX, y: e.clientY };
             if (painting && (e.buttons & 1)) paintAt(e.clientX, e.clientY, 'replace'); // 笔触
+            // 框选角点 A 已定 → 悬停即预览填充范围
+            if (tool === 'box' && boxA && !(e.buttons & 1) && pv) {
+                const pick = pv.pickVoxel(e.clientX, e.clientY);
+                if (pick) pv.setSelectionBox(boxA, pick.local);
+            }
         });
         canvas.addEventListener('pointerup', (e) => {
             if (e.button === 0) { painting = false; down = null; }
@@ -434,7 +495,15 @@
                 mdown = null;
                 if (moved > 4 || !pv) return;
                 const pick = pv.pickVoxel(e.clientX, e.clientY);
-                showCtxMenu(e.clientX, e.clientY, pick);
+                if (tool === 'move') {
+                    showCtxMenu(e.clientX, e.clientY, pick); // P15：NBT 菜单保留在移动模式
+                } else {
+                    // P15：笔刷类模式中键 = 补货当前槽位（悬停方块 + NBT）
+                    if (!pick) { status('光标下没有方块可补货', false); return; }
+                    const piece = currentPiece();
+                    const entry = piece && (piece.blockNbt || []).find((b) => b.x === pick.local[0] && b.y === pick.local[1] && b.z === pick.local[2]);
+                    refillCurrentSlot(pick.blockId, entry ? entry.nbt : null);
+                }
             } else if (e.button === 2) {
                 if (!rdown) return;
                 const moved = Math.hypot(e.clientX - rdown.x, e.clientY - rdown.y);
@@ -443,7 +512,7 @@
                 const pick = pv.pickVoxel(e.clientX, e.clientY);
                 if (!pick) return;
                 lastPaintKey = '';
-                pv.brushVoxel(pick, blockIdForTool(), 'place').then(() => updateInfo());
+                strokeAt(e.clientX, e.clientY, 'place');
             }
         });
         canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // P12：菜单改中键，右键只放置
@@ -476,13 +545,50 @@
         window.addEventListener('keyup', (e) => { heldKeys.delete((e.key || '').toLowerCase()); });
         window.addEventListener('blur', () => { heldKeys.clear(); });
 
-        // 菜单外点击 / Esc 关闭
-        document.addEventListener('click', (e) => { if (!e.target.closest('#edCtx')) hideCtx(); });
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideCtx(); });
+        // ===== P15 快捷键 =====
+        // 1-9/滚轮=切槽 · +/-/PgUp/PgDn=切行 · Q=清槽 · E=当前槽导入搜索框 · Delete/Backspace=删悬停格
+        // Ctrl+Z=撤销 · Shift=移动↔笔刷（按住 Shift 拖拽=平移：按住期间有指针按下则不触发切换）
+        let shiftDown = false, shiftWithPointer = false;
+        canvas.addEventListener('pointerdown', () => { if (shiftDown) shiftWithPointer = true; });
+        window.addEventListener('keydown', (e) => {
+            if (isTyping(e)) return;
+            if (e.key === 'Shift' && !e.repeat) { shiftDown = true; shiftWithPointer = false; return; }
+            if (e.ctrlKey || e.metaKey) {
+                if ((e.key || '').toLowerCase() === 'z') { e.preventDefault(); undoAll(); } // P15：Ctrl+Z 撤销
+                return; // Ctrl+C/V 暂缓（业务逻辑未定）
+            }
+            if (e.altKey) return;
+            const k = e.key || '';
+            if (k === 'Delete' || k === 'Backspace') { deleteHovered(); e.preventDefault(); return; }
+            if (e.repeat) return;
+            const lk = k.toLowerCase();
+            if (lk >= '1' && lk <= '9') { selectSlot(slotRow, +lk - 1); return; }
+            if (k === '+' || k === '=') { changeRow(+1); e.preventDefault(); return; }
+            if (k === '-') { changeRow(-1); e.preventDefault(); return; }
+            if (k === 'PageUp') { changeRow(-1); e.preventDefault(); return; }
+            if (k === 'PageDown') { changeRow(+1); e.preventDefault(); return; }
+            if (lk === 'q') { clearCurrentSlot(); return; }
+            if (lk === 'e') { importSlotToSearch(); return; }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'Shift' && shiftDown) {
+                shiftDown = false;
+                if (!shiftWithPointer && !isTyping(e)) toggleMovePaint();
+            }
+        });
 
-        // 快捷方块按钮 + 搜索（选中要刷的方块 → 自动切到笔刷工具，直接可点写）
-        $('edBtnJigsaw').addEventListener('click', () => { $('edBlock').value = 'minecraft:jigsaw'; setTool('paint'); hideBlockList(); });
-        $('edBtnVoid').addEventListener('click', () => { $('edBlock').value = 'minecraft:structure_void'; setTool('paint'); hideBlockList(); });
+        // 菜单外点击 / Esc 关闭（Esc 同时取消框选角点 A）
+        document.addEventListener('click', (e) => { if (!e.target.closest('#edCtx')) hideCtx(); });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                hideCtx();
+                if (boxA) { boxA = null; if (pv) pv.setSelectionBox(null); }
+            }
+        });
+
+        // 快捷方块按钮 + 搜索（P15：选中方块 = refill 当前槽位 + 自动切到笔刷工具，直接可点写）
+        $('edBtnJigsaw').addEventListener('click', () => { $('edBlock').value = 'minecraft:jigsaw'; refillCurrentSlot('minecraft:jigsaw', null); setTool('paint'); hideBlockList(); });
+        $('edBtnVoid').addEventListener('click', () => { $('edBlock').value = 'minecraft:structure_void'; refillCurrentSlot('minecraft:structure_void', null); setTool('paint'); hideBlockList(); });
         const inp = $('edBlock');
         const listEl = $('edBlockList');
         // 搜索防抖：连续输入合并到一次重渲染（几百个方块过滤+重建成 80 行 DOM，逐键重渲染会卡）
@@ -496,7 +602,13 @@
         inp.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
                 const first = listEl.querySelector('.block-search-item');
-                if (first) { e.preventDefault(); inp.value = first.dataset.id; hideBlockList(); }
+                if (first) {
+                    e.preventDefault();
+                    inp.value = first.dataset.id;
+                    refillCurrentSlot(first.dataset.id, null); // P15：搜索选中 = refill 当前槽位
+                    setTool('paint');
+                    hideBlockList();
+                }
             } else if (e.key === 'Escape') { hideBlockList(); inp.blur(); }
         });
     }
@@ -528,10 +640,236 @@
             row.className = 'block-search-item';
             row.dataset.id = id;
             row.textContent = id;
-            row.addEventListener('mousedown', (e) => { e.preventDefault(); inp.value = id; setTool('paint'); hideBlockList(); });
+            row.addEventListener('mousedown', (e) => { e.preventDefault(); inp.value = id; refillCurrentSlot(id, null); setTool('paint'); hideBlockList(); });
             listEl.appendChild(row);
         }
         listEl.style.display = matches.length ? 'block' : 'none';
+    }
+
+    // ===== P15 方块槽位缓存栏（9×N，N 可配置；槽位 = {id: 'block[props]', nbt: tagged|null}）=====
+    // 填充路径：① 笔刷类模式中键=refill（悬停方块+NBT）② 搜索框/快捷按钮选中=refill
+    // ③ 右键菜单"用作笔刷"=refill（含 NBT）。取用：E=当前槽导入搜索框；左键/框选=当前槽方块
+    function initPalette() {
+        slots = Array.from({ length: slotRowsN }, () => Array(SLOTS_PER_ROW).fill(null));
+        const rowsInput = $('edSlotRows');
+        if (rowsInput) {
+            rowsInput.value = String(slotRowsN);
+            rowsInput.addEventListener('change', () => {
+                const n = Math.max(1, Math.min(6, parseInt(rowsInput.value, 10) || 1));
+                rowsInput.value = String(n);
+                slotRowsN = n;
+                while (slots.length < n) slots.push(Array(SLOTS_PER_ROW).fill(null));
+                if (slots.length > n) slots.length = n;
+                if (slotRow >= n) slotRow = n - 1;
+                renderPalette();
+            });
+        }
+        renderPalette();
+    }
+    function currentSlot() { return (slots[slotRow] && slots[slotRow][slotCol]) || null; }
+    function refillCurrentSlot(id, nbt) {
+        if (!slots.length) return;
+        slots[slotRow][slotCol] = id ? { id, nbt: nbt || null } : null;
+        renderPalette();
+        status('槽位 ' + (slotRow + 1) + '-' + (slotCol + 1) + (id ? ' ← ' + id : '（已清空）'), false);
+    }
+    function clearCurrentSlot() { refillCurrentSlot(null, null); }
+    function selectSlot(r, c) {
+        slotRow = Math.max(0, Math.min(slotRowsN - 1, r));
+        slotCol = Math.max(0, Math.min(SLOTS_PER_ROW - 1, c));
+        renderPalette();
+    }
+    function changeRow(d) { selectSlot(slotRow + d, slotCol); }
+    function importSlotToSearch() {
+        const s = currentSlot();
+        const inp = $('edBlock');
+        if (inp) inp.value = s ? s.id : '';
+        status(s ? '当前槽 → 搜索框: ' + s.id : '当前槽位为空', false);
+    }
+    function renderPalette() {
+        const el = $('edPalette');
+        if (!el) return;
+        el.innerHTML = '';
+        for (let r = 0; r < slots.length; r++) {
+            const rowEl = document.createElement('div');
+            rowEl.className = 'ed-palrow';
+            for (let c = 0; c < SLOTS_PER_ROW; c++) {
+                const s = slots[r][c];
+                const d = document.createElement('div');
+                d.className = 'ed-slot' + (r === slotRow && c === slotCol ? ' active' : '');
+                d.dataset.row = String(r);
+                d.dataset.col = String(c);
+                if (r === slotRow) {
+                    const idx = document.createElement('span');
+                    idx.className = 'ed-slot-idx';
+                    idx.textContent = String(c + 1);
+                    d.appendChild(idx);
+                }
+                if (s) {
+                    const cv = document.createElement('canvas');
+                    cv.width = 64; cv.height = 64;
+                    d.appendChild(cv);
+                    if (s.nbt) {
+                        const nb = document.createElement('span');
+                        nb.className = 'ed-slot-nbt';
+                        nb.textContent = '⚙';
+                        d.appendChild(nb);
+                    }
+                    d.title = s.id;
+                    ensureSlotIcon(cv, s.id);
+                } else {
+                    const em = document.createElement('span');
+                    em.className = 'ed-slot-empty';
+                    em.textContent = '·';
+                    d.appendChild(em);
+                }
+                d.addEventListener('click', () => selectSlot(r, c));
+                rowEl.appendChild(d);
+            }
+            el.appendChild(rowEl);
+        }
+    }
+    // 面贴图加载（mcBlockFaces：top/side/bottom dataURL → Image；按 blockId 缓存 + 去重）
+    const faceImgCache = new Map();
+    const faceImgPending = new Map();
+    function loadFaceImages(blockId) {
+        if (faceImgCache.has(blockId)) return faceImgCache.get(blockId);
+        if (faceImgPending.has(blockId)) return faceImgPending.get(blockId);
+        const p = (async () => {
+            const faces = { top: null, side: null };
+            try {
+                const res = await window.api.mcBlockFaces(blockId);
+                if (res && res.ok && res.data) {
+                    for (const k of ['top', 'side']) {
+                        const url = res.data[k];
+                        if (!url) continue;
+                        const img = new Image();
+                        img.src = url;
+                        await new Promise((done) => { img.onload = done; img.onerror = done; });
+                        if (img.naturalWidth) faces[k] = img;
+                    }
+                }
+            } catch {}
+            return faces;
+        })();
+        faceImgPending.set(blockId, p);
+        p.then((f) => { faceImgCache.set(blockId, f); faceImgPending.delete(blockId); });
+        return p;
+    }
+    async function ensureSlotIcon(cv, blockId) {
+        const faces = await loadFaceImages(blockId);
+        if (cv.isConnected) drawIsoIcon(cv, faces); // 重渲染后旧 canvas 已摘除 → 不画
+    }
+    // 槽位图标：真等距投影（三投影轴互成 120°，正六边形轮廓，隐藏背顶点与正面顶角 2D 重合于中心）。
+    // 原版物品栏视角：顶面朝上 · 正面（南 +Z）在右下 · 东面在左下；面亮度 顶1.0 南0.8 东0.6
+    function drawIsoIcon(canvas, faces) {
+        const size = 64;
+        const g = canvas.getContext('2d');
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.clearRect(0, 0, size, size);
+        g.imageSmoothingEnabled = false;
+        const s = 25; // 边长（六边形高 2s=50 < 64）
+        const cx = size / 2, cy = size / 2;
+        const C30 = Math.cos(Math.PI / 6);
+        // 投影轴（每单位）：+X 东=(-C30·s, 0.5s) · +Z 南=(C30·s, 0.5s) · +Y 上=(0,-s) —— 两两 120°
+        const X = { x: -C30 * s, y: s / 2 };
+        const Z = { x: C30 * s, y: s / 2 };
+        const Y = { x: 0, y: -s };
+        const P = (x, y, z) => ({ x: cx + x * X.x + y * Y.x + z * Z.x, y: cy + x * X.y + y * Y.y + z * Z.y });
+        // 面绘制：o=纹理(0,0)对应顶点；uv/vv=每单位 u/v 向量（16px 纹理）
+        const drawFace = (o, uv, vv, img, shade) => {
+            g.save();
+            if (shade !== 1) g.filter = 'brightness(' + shade + ')';
+            g.setTransform(uv.x / 16, uv.y / 16, vv.x / 16, vv.y / 16, o.x, o.y);
+            if (img && img.complete && img.naturalWidth) g.drawImage(img, 0, 0);
+            else g.fillRect(0, 0, 16, 16); // 无贴图：纯色面
+            g.restore();
+        };
+        const top = faces.top || faces.side;
+        const side = faces.side || faces.top;
+        // 顶面：原点 (0,1,0) 顶角；u=+X（西→东）v=+Z（北→南）
+        drawFace(P(0, 1, 0), X, Z, top, 1.0);
+        // 南面（正面，右下）：原点 (0,1,1) 右上角；u=+X v=下；无贴图时用深色
+        g.save(); g.filter = 'brightness(0.8)';
+        if (!side) g.fillStyle = '#3b3b4f';
+        drawFace(P(0, 1, 1), X, { x: 0, y: s }, side, 0.8);
+        g.restore();
+        // 东面（左下）：原点 (1,1,1) 中心；u=-Z（南→北，外侧观看纹理不镜像）v=下
+        g.save(); g.filter = 'brightness(0.6)';
+        if (!side) g.fillStyle = '#31313f';
+        drawFace(P(1, 1, 1), { x: -Z.x, y: -Z.y }, { x: 0, y: s }, side, 0.6);
+        g.restore();
+    }
+
+    // ===== P15 快捷键动作 =====
+    /** 撤销（↩ 按钮 + Ctrl+Z）：jigsaw 字段 / blockNbt / 体素编辑 全部还原到快照 */
+    function undoAll() {
+        if (!pv || !state) return;
+        for (const [name, orig] of jigsawBackup) {
+            const i = (state.blueprint.pieces || []).findIndex((p) => p.name === name);
+            if (i >= 0) state.blueprint.pieces[i].jigsaws = JSON.parse(JSON.stringify(orig));
+        }
+        jigsawEdited.clear();
+        jigsawBackup.clear();
+        for (const [name, orig] of blockNbtBackup) {
+            const i = (state.blueprint.pieces || []).findIndex((p) => p.name === name);
+            if (i >= 0) {
+                if (orig.length) state.blueprint.pieces[i].blockNbt = JSON.parse(JSON.stringify(orig));
+                else delete state.blueprint.pieces[i].blockNbt;
+            }
+        }
+        blockNbtEdited.clear();
+        blockNbtBackup.clear();
+        pv.clearEdits().then(() => { updateInfo(); status(t('structure.3d.edit.undoDone'), false); });
+    }
+    /** Delete：删悬停格（左键会命中的那格 → air） */
+    function deleteHovered() {
+        if (!pv || !lastMouse) { status('光标移到方块上再按 Delete', false); return; }
+        const pick = pv.pickVoxel(lastMouse.x, lastMouse.y);
+        if (!pick) { status('光标下没有方块', false); return; }
+        pv.brushVoxel(pick, 'minecraft:air', 'replace').then(() => updateInfo());
+    }
+    function toggleMovePaint() { setTool(tool === 'move' ? 'paint' : 'move'); }
+    /** 框选填充：[a..b] 闭区间 → 当前槽位方块（带 NBT 时逐格写入） */
+    function doBoxFill(a, b) {
+        const piece = currentPiece();
+        if (!piece || !pv || !a || !b) return;
+        const id = blockIdForTool();
+        const min = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.min(a[2], b[2])];
+        const max = [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.max(a[2], b[2])];
+        pv.fillBox(piece.name, min, max, id).then(() => {
+            const s = currentSlot();
+            if (s && s.nbt && id !== 'minecraft:air' && id !== '#empty') {
+                const cells = [];
+                for (let x = min[0]; x <= max[0]; x++)
+                    for (let y = min[1]; y <= max[1]; y++)
+                        for (let z = min[2]; z <= max[2]; z++) cells.push([x, y, z]);
+                writeNbtToCells(piece, cells, s.nbt);
+            }
+            updateInfo();
+            status('框选填充 ' + (max[0] - min[0] + 1) + '×' + (max[1] - min[1] + 1) + '×' + (max[2] - min[2] + 1) + ' — ' + id);
+        });
+    }
+    /** 把 NBT 批量写入格（首改前备份整片 blockNbt → 撤销可还原） */
+    function writeNbtToCells(piece, cells, nbt) {
+        if (!piece || !cells || !cells.length || !nbt) return;
+        if (!blockNbtBackup.has(piece.name)) blockNbtBackup.set(piece.name, JSON.parse(JSON.stringify(piece.blockNbt || [])));
+        if (!Array.isArray(piece.blockNbt)) piece.blockNbt = [];
+        for (const [x, y, z] of cells) {
+            const entry = { x, y, z, nbt: JSON.parse(JSON.stringify(nbt)) };
+            const i = piece.blockNbt.findIndex((b) => b.x === x && b.y === y && b.z === z);
+            if (i >= 0) piece.blockNbt[i] = entry; else piece.blockNbt.push(entry);
+        }
+        blockNbtEdited.add(piece.name);
+        pushDirty();
+    }
+    /** 笔刷方块 = 当前槽位；槽位空 → 回退搜索框值；占位工具恒 '#empty' */
+    function blockIdForTool() {
+        if (tool === 'placeholder') return '#empty';
+        const s = currentSlot();
+        if (s && s.id) return s.id;
+        const inp = $('edBlock');
+        return (inp.value || '').trim() || 'minecraft:stone_bricks';
     }
 
     // ===== 右键组件/NBT 查询 =====
@@ -739,7 +1077,15 @@
                 });
             }).catch(() => {});
         }
-        $('edCtxUse').addEventListener('click', () => { $('edBlock').value = pick.blockId; setTool('paint'); hideCtx(); });
+        $('edCtxUse').addEventListener('click', () => {
+            // P15：用作笔刷 = 当前槽位（连带该格 NBT，若有）
+            $('edBlock').value = pick.blockId;
+            const piece = currentPiece();
+            const entry = piece && (piece.blockNbt || []).find((b) => b.x === x && b.y === y && b.z === z);
+            refillCurrentSlot(pick.blockId, entry ? entry.nbt : null);
+            setTool('paint');
+            hideCtx();
+        });
         $('edCtxCopy').addEventListener('click', () => {
             if (navigator.clipboard) navigator.clipboard.writeText(pick.blockId).catch(() => {});
             hideCtx();

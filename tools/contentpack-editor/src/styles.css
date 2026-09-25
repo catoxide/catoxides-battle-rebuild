@@ -475,3 +475,29 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
   border-radius: 6px; cursor: pointer; white-space: nowrap;
 }
 .block-search-item:hover { background: var(--bg); color: var(--acc); }
+/* ==================== P15 方块槽位缓存栏（9×N，等距投影图标，原版物品栏视角：正面在右下） ==================== */
+.ed-palette {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+  display: flex; flex-direction: column-reverse; gap: 3px; z-index: 8;
+  background: rgba(30,30,46,.78); border: 1px solid #45475a; border-radius: 8px;
+  padding: 5px; pointer-events: auto; user-select: none;
+}
+.ed-palrow { display: flex; gap: 3px; }
+.ed-slot {
+  position: relative; width: 38px; height: 38px; border-radius: 4px;
+  background: rgba(17,17,27,.82); border: 1px solid #45475a;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; overflow: hidden;
+}
+.ed-slot:hover { border-color: #89b4fa; }
+.ed-slot.active { border: 2px solid var(--accent, #89b4fa); background: rgba(80,140,255,.18); }
+.ed-slot canvas, .ed-slot img { width: 34px; height: 34px; image-rendering: pixelated; pointer-events: none; }
+.ed-slot .ed-slot-idx {
+  position: absolute; left: 2px; top: 1px; font-size: 9px; color: #a6adc8;
+  font-family: ui-monospace, Consolas, monospace; pointer-events: none;
+}
+.ed-slot .ed-slot-nbt {
+  position: absolute; right: 2px; bottom: 1px; font-size: 9px; color: #f9e2af;
+  pointer-events: none; text-shadow: 0 1px 2px #000;
+}
+.ed-slot .ed-slot-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #585b70; font-size: 14px; pointer-events: none; }

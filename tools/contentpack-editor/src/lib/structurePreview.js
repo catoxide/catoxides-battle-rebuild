@@ -127,6 +127,7 @@ export function createStructurePreview(canvas, hooks = {}) {
             orbit.target.z + orbit.radius * sp * Math.cos(orbit.theta)
         );
         camera.lookAt(orbit.target);
+        updateViewCube(); // 轨道变化 → 立方体逆旋转同步（θ/φ 解析，无 Quaternion 依赖）
     }
 
     let renderer = canvas._structRenderer;
@@ -142,6 +143,7 @@ export function createStructurePreview(canvas, hooks = {}) {
             camera.aspect = w / h;
             camera.updateProjectionMatrix();
         }
+        updateViewCube(); // 视图立方体右上角位置随画布尺寸/aspect 重算（幂等，开销极小）
     }
 
     // ===== 场景构建（方块级体素 + 真实贴图） =====
@@ -839,6 +841,45 @@ export function createStructurePreview(canvas, hooks = {}) {
         if (hooks.onChange) hooks.onChange(); // P14：未写回修改（dirty）通知
         return rebuild();
     }
+    /** P15 框选填充：[min..max] 闭区间批量写格（一次重建，避免逐格 rebuild） */
+    function fillBox(pieceName, min, max, blockId) {
+        const map = ensureEditMap(pieceName);
+        const pl = lastPlacements.find((p) => p.name === pieceName);
+        const [w, h, d] = (pl && pl.piece && pl.piece.size) || [1, 1, 1];
+        let n = 0;
+        for (let x = Math.max(0, min[0]); x <= Math.min(w - 1, max[0]); x++)
+            for (let y = Math.max(0, min[1]); y <= Math.min(h - 1, max[1]); y++)
+                for (let z = Math.max(0, min[2]); z <= Math.min(d - 1, max[2]); z++) {
+                    const key = x + ',' + y + ',' + z;
+                    if (!blockId || blockId === 'minecraft:air' || blockId === 'air') map.delete(key);
+                    else map.set(key, blockId);
+                    n++;
+                }
+        if (hooks.onChange) hooks.onChange();
+        trace('fillBox ' + pieceName + ' [' + min.join(',') + ']..[' + max.join(',') + '] = ' + n + ' 格');
+        return rebuild();
+    }
+    // P15 框选角点预览盒（世界坐标；单片编辑模式 off/rot 取当前 placement）
+    let gSelBox = null;
+    const selBoxMat = new THREE.LineBasicMaterial({ color: 0xf9e2af, transparent: true, opacity: 0.95 });
+    function setSelectionBox(a, b) {
+        if (!a || !b) { if (gSelBox) gSelBox.visible = false; if (!running) renderOnce(); return; }
+        if (!gSelBox) {
+            gSelBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), selBoxMat);
+            scene.add(gSelBox);
+        }
+        const pl = lastPlacements[0] || { off: [0, 0, 0] };
+        const min = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.min(a[2], b[2])];
+        const max = [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.max(a[2], b[2])];
+        gSelBox.scale.set(max[0] - min[0] + 1.02, max[1] - min[1] + 1.02, max[2] - min[2] + 1.02);
+        gSelBox.position.set(
+            pl.off[0] + (min[0] + max[0]) / 2 + 0.5,
+            pl.off[1] + (min[1] + max[1]) / 2 + 0.5,
+            pl.off[2] + (min[2] + max[2]) / 2 + 0.5
+        );
+        gSelBox.visible = true;
+        if (!running) renderOnce();
+    }
 
     /**
      * P12 笔刷落点（一次一格）：
@@ -1096,31 +1137,20 @@ export function createStructurePreview(canvas, hooks = {}) {
     if (wrap) { wrap.style.position = 'relative'; wrap.appendChild(hud); }
 
     // P14 方向罗盘 → 3D 视图立方体（MC 约定：北=-Z 南=+Z 西=-X 东=+X 上=+Y 下=-Y）。
-    // 小场景独立渲染：立方体四元数 = 主相机四元数 → 跟着视角转，朝向面即相机所在侧
-    //（默认 3/4 视角：看到 上/南/东 三面）。
-    let compass = null, compassDial = null, cubeRenderer = null, cubeScene = null, cubeCam = null, cubeMesh = null, cubeTexs = [];
-    if (wrap) {
-        compass = document.createElement('div');
-        compass.className = 'struct-compass';
-        compass.style.cssText = 'position:absolute;top:10px;right:10px;width:66px;height:66px;'
-            + 'background:rgba(30,30,46,.72);border:1px solid #45475a;border-radius:10px;'
-            + 'pointer-events:none;display:none;z-index:6;';
-        // 兼容 E2E 的隐形 dial（rotate 值仍按 θ 设置）
-        compassDial = document.createElement('div');
-        compassDial.style.cssText = 'position:absolute;inset:0;opacity:0;';
-        const cubeCanvas = document.createElement('canvas');
-        const dpr = (window.devicePixelRatio || 1) >= 2 ? 2 : 1;
-        cubeCanvas.width = 66 * dpr; cubeCanvas.height = 66 * dpr;
-        cubeCanvas.style.cssText = 'position:absolute;inset:0;width:66px;height:66px;';
-        compass.appendChild(cubeCanvas);
-        compass.appendChild(compassDial);
-        wrap.appendChild(compass);
-        // 立方体面贴图：128×128 画布字（BoxGeometry 组序 +X,-X,+Y,-Y,+Z,-Z）
+    // 直接用主场景坐标系：cubeMesh 是主相机的子节点（零重复业务逻辑，不存在"小场景与主场景
+    // 坐标系不一致"的可能），渲染在画布右上角，depthTest 关闭永远置顶。
+    // P15 修正：子节点若局部旋转=单位矩阵会被锁死在相机系（转视角时永远不转）→ 局部矩阵写入
+    // R_cam^T（相机世界旋转的逆，由轨道 θ/φ 解析推出，绕开 three Quaternion 依赖），立方体恒
+    // 与世界轴对齐：东/西/南/北/上/下面永远指向世界对应方向。
+    let cubeMesh = null;
+    const cubeTexs = [];
+    {
+        // 面贴图：128×128 画布字（BoxGeometry 材质组序 +X,-X,+Y,-Y,+Z,-Z）
         const faceLabel = (ch, color) => {
             const c = document.createElement('canvas');
             c.width = 128; c.height = 128;
             const g = c.getContext('2d');
-            g.fillStyle = 'rgba(46,46,66,0.92)';
+            g.fillStyle = 'rgba(46,46,66,0.88)';
             g.fillRect(0, 0, 128, 128);
             g.strokeStyle = '#585b70'; g.lineWidth = 6;
             g.strokeRect(3, 3, 122, 122);
@@ -1135,32 +1165,58 @@ export function createStructurePreview(canvas, hooks = {}) {
             return t;
         };
         const mats = [
-            new THREE.MeshBasicMaterial({ map: faceLabel('东', '#cdd6f4') }), // +X
-            new THREE.MeshBasicMaterial({ map: faceLabel('西', '#cdd6f4') }), // -X
-            new THREE.MeshBasicMaterial({ map: faceLabel('上', '#89b4fa') }), // +Y
-            new THREE.MeshBasicMaterial({ map: faceLabel('下', '#7f849c') }), // -Y
-            new THREE.MeshBasicMaterial({ map: faceLabel('南', '#cdd6f4') }), // +Z
-            new THREE.MeshBasicMaterial({ map: faceLabel('北', '#f38ba8') }), // -Z
+            new THREE.MeshBasicMaterial({ map: faceLabel('东', '#cdd6f4'), depthTest: false }), // +X
+            new THREE.MeshBasicMaterial({ map: faceLabel('西', '#cdd6f4'), depthTest: false }), // -X
+            new THREE.MeshBasicMaterial({ map: faceLabel('上', '#89b4fa'), depthTest: false }), // +Y
+            new THREE.MeshBasicMaterial({ map: faceLabel('下', '#7f849c'), depthTest: false }), // -Y
+            new THREE.MeshBasicMaterial({ map: faceLabel('南', '#cdd6f4'), depthTest: false }), // +Z
+            new THREE.MeshBasicMaterial({ map: faceLabel('北', '#f38ba8'), depthTest: false }), // -Z
         ];
-        cubeScene = new THREE.Scene();
-        cubeMesh = new THREE.Mesh(new THREE.BoxGeometry(1.35, 1.35, 1.35), mats);
-        cubeScene.add(cubeMesh);
-        cubeCam = new THREE.OrthographicCamera(-1.1, 1.1, 1.1, -1.1, 0.1, 10);
-        cubeCam.position.set(0, 0, 3);
-        cubeCam.lookAt(0, 0, 0);
-        cubeRenderer = new THREE.WebGLRenderer({ canvas: cubeCanvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
-        cubeRenderer.setPixelRatio(dpr);
-        cubeRenderer.setSize(66, 66, false);
+        cubeMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mats);
+        cubeMesh.renderOrder = 999;
+        cubeMesh.frustumCulled = false;
+        cubeMesh.matrixAutoUpdate = false; // 局部矩阵由 updateViewCube() 整体写入（位置+缩放+逆旋转）
+        scene.add(camera);        // 相机进场景图（其子节点才会被渲染）
+        camera.add(cubeMesh);     // 子节点 + 逆旋转 → 恒与世界轴对齐（见 updateViewCube）
+        updateViewCube();
     }
-    function updateCompass() {
-        if (!compass || !compassDial) return;
-        compass.style.display = 'block';
-        const rotDeg = (orbit.theta * 180 / Math.PI).toFixed(2);
-        compassDial.style.transform = 'rotate(' + rotDeg + 'deg)'; // E2E 兼容字段
-        if (cubeRenderer && cubeMesh && cubeScene && cubeCam) {
-            cubeMesh.quaternion.copy(camera.quaternion); // 立方体与主视角同步
-            cubeRenderer.render(cubeScene, cubeCam);
-        }
+    /**
+     * 视图立方体更新（P15）：画布右上角位置 + 逆旋转。
+     * 立方体是相机的子节点：局部旋转=单位矩阵 → 锁死在相机系，转视角时永远不转（用户实测"完全不转"）。
+     * 局部矩阵需 = 相机世界旋转的逆。R_cam 由轨道 θ/φ 解析推出（lookAt 约定，up=+Y，无 Quaternion 依赖），
+     * 行 = 相机世界轴（已用 projectToScreen 实测反推校验，默认轨道下 E/S/U 屏幕方向逐位吻合）：
+     *   R_cam = [ x_cam = ( cosθ, 0, -sinθ) ]
+     *           [ y_cam = (-cosφsinθ, sinφ, -cosφcosθ) ]
+     *           [ z_cam = ( sinφsinθ, cosφ, sinφcosθ) ]
+     * 局部旋转 R_local = R_cam^T（行主序）=
+     *   [ ct,       -cph·st,  sp·st  ]
+     *   [ 0,         sp,       cph   ]
+     *   [ -st,      -cph·ct,  sp·ct  ]
+     * 列主序 elements[4i+j] = R_local[j][i]，即第 i 列 = 第 i 个相机世界轴（x_cam/y_cam/z_cam）：
+     *   列0 = ( ct, 0, -st )  列1 = ( -cph·st, sp, -cph·ct )  列2 = ( sp·st, cph, sp·ct )
+     * 合成后 matrixWorld 旋转部分 = R_cam·R_local = I → 立方体恒与世界轴对齐（东/西/南/北/上/下永远指向世界对应方向）。
+     * 调用时机：applyCamera()（轨道变化）、sizeCanvas()（像素/aspect 变化）。
+     */
+    function updateViewCube() {
+        if (!cubeMesh) return;
+        const h = canvas.clientHeight || H0;
+        const d = 3;                                  // 相机前方距离
+        const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * d;
+        const halfW = halfH * camera.aspect;
+        const px2world = (2 * halfH) / h;             // 画布高 = 2*halfH 世界单位
+        const s = 58 * px2world, margin = 10 * px2world;
+        const px = halfW - margin - s / 2, py = halfH - margin - s / 2;
+        const st = Math.sin(orbit.theta), ct = Math.cos(orbit.theta);
+        const sp = Math.sin(orbit.phi), cph = Math.cos(orbit.phi);
+        // 4×4（行主序）：M[0..2][0..2] = R_local·s = R_cam^T·s，第 3 行 = (px, py, -d, 1)
+        // Matrix4.elements 列主序：elements[4i+j] = M[j][i] → 第 i 列 = 第 i 个相机世界轴
+        // 列0 = x_cam = ( ct, 0, -st )；列1 = y_cam = ( -cph·st, sp, -cph·ct )；列2 = z_cam = ( sp·st, cph, sp·ct )
+        const e = cubeMesh.matrix.elements;
+        e[0] = ct * s;        e[1] = 0;              e[2] = -st * s;
+        e[4] = -cph * st * s; e[5] = sp * s;         e[6] = -cph * ct * s;
+        e[8] = sp * st * s;   e[9] = cph * s;        e[10] = sp * ct * s;
+        e[12] = px;           e[13] = py;            e[14] = -d;           e[15] = 1;
+        cubeMesh.matrixWorldNeedsUpdate = true;
     }
     function updateHud() {
         if (!hud) return;
@@ -1249,8 +1305,16 @@ export function createStructurePreview(canvas, hooks = {}) {
         if (activePointer === '__mouse__') endDrag(e);
     }, true);
 
+    // P15 滚轮模式：'zoom'（主窗口默认）= 滚轮缩放；'slots'（片段编辑器）= 普通滚轮回调
+    // hooks.onWheelSlot(delta)（切槽），仅 Ctrl+滚轮 保留缩放
+    let wheelMode = 'zoom';
+    function setWheelMode(m) { wheelMode = m === 'slots' ? 'slots' : 'zoom'; }
     canvas.addEventListener('wheel', (e) => {
         e.preventDefault();
+        if (wheelMode === 'slots' && !e.ctrlKey) {
+            if (hooks.onWheelSlot) hooks.onWheelSlot(e.deltaY > 0 ? 1 : -1);
+            return;
+        }
         const f = e.deltaY > 0 ? 1.1 : 0.9;
         orbit.radius = Math.max(2, Math.min(2000, orbit.radius * f));
         checkSliceFlip();
@@ -1281,8 +1345,7 @@ export function createStructurePreview(canvas, hooks = {}) {
     function renderOnce() {
         sizeCanvas();
         applyCamera();
-        updateCompass();
-        renderer.render(scene, camera);
+        renderer.render(scene, camera); // 视图立方体 = 相机子节点，随主场景一次渲染（无独立更新路径）
         lastFrameTime = performance.now();
     }
     let lastManualRender = 0;
@@ -1298,7 +1361,6 @@ export function createStructurePreview(canvas, hooks = {}) {
         if (!running) return;
         if (autoRotate) orbit.theta += 0.0035;
         applyCamera();
-        updateCompass();
         checkSliceFlip(); // P9：自动旋转等移动相机时，越过分界面自动翻转剖切
         sizeCanvas();
         renderer.render(scene, camera);
@@ -1330,7 +1392,6 @@ export function createStructurePreview(canvas, hooks = {}) {
     function stop() {
         running = false;
         if (hud) hud.style.display = 'none';
-        if (compass) compass.style.display = 'none';
     }
     // P11：连续渲染循环开关。false = 按需渲染（仅交互/编辑时渲染，不占主线程，
     // 适合编辑器窗口：搜索输入框/右键菜单不再与 60fps WebGL 渲染抢帧）。
@@ -1368,10 +1429,15 @@ export function createStructurePreview(canvas, hooks = {}) {
         specCache.clear();
         specPending.clear();
         editMaps.clear();
+        if (gSelBox) { gSelBox.geometry.dispose(); selBoxMat.dispose(); gSelBox = null; } // P15 框选预览盒
         for (const t of cubeTexs) t.dispose(); // P14 视图立方体面贴图
-        cubeTexs = [];
-        if (cubeMesh) { cubeMesh.geometry.dispose(); }
-        if (cubeRenderer) { cubeRenderer.dispose(); cubeRenderer = null; }
+        cubeTexs.length = 0;
+        if (cubeMesh) {
+            cubeMesh.parent && cubeMesh.parent.remove(cubeMesh);
+            cubeMesh.geometry.dispose();
+            cubeMesh.material.forEach((m) => m.dispose());
+            cubeMesh = null;
+        }
         unitBox.dispose();
         if (renderer && renderer.forceContextLoss) renderer.forceContextLoss();
         canvas._structRenderer = null;
@@ -1405,7 +1471,8 @@ export function createStructurePreview(canvas, hooks = {}) {
             loadedTextures: loadedTex,
             specBlocks, // P14：走外观链路（真实模型几何）的 blockId 数
             specVoxels,
-            compass: compass ? { display: compass.style.display, rotate: compassDial ? compassDial.style.transform : null } : null,
+            // 立方体 = 相机子节点且自身零旋转 → 朝向由 orbit 唯一决定（绕开本地 three 精简版的 Quaternion 依赖）
+            compass: cubeMesh ? { cube: true, theta: +orbit.theta.toFixed(4), phi: +orbit.phi.toFixed(4) } : null,
             renderCalls: renderer ? renderer.info.render.calls : 0,
             triangles: renderer ? renderer.info.render.triangles : 0,
             editedPieces: [...editMaps.keys()],
@@ -1435,6 +1502,8 @@ export function createStructurePreview(canvas, hooks = {}) {
 
     /** 2026-09-24：世界坐标 → 画布 client 坐标（E2E 精确瞄准 / 未来 UI 用） */
     function projectToScreen(x, y, z) {
+        // 注意：投影前必须先更新相机矩阵（按需渲染模式下相机可能已移动但未 render）
+        scene.updateMatrixWorld(true);
         const v = new THREE.Vector3(x, y, z).project(camera);
         const rect = canvas.getBoundingClientRect();
         return { x: rect.left + (v.x * 0.5 + 0.5) * rect.width, y: rect.top + (-v.y * 0.5 + 0.5) * rect.height };
@@ -1458,12 +1527,15 @@ export function createStructurePreview(canvas, hooks = {}) {
         setHoverEnabled, // P12 悬停高亮开关
         setHoverColor, // P12 悬停右键落点颜色（随工具）
         panBy, // P12 WASD 平移（相机相对地面平移，角度不变）
+        setWheelMode, // P15 'zoom'|'slots'（编辑器：普通滚轮切槽，Ctrl+滚轮缩放）
         start,
         stop,
         dispose,
         // 体素编辑（P3/P12）
         pickVoxel,
         setVoxel,
+        fillBox, // P15 框选批量填充
+        setSelectionBox, // P15 框选角点预览盒（null 隐藏）
         brushVoxel, // P12: (pick, blockId, 'replace'|'place')
         brushTargetCells,
         brushPlaceCell, // 'place' 目标（不检查边界；悬停红标用）

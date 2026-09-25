@@ -836,6 +836,14 @@ ipcMain.handle('core:mcBlockFaces', (event, blockId) => {
     return { ok: true, data: Object.keys(faces).length ? faces : null };
 });
 
+// P15 槽位缓存栏图标：原版物品栏逻辑（物品纹理优先，方块面贴图回退）
+ipcMain.handle('core:mcBlockIcon', (event, blockId) => {
+    const root = McAssets.resolveRoot(ROOT);
+    if (!root) return { ok: true, data: null };
+    const r = McAssets.blockIcon(root, blockId);
+    return { ok: true, data: r.icon ? r : null };
+});
+
 // P11 右键查方块：读 blockstate 定义（属性/朝向/变体数）
 // P13 通用链路：vanilla 数据集 → 内容包 → 资源包/数据包 → mod jar
 ipcMain.handle('core:blockState', (event, blockId, opts) => {

@@ -194,6 +194,45 @@ function blockFaces(root, blockId) {
     return res === MISSING ? {} : res;
 }
 
+/**
+ * P15 方块图标（编辑器槽位缓存栏，原版物品栏那套逻辑）：
+ * ① 优先物品纹理 <root>/assets/<ns>/items/<name>.png（vanilla 物品栏图标；同 blockFaces 的 root 约定）
+ * ② 回退方块面贴图（side > top > bottom）
+ * @returns {{icon: string|null, from: 'item'|'face'|null}}
+ */
+const iconCache = new Map();
+function blockIcon(assetRoot, blockId, opts = {}) {
+    let id = blockId;
+    const br = id ? id.indexOf('[') : -1;
+    if (br > 0) id = id.slice(0, br);
+    if (id && !id.includes(':')) id = 'minecraft:' + id;
+    if (!id) return { icon: null, from: null };
+    if (iconCache.has(id)) return iconCache.get(id);
+    const colon = id.indexOf(':');
+    const ns = id.slice(0, colon), name = id.slice(colon + 1);
+    const res = { icon: null, from: null };
+    // ① 物品纹理：vanilla 资源根 → 正在编辑的内容包（若提供）
+    const itemCands = [path.join(assetRoot, 'assets', ns, 'items', name + '.png')];
+    if (opts && opts.packDir) itemCands.push(path.join(opts.packDir, 'assets', ns, 'items', name + '.png'));
+    for (const p of itemCands) {
+        try {
+            if (fs.existsSync(p)) {
+                res.icon = 'data:image/png;base64,' + fs.readFileSync(p).toString('base64');
+                res.from = 'item';
+                break;
+            }
+        } catch {}
+    }
+    // ② 面贴图回退
+    if (!res.icon) {
+        const faces = blockFaces(assetRoot, id);
+        const u = faces.side || faces.top || faces.bottom || null;
+        if (u) { res.icon = u; res.from = 'face'; }
+    }
+    iconCache.set(id, res);
+    return res;
+}
+
 /** 全部方块 ID 列表（blockstates 文件名 → minecraft:<name>） */
 const listCache = { root: null, list: null };
 function blockList(root) {
@@ -789,6 +828,7 @@ module.exports = {
     setRootOverride,
     isReady,
     blockFaces,
+    blockIcon, // P15 槽位缓存栏图标（物品纹理优先，面贴图回退）
     blockList,
     blockState,
     parseBlockstateJson,

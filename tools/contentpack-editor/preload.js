@@ -37,6 +37,7 @@ const api = {
     // 游戏资源（vanilla 方块贴图）
     mcAssets: () => ipcRenderer.invoke('core:mcAssets'),
     mcBlockFaces: (blockId) => ipcRenderer.invoke('core:mcBlockFaces', blockId),
+    mcBlockIcon: (blockId) => ipcRenderer.invoke('core:mcBlockIcon', blockId), // P15 槽位图标
     importRegion: () => ipcRenderer.invoke('core:importRegion'),
     mcBlockList: (opts) => ipcRenderer.invoke('core:mcBlockList', opts),
     blockState: (blockId, opts) => ipcRenderer.invoke('core:blockState', blockId, opts),

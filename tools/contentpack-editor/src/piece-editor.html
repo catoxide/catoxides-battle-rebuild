@@ -7,6 +7,7 @@
 </head>
 <body class="ed-body">
   <!-- P11 片段 3D 编辑器：独立窗口（Photoshop/Blender 式：顶栏 + 左侧工具栏 + 画布 + 状态栏） -->
+  <!-- P15：底部 9×N 方块槽位缓存栏（等距投影图标）+ 快捷键 + 框选工具 + 按工具提示 -->
   <header class="ed-topbar">
     <span class="ed-logo">🧱 <span data-i18n="structure.piece3d.winTitle">片段 3D 编辑</span></span>
     <select id="edPiece" title=""></select>
@@ -28,8 +29,12 @@
         <div class="ed-group-title" data-i18n="structure.piece3d.tools">工具</div>
         <button class="ed-tool active" data-tool="move" data-i18n-title="structure.piece3d.toolMoveTip">✥<span data-i18n="structure.piece3d.toolMove">移动</span></button>
         <button class="ed-tool" data-tool="paint" data-i18n-title="structure.3d.edit.toolPaint">🖌<span data-i18n="structure.piece3d.toolPaint">笔刷</span></button>
-        <button class="ed-tool" data-tool="erase" data-i18n-title="structure.3d.edit.toolErase">⌫<span data-i18n="structure.piece3d.toolErase">擦除</span></button>
+        <button class="ed-tool" data-tool="box" data-i18n-title="structure.piece3d.toolBoxTip">▭<span data-i18n="structure.piece3d.toolBox">框选</span></button>
         <button class="ed-tool" data-tool="placeholder" data-i18n-title="structure.3d.edit.toolPlaceholder">▣<span data-i18n="structure.piece3d.toolPlaceholder">占位</span></button>
+      </div>
+      <div class="ed-toolgroup">
+        <div class="ed-group-title" data-i18n-title="structure.piece3d.slotRowsTip"><span data-i18n="structure.piece3d.slotRows">槽位行数</span></div>
+        <input id="edSlotRows" type="number" min="1" max="6" value="3" style="width:52px" data-i18n-title="structure.piece3d.slotRowsTip">
       </div>
       <div class="ed-toolgroup">
         <div class="ed-group-title" data-i18n-title="structure.3d.edit.sliceTip"><span data-i18n="structure.3d.edit.slice">剖切</span></div>
@@ -47,18 +52,19 @@
         <button class="ed-tool" id="edResetView" data-i18n-title="structure.3d.reset">⌂<span data-i18n="structure.3d.reset">重置视角</span></button>
       </div>
       <div class="ed-toolgroup ed-toolgroup-tip">
-        <div class="note" data-i18n="structure.piece3d.rightTip">中键方块 = 编辑组件/NBT（jigsaw 朝向等）· 右键单击 = 相邻格放置</div>
+        <div class="note" data-i18n="structure.piece3d.rightTip">右键单击 = 相邻格放置 · 中键 = NBT 菜单（移动）/ 补货槽位（笔刷）· Shift = 移动/笔刷切换</div>
       </div>
     </aside>
     <div class="ed-canvaswrap" id="edCanvasWrap">
       <canvas id="edCanvas" width="900" height="600"></canvas>
       <div id="edCtx" class="ed-ctx" style="display:none"></div>
+      <div id="edPalette" class="ed-palette"></div>
     </div>
   </div>
   <footer class="ed-statusbar">
     <span class="note" id="edStatus"></span>
     <span class="note ed-spacer"></span>
-    <span class="note" data-i18n="structure.piece3d.footerHint">移动：左键拖拽=旋转 · 右键/Shift拖拽=平移 · WASD=平移 · 滚轮=缩放 ｜ 笔刷：左键=替换命中格(拖拽=笔触) · 右键单击=相邻格放置 · 中键=编辑菜单</span>
+    <span class="note" id="edHint"></span>
   </footer>
   <script src="i18n.js"></script>
   <script src="core/voxel.js"></script>

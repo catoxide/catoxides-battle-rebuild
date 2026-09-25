@@ -338,5 +338,38 @@ console.log('=== 7. blockAppearance 外观烘焙（vanilla 标准链路，对照
     }
 }
 
+console.log('=== 7. blockIcon：槽位缓存栏图标（物品纹理优先 → 面贴图回退）===');
+{
+    const root = mkRoot();
+    const png1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+    const png2 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+    // ① 只有面贴图（无物品纹理）→ from=face
+    fs.mkdirSync(path.join(root, 'assets', 'minecraft', 'models', 'block'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'assets', 'minecraft', 'textures', 'block'), { recursive: true });
+    writeBs(root, 'minecraft', 'face_only', { variants: { model: 'minecraft:block/face_only' } });
+    fs.writeFileSync(path.join(root, 'assets', 'minecraft', 'models', 'block', 'face_only.json'),
+        JSON.stringify({ parent: 'minecraft:block/cube_all', textures: { all: 'minecraft:block/face_only_tex' } }));
+    fs.writeFileSync(path.join(root, 'assets', 'minecraft', 'textures', 'block', 'face_only_tex.png'), png1);
+    const fi = M.blockIcon(root, 'minecraft:face_only');
+    ok('无物品纹理 → 面贴图回退（from=face）', fi && fi.from === 'face' && fi.icon && fi.icon.startsWith('data:image/png;base64,'), JSON.stringify({ from: fi.from, hasIcon: !!fi.icon }));
+    ok('[props] 串同图标', JSON.stringify(M.blockIcon(root, 'minecraft:face_only[axis=y]')) === JSON.stringify(fi));
+    // ② 物品纹理存在 → 优先（from=item；独立方块名，避免 ① 的缓存干扰）
+    fs.mkdirSync(path.join(root, 'assets', 'minecraft', 'items'), { recursive: true });
+    writeBs(root, 'minecraft', 'item_first', { variants: { model: 'minecraft:block/item_first' } });
+    fs.writeFileSync(path.join(root, 'assets', 'minecraft', 'models', 'block', 'item_first.json'),
+        JSON.stringify({ parent: 'minecraft:block/cube_all', textures: { all: 'minecraft:block/face_only_tex' } }));
+    fs.writeFileSync(path.join(root, 'assets', 'minecraft', 'items', 'item_first.png'), png2);
+    const ii = M.blockIcon(root, 'minecraft:item_first');
+    ok('物品纹理优先（from=item）', ii && ii.from === 'item' && !!ii.icon, JSON.stringify({ from: ii.from, hasIcon: !!ii.icon }));
+    ok('item 串 [props] 同图标', JSON.stringify(M.blockIcon(root, 'minecraft:item_first[facing=north]')) === JSON.stringify(ii));
+    // ③ 都没有 → icon=null
+    writeBs(root, 'minecraft', 'nothing_here', { variants: { model: 'minecraft:block/nothing_here' } });
+    const ni = M.blockIcon(root, 'minecraft:nothing_here');
+    ok('全无贴图 → icon=null', ni && ni.icon === null && ni.from === null, JSON.stringify(ni));
+    // ④ 缓存：同 ID 同对象
+    ok('图标缓存：同 ID 同对象', M.blockIcon(root, 'minecraft:item_first') === ii);
+    fs.rmSync(root, { recursive: true, force: true });
+}
+
 console.log('\nmcAssets 测试: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);
