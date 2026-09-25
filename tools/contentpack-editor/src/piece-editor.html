@@ -48,6 +48,21 @@
         </div>
       </div>
       <div class="ed-toolgroup">
+        <div class="ed-group-title" data-i18n="structure.3d.ghostAsm">jigsaw 虚影拼合</div>
+        <label class="chk"><input type="checkbox" id="edChkGhost"> <span data-i18n="structure.3d.ghostOn">显示虚影</span></label>
+        <select id="edSelGhostMode" title="">
+          <option value="pool" data-i18n="structure.3d.ghostPool">池逻辑</option>
+          <option value="manual" data-i18n="structure.3d.ghostManual">手动</option>
+        </select>
+        <div style="display:flex;gap:4px">
+          <button class="btn ghost small" id="edBtnGhostPrev" title="">◀ <span data-i18n="structure.3d.ghostPrev">上一个</span></button>
+          <button class="btn ghost small" id="edBtnGhostNext" title="">▶ <span data-i18n="structure.3d.ghostNext">下一个</span></button>
+        </div>
+        <button class="btn ghost small" id="edBtnGhostReroll" data-i18n-title="structure.3d.ghostReroll">🎲</button>
+        <label class="chk"><span data-i18n="structure.3d.ghostOp">虚化</span> <input id="edInpGhostOp" type="range" min="10" max="80" value="35" style="width:70px"></label>
+        <span class="note" id="edGhostInfo" style="display:block;word-break:break-all;max-height:96px;overflow:auto"></span>
+      </div>
+      <div class="ed-toolgroup">
         <div class="ed-group-title" data-i18n="structure.piece3d.view">视角</div>
         <button class="ed-tool" id="edResetView" data-i18n-title="structure.3d.reset">⌂<span data-i18n="structure.3d.reset">重置视角</span></button>
       </div>
@@ -68,6 +83,7 @@
   </footer>
   <script src="i18n.js"></script>
   <script src="core/voxel.js"></script>
+  <script src="core/structureGrowth.js"></script> <!-- P16b 虚影拼合（self.StructureGrowth） -->
   <script src="views/pieceEditor.js"></script>
 </body>
 </html>

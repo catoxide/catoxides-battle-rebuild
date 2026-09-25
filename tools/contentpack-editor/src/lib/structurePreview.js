@@ -748,12 +748,18 @@ export function createStructurePreview(canvas, hooks = {}) {
     function setGhostPlacements(ghosts, opts = {}) {
         ghostPlacements = (ghosts || []).slice();
         if (opts && isFinite(opts.opacity)) ghostOpacity = Math.max(0.05, Math.min(1, opts.opacity));
+        ghostExtraPieces = (opts && opts.pieces) || null; // P16b 虚影模板定义（编辑器：lastBuild.pieces 只含当前片段）
         trace('setGhostPlacements [' + ghostPlacements.length + '] op=' + ghostOpacity);
         rebuildGhosts();
     }
     function getGhostPlacements() { return ghostPlacements.map((g) => Object.assign({}, g)); }
     let ghostPlacements = [];   // [{pieceName, offset, rotation}]
     let ghostOpacity = 0.35;
+    let ghostExtraPieces = null; // P16b
+    /** P16b：预取一组片段的 spec 贴图（虚影模板可能不在当前构建内）；完成后调用方重放 setGhostPlacements 升级贴图 */
+    async function warmUpPieces(pieces) {
+        return ensureFacesFor((pieces || []).filter(Boolean));
+    }
 
     /** 清空并重建虚影层（轻量：不触碰实体构建/相机取景） */
     function rebuildGhosts() {
@@ -768,6 +774,7 @@ export function createStructurePreview(canvas, hooks = {}) {
         if (!ghostPlacements.length) { if (!running) renderOnce(); return; }
         const pieces = new Map();
         for (const p of (lastBuild && lastBuild.pieces) || []) pieces.set(p.name, p);
+        for (const p of ghostExtraPieces || []) if (p && p.name) pieces.set(p.name, p); // P16b 虚影模板
         const m4 = new THREE.Matrix4();
         for (const gh of ghostPlacements) {
             const piece = pieces.get(gh.pieceName);
@@ -1657,6 +1664,15 @@ export function createStructurePreview(canvas, hooks = {}) {
         return { x: rect.left + (v.x * 0.5 + 0.5) * rect.width, y: rect.top + (-v.y * 0.5 + 0.5) * rect.height };
     }
 
+    /**
+     * P16b 手动取景（编辑器虚影拼合：片段 + 虚影包围盒）：
+     * 目标=盒中心，半径=跨度自适应；保留当前 θ/φ（不重置朝向）。
+     */
+    function reframe(min, max) {
+        frameBox(min, max);
+        if (!running) renderOnce();
+    }
+
     return {
         setBlueprint,
         setPlacements,
@@ -1688,6 +1704,7 @@ export function createStructurePreview(canvas, hooks = {}) {
         brushTargetCells,
         brushPlaceCell, // 'place' 目标（不检查边界；悬停红标用）
         projectToScreen, // 世界坐标 → 画布 client 坐标
+        reframe, // P16b 手动取景（编辑器虚影拼合：片段+虚影包围盒）
         setClip,
         getClip,
         setSlice, // P9 编辑切片（剖切面）
@@ -1696,8 +1713,9 @@ export function createStructurePreview(canvas, hooks = {}) {
         clearEdits,
         getPlacements,
         setGhosts,
-        setGhostPlacements, // P16 jigsaw 虚影拼合（半透明体素层）
+        setGhostPlacements, // P16 jigsaw 虚影拼合（半透明体素层；opts.pieces = 模板定义）
         getGhostPlacements, // P16
+        warmUpPieces, // P16b 预取片段 spec 贴图（虚影模板）
         setWorldSlice, // P16 世界坐标切片（实体+虚影同切）
         getWorldSlice, // P16
         debugStats,

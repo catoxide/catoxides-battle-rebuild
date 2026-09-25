@@ -311,6 +311,9 @@
                 boxState: () => boxA,
                 importSlotToSearch,
                 hint: () => ($('edHint') ? $('edHint').textContent : ''),
+                // P16b 虚影拼合（E2E + 调试）
+                ghost: () => ({ on: ghostOn, mode: ghostMode, seed: ghostSeed, idx: ghostCandIdx, cands: edGhostCandidates().length }),
+                ghostInfo: () => (edGhostInfo ? ($('edGhostInfo') ? $('edGhostInfo').textContent : '') : ''),
             }; // E2E/调试钩子
             pv.start();
             // 编辑器窗口用按需渲染（交互/编辑时渲染，不跑 60fps 连续循环）：
@@ -360,12 +363,14 @@
         // P14 顺序关键：先重置剖切（若切片激活会触发一轮旧片段重建），
         // 再换片段 —— 新片段的构建序号在后 → 并发时新片段场景必然生效
         pv.setSlice(null);
+        if (pv.setWorldSlice) pv.setWorldSlice(null); // P16b：镜像的世界切片一并清
         pv.setPiece(piece);
         $('edSliceAxis').value = 'off';
         $('edSliceI').value = '0';
         syncSliceControl();
         updateInfo();
         status(t('structure.piece3d.loaded') + ' — ' + piece.name + ' (' + (piece.size || [0, 0, 0]).join('×') + ')');
+        applyEdGhost(); // P16b：虚影随片段重算（保留开/关/模式状态）
     }
 
     // ===== 剖切（切平面：隐藏面向相机一侧，笔刷限切片层） =====
@@ -386,8 +391,113 @@
         syncSliceControl();
         const axis = $('edSliceAxis').value;
         const i = parseInt($('edSliceI').value, 10) || 0;
-        if (axis === 'off') pv.setSlice(null);
-        else pv.setSlice({ axis, index: i });
+        if (axis === 'off') {
+            pv.setSlice(null);
+            if (pv.setWorldSlice) pv.setWorldSlice(null); // P16b：同步切虚影
+        } else {
+            pv.setSlice({ axis, index: i });
+            // P16b：本地切片（片段在原点 rot=0）镜像为世界切片 → 同一平面切实体+虚影
+            //（实体被两层同平面切片，结果幂等；相机越面自动翻转由渲染器处理）
+            if (pv.setWorldSlice) pv.setWorldSlice({ axis, index: i });
+        }
+    }
+
+    // ===== P16b：jigsaw 虚影拼合（给人类编辑者参考：不同拼图接缝处会附着什么）=====
+    // 当前片段在原点（rot=0）：每个带池 jigsaw 块 → 池逻辑 1:1 附着（poolPick1to1）或
+    // 手动循环全部候选（jigsaw × 模板 × 旋转）。半透明体素层（pv.setGhostPlacements）。
+    // 编辑器的 lastBuild.pieces 只含当前片段 → 模板定义经 opts.pieces 传入 + warmUpPieces 补贴图。
+    let ghostOn = false;
+    let ghostMode = 'pool';
+    let ghostSeed = 1;
+    let ghostCandIdx = 0;
+    let ghostApplySeq = 0; // 贴图预热重放防竞态
+
+    function edGhostInfo(s) {
+        const el = $('edGhostInfo');
+        if (el) el.textContent = s || '';
+    }
+    function edHashStr(s) {
+        let h = 2166136261;
+        for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+        return h >>> 0;
+    }
+    /** 当前片段（原点）的全部 1:1 候选展平（手动模式循环列表；顺序确定性） */
+    function edGhostCandidates() {
+        const G = window.StructureGrowth;
+        const piece = currentPiece();
+        if (!G || !state || !piece) return [];
+        const out = [];
+        const jis = (piece.jigsaws || []).map((j, ji) => ({ j, ji })).filter(({ j }) => j && j.pool);
+        for (const { ji } of jis) {
+            const r = G.jigsawCandidates(state.blueprint, piece.name, ji, [0, 0, 0]);
+            for (const c of r.cands) out.push(Object.assign({ srcJi: ji }, c));
+        }
+        return out;
+    }
+    /** 取景 = 片段 + 虚影包围盒（保留当前 θ/φ）；ghostList 空 → 只取景片段 */
+    function edReframe(piece, ghostList) {
+        if (!pv || !pv.reframe || !piece) return;
+        const [w, h, d] = piece.size || [1, 1, 1];
+        let mn = [0, 0, 0], mx = [w, h, d];
+        const byName = new Map();
+        for (const p of (state && state.blueprint && state.blueprint.pieces) || []) byName.set(p.name, p);
+        for (const pl of ghostList || []) {
+            const tp = byName.get(pl.pieceName);
+            if (!tp) continue;
+            const [tw, th, td] = tp.size || [1, 1, 1];
+            mn = [Math.min(mn[0], pl.offset[0]), Math.min(mn[1], pl.offset[1]), Math.min(mn[2], pl.offset[2])];
+            mx = [Math.max(mx[0], pl.offset[0] + tw), Math.max(mx[1], pl.offset[1] + th), Math.max(mx[2], pl.offset[2] + td)];
+        }
+        pv.reframe(mn, mx);
+    }
+    function applyEdGhost() {
+        if (!pv || !pv.setGhostPlacements) return;
+        const piece = currentPiece();
+        if (!ghostOn || !piece) {
+            pv.setGhostPlacements([]);
+            edGhostInfo('');
+            edReframe(piece, []);
+            return;
+        }
+        const G = window.StructureGrowth;
+        if (!G) { edGhostInfo('growth module missing'); return; }
+        const allPieces = (state && state.blueprint && state.blueprint.pieces) || [];
+        const op = Math.max(10, Math.min(80, +($('edInpGhostOp') ? $('edInpGhostOp').value : 35) || 35)) / 100;
+        const list = [];
+        if (ghostMode === 'pool') {
+            // 池逻辑：当前片段的每个带池 jigsaw → 1 个 1:1 附着（确定性种子 = seed ^ 位置哈希）
+            (piece.jigsaws || []).forEach((j, ji) => {
+                if (!j || !j.pool) return;
+                const seed = (ghostSeed ^ (edHashStr(piece.name + ':' + ji) >>> 0)) >>> 0;
+                const c = G.poolPick1to1(state.blueprint, piece.name, ji, [0, 0, 0], G.mulberry32(seed));
+                if (c) list.push({ pieceName: c.template, offset: c.offset, rotation: c.rotation });
+            });
+            edGhostInfo(t('structure.3d.ghostPool') + ' · ' + list.length + ' 个 1:1 附着（🎲 换种子）');
+        } else {
+            // 手动：循环当前片段全部 1:1 候选
+            const cands = edGhostCandidates();
+            if (!cands.length) {
+                edGhostInfo('该片段无匹配候选（池/目标/orientation 对不上）');
+                pv.setGhostPlacements([]);
+                return;
+            }
+            ghostCandIdx = ((ghostCandIdx % cands.length) + cands.length) % cands.length;
+            const c = cands[ghostCandIdx];
+            list.push({ pieceName: c.template, offset: c.offset, rotation: c.rotation });
+            edGhostInfo('[' + (ghostCandIdx + 1) + '/' + cands.length + '] ' + piece.name + '·' + c.jigsawName +
+                ' → ' + c.template + ' · rot' + c.rotation + ' · 目标 ' + c.targetName + ' · offset[' + c.offset.join(',') + ']');
+        }
+        pv.setGhostPlacements(list, { opacity: op, pieces: allPieces });
+        edReframe(piece, list);
+        // 贴图预热：模板方块可能未烘焙（当前片段的构建只烘了自己的）→ 到位后重放升级贴图
+        const seq = ++ghostApplySeq;
+        const tpls = [...new Set(list.map((l) => l.pieceName))].map((n) => allPieces.find((p) => p.name === n)).filter(Boolean);
+        if (tpls.length && pv.warmUpPieces) {
+            pv.warmUpPieces(tpls).then(() => {
+                if (seq !== ghostApplySeq || !ghostOn) return; // 已被后续操作取代
+                pv.setGhostPlacements(list, { opacity: op, pieces: allPieces });
+            }).catch(() => { /* 贴图缺失时虚影保持 unitBox 回退 */ });
+        }
     }
 
     // ===== UI 绑定 =====
@@ -399,6 +509,24 @@
         $('edResetView').addEventListener('click', () => { if (pv) pv.resetView(); });
         $('edSliceAxis').addEventListener('change', sliceChange);
         $('edSliceI').addEventListener('input', sliceChange);
+        // P16b：jigsaw 虚影拼合（接缝参考）
+        $('edChkGhost').addEventListener('change', (e) => { ghostOn = e.target.checked; applyEdGhost(); });
+        $('edSelGhostMode').addEventListener('change', (e) => { ghostMode = e.target.value; ghostCandIdx = 0; applyEdGhost(); });
+        $('edBtnGhostPrev').addEventListener('click', () => {
+            const n = edGhostCandidates().length;
+            if (n) ghostCandIdx = ((((ghostCandIdx || 0) - 1) % n) + n) % n;
+            applyEdGhost();
+        });
+        $('edBtnGhostNext').addEventListener('click', () => {
+            const n = edGhostCandidates().length;
+            if (n) ghostCandIdx = (ghostCandIdx || 0) + 1; // applyEdGhost 内取模回绕
+            applyEdGhost();
+        });
+        $('edBtnGhostReroll').addEventListener('click', () => {
+            ghostSeed = (Math.imul(ghostSeed, 1103515245) + 12345) >>> 0;
+            applyEdGhost();
+        });
+        $('edInpGhostOp').addEventListener('input', () => { if (ghostOn) applyEdGhost(); });
         // P14：切换片段 → 有未写回修改先提示（修改仍保留在本窗口，写回才同步主窗口）
         $('edPiece').addEventListener('change', () => {
             const next = $('edPiece').value;
