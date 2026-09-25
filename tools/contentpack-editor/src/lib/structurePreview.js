@@ -374,6 +374,12 @@ export function createStructurePreview(canvas, hooks = {}) {
             v += 4;
             return getMat(f);
         });
+        // P17 修正：烘焙顶点在 0..1 空间（from/16..to/16），而实例矩阵按 unitBox 约定
+        // （几何中心在原点）再加 +0.5 → 不居中的话整块偏移 +0.5（用户实测"所有方块偏移"）。
+        // 这里把几何平移到 -0.5..0.5，与 unitBox 同约定。
+        for (let i = 0; i < pos.length; i += 3) {
+            pos[i] -= 0.5; pos[i + 1] -= 0.5; pos[i + 2] -= 0.5;
+        }
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
@@ -1307,20 +1313,21 @@ export function createStructurePreview(canvas, hooks = {}) {
         updateViewCube();
     }
     /**
-     * 视图立方体更新（P15）：画布右上角位置 + 逆旋转。
-     * 立方体是相机的子节点：局部旋转=单位矩阵 → 锁死在相机系，转视角时永远不转（用户实测"完全不转"）。
-     * 局部矩阵需 = 相机世界旋转的逆。R_cam 由轨道 θ/φ 解析推出（lookAt 约定，up=+Y，无 Quaternion 依赖），
-     * 行 = 相机世界轴（已用 projectToScreen 实测反推校验，默认轨道下 E/S/U 屏幕方向逐位吻合）：
-     *   R_cam = [ x_cam = ( cosθ, 0, -sinθ) ]
-     *           [ y_cam = (-cosφsinθ, sinφ, -cosφcosθ) ]
-     *           [ z_cam = ( sinφsinθ, cosφ, sinφcosθ) ]
-     * 局部旋转 R_local = R_cam^T（行主序）=
-     *   [ ct,       -cph·st,  sp·st  ]
-     *   [ 0,         sp,       cph   ]
-     *   [ -st,      -cph·ct,  sp·ct  ]
-     * 列主序 elements[4i+j] = R_local[j][i]，即第 i 列 = 第 i 个相机世界轴（x_cam/y_cam/z_cam）：
-     *   列0 = ( ct, 0, -st )  列1 = ( -cph·st, sp, -cph·ct )  列2 = ( sp·st, cph, sp·ct )
-     * 合成后 matrixWorld 旋转部分 = R_cam·R_local = I → 立方体恒与世界轴对齐（东/西/南/北/上/下永远指向世界对应方向）。
+     * 视图立方体更新（P15 引入 / P17 修正）：画布右上角位置 + 逆旋转。
+     * 立方体是相机的子节点：局部矩阵必须 = 相机世界旋转的【逆】，合成后
+     * matrixWorld 旋转 = R_cam·R_cam^T = I → 立方体恒与世界轴对齐（东/西/南/北/上/下
+     * 永远指向世界对应方向；面向相机的一面 = 相机所看方向）。
+     *
+     * 相机世界旋转 R_cam 的【列】= 相机世界轴（lookAt 约定，up=+Y，θ=方位角 φ=极角）：
+     *   col0 x_cam = ( cosθ, 0, -sinθ)                      （相机右）
+     *   col1 y_cam = (-cosφsinθ, sinφ, -cosφcosθ)           （相机上）
+     *   col2 z_cam = ( sinφsinθ, cosφ, sinφcosθ)            （相机后 = eye-target 向）
+     * 局部旋转 L = R_cam^T，其【列】= R_cam 的【行】：
+     *   列0 = ( ct, -cph·st, sp·st )
+     *   列1 = ( 0,  sp,       cph  )
+     *   列2 = ( -st, -cph·ct, sp·ct )
+     * （P17 前误把 R_cam 本身写成了局部旋转 → 世界旋转 = R_cam² → 倾斜角恒为相机 2 倍，
+     *   默认 30° 仰角时立方体呈 60° 歪斜、顶面几乎成边。）
      * 调用时机：applyCamera()（轨道变化）、sizeCanvas()（像素/aspect 变化）。
      */
     function updateViewCube() {
@@ -1334,14 +1341,12 @@ export function createStructurePreview(canvas, hooks = {}) {
         const px = halfW - margin - s / 2, py = halfH - margin - s / 2;
         const st = Math.sin(orbit.theta), ct = Math.cos(orbit.theta);
         const sp = Math.sin(orbit.phi), cph = Math.cos(orbit.phi);
-        // 4×4（行主序）：M[0..2][0..2] = R_local·s = R_cam^T·s，第 3 行 = (px, py, -d, 1)
-        // Matrix4.elements 列主序：elements[4i+j] = M[j][i] → 第 i 列 = 第 i 个相机世界轴
-        // 列0 = x_cam = ( ct, 0, -st )；列1 = y_cam = ( -cph·st, sp, -cph·ct )；列2 = z_cam = ( sp·st, cph, sp·ct )
+        // 4×4 列主序：第 i 列 = R_cam 第 i 行 × s（即 R_cam^T 的列）
         const e = cubeMesh.matrix.elements;
-        e[0] = ct * s;        e[1] = 0;              e[2] = -st * s;
-        e[4] = -cph * st * s; e[5] = sp * s;         e[6] = -cph * ct * s;
-        e[8] = sp * st * s;   e[9] = cph * s;        e[10] = sp * ct * s;
-        e[12] = px;           e[13] = py;            e[14] = -d;           e[15] = 1;
+        e[0] = ct * s;         e[1] = -cph * st * s;  e[2] = sp * st * s;
+        e[4] = 0;              e[5] = sp * s;         e[6] = cph * s;
+        e[8] = -st * s;        e[9] = -cph * ct * s;  e[10] = sp * ct * s;
+        e[12] = px;            e[13] = py;            e[14] = -d;            e[15] = 1;
         cubeMesh.matrixWorldNeedsUpdate = true;
     }
     function updateHud() {
@@ -1607,7 +1612,12 @@ export function createStructurePreview(canvas, hooks = {}) {
             specBlocks, // P14：走外观链路（真实模型几何）的 blockId 数
             specVoxels,
             // 立方体 = 相机子节点且自身零旋转 → 朝向由 orbit 唯一决定（绕开本地 three 精简版的 Quaternion 依赖）
-            compass: cubeMesh ? { cube: true, theta: +orbit.theta.toFixed(4), phi: +orbit.phi.toFixed(4) } : null,
+            compass: cubeMesh ? {
+                cube: true,
+                theta: +orbit.theta.toFixed(4),
+                phi: +orbit.phi.toFixed(4),
+                world: cubeMesh.matrixWorld.elements.slice(0, 16), // P17：世界矩阵（E2E 断言旋转部分≈I）
+            } : null,
             renderCalls: renderer ? renderer.info.render.calls : 0,
             triangles: renderer ? renderer.info.render.triangles : 0,
             editedPieces: [...editMaps.keys()],
