@@ -1,0 +1,116 @@
+{
+  "animations": {
+    "in": {
+      "loop": "hold_on_last_frame",
+      "animation_length": 0.375,
+      "bones": {
+        "main": {
+          "rotation": {
+            "0.25": {
+              "post": [
+                0,
+                90,
+                0
+              ],
+              "lerp_mode": "linear"
+            },
+            "0.375": {
+              "post": [
+                0,
+                90,
+                0
+              ],
+              "lerp_mode": "linear"
+            }
+          },
+          "position": {
+            "0": {
+              "post": [
+                -6,
+                -2,
+                12.3
+              ],
+              "lerp_mode": "linear"
+            },
+            "0.25": {
+              "post": [
+                -6,
+                -2,
+                12.3
+              ],
+              "lerp_mode": "linear"
+            },
+            "0.375": {
+              "post": [
+                -6,
+                -2,
+                12.3
+              ],
+              "lerp_mode": "linear"
+            }
+          }
+        },
+        "left": {
+          "rotation": {
+            "0.25": {
+              "post": [
+                90,
+                0,
+                0
+              ],
+              "lerp_mode": "linear"
+            },
+            "0.375": {
+              "post": [
+                90,
+                0,
+                0
+              ],
+              "lerp_mode": "linear"
+            }
+          }
+        },
+        "right": {
+          "rotation": {
+            "0": {
+              "post": [
+                90,
+                0,
+                0
+              ],
+              "lerp_mode": "catmullrom"
+            },
+            "0.25": {
+              "post": [
+                0,
+                0,
+                0
+              ],
+              "lerp_mode": "catmullrom"
+            },
+            "0.375": {
+              "post": [
+                0,
+                0,
+                0
+              ],
+              "lerp_mode": "linear"
+            }
+          }
+        },
+        "shade": {
+          "scale": {
+            "0": {
+              "post": [
+                0,
+                1,
+                1
+              ],
+              "lerp_mode": "linear"
+            }
+          }
+        }
+      }
+    }
+  }
+}

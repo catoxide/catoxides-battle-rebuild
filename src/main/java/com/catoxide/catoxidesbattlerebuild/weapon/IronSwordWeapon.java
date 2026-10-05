@@ -24,8 +24,15 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 铁剑武器 - 实现 ICustomModelItem 接口以支持 Spark-Core 自定义模型
- * 第一人称和第三人称使用独立的模型和动画资源（swords_fp / swords_tp）
+ * 铁剑武器 - 实现 ICustomModelItem 接口以支持 Spark-Core 自定义模型。
+ * 剑系物品共用 {@code sword} 模型（spark_models/item/&lt;modid&gt;/sword.json）与动画集
+ * （spark_animations/item/&lt;modid&gt;/sword/*.json），不同材质后续用 setTextureLocation 区分纹理。
+ * 第一/三人称共用同一模型，但使用不同动画：
+ * <ul>
+ *   <li>FP: still（循环 idle）/ attack（挥击）</li>
+ *   <li>TP: 3rd_still / 3rd_attack</li>
+ * </ul>
+ * Spark 不会自动播放物品 idle 动画，实例创建时显式播放循环 idle。
  */
 public class IronSwordWeapon extends Item implements ICustomModelItem {
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -101,17 +108,17 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
      * 同时触发第一人称和第三人称实例，确保两个视角的攻击动画同步
      */
     private void triggerAttackAnimation(ItemStack stack, Level level) {
-        triggerAttackOnInstance(stack, level, ItemDisplayContext.FIRST_PERSON_RIGHT_HAND);
-        triggerAttackOnInstance(stack, level, ItemDisplayContext.THIRD_PERSON_RIGHT_HAND);
+        triggerAttackOnInstance(stack, level, ItemDisplayContext.FIRST_PERSON_RIGHT_HAND, "attack");
+        triggerAttackOnInstance(stack, level, ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, "3rd_attack");
     }
 
-    private void triggerAttackOnInstance(ItemStack stack, Level level, ItemDisplayContext context) {
+    private void triggerAttackOnInstance(ItemStack stack, Level level, ItemDisplayContext context, String animName) {
         ItemAnimatable animatable = getRenderInstance(stack, level, context);
         var controller = animatable.getAnimController();
 
         for (var layer : controller.getLayers().values()) {
             for (var anim : layer.getAnimations()) {
-                if ("attack".equals(anim.getAnimIndex().getName())) {
+                if (animName.equals(anim.getAnimIndex().getName())) {
                     return;
                 }
             }
@@ -119,14 +126,32 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
 
         try {
             var modelIndex = animatable.getModelController().getModel().getIndex();
-            AnimIndex animIndex = new AnimIndex(modelIndex, "attack");
+            AnimIndex animIndex = new AnimIndex(modelIndex, animName);
             AnimInstance attackAnim = new AnimInstance(animatable, animIndex);
             attackAnim.setGroup(AnimGroups.MAIN);
             attackAnim.enter();
             controller.playAnimation(attackAnim);
-            LOGGER.info("[IronSwordWeapon] Attack animation triggered on {} MAIN layer", context);
+            LOGGER.info("[IronSwordWeapon] Attack animation '{}' triggered on {} MAIN layer", animName, context);
         } catch (Exception e) {
-            LOGGER.warn("[IronSwordWeapon] Failed to play attack animation on {}: {}", context, e.getMessage());
+            LOGGER.warn("[IronSwordWeapon] Failed to play attack animation '{}' on {}: {}", animName, context, e.getMessage());
+        }
+    }
+
+    /**
+     * 播放循环 idle 动画。
+     * Spark 不会自动播放物品 idle 动画（没有动画状态机），必须显式播放。
+     * still / 3rd_still 均为 loop=true，播放后持续循环。
+     */
+    private static void playIdle(ItemAnimatable animatable, ModelIndex modelIndex, String animName) {
+        try {
+            AnimIndex animIndex = new AnimIndex(modelIndex, animName);
+            AnimInstance idle = new AnimInstance(animatable, animIndex);
+            idle.setGroup(AnimGroups.MAIN);
+            idle.enter();
+            animatable.getAnimController().playAnimation(idle);
+            LOGGER.info("[IronSwordWeapon] Idle animation '{}' started (loop)", animName);
+        } catch (Exception e) {
+            LOGGER.warn("[IronSwordWeapon] Failed to play idle animation '{}': {}", animName, e.getMessage());
         }
     }
 
@@ -149,14 +174,18 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
             dual = new DualItemAnimatable(itemStack, level);
             ModelIndex fpModelIndex = getModelIndex(itemStack, level, ItemDisplayContext.FIRST_PERSON_RIGHT_HAND);
             dual.getModelController().setModel(fpModelIndex);
+            applyTexture(dual, itemStack, level, ItemDisplayContext.FIRST_PERSON_RIGHT_HAND);
             levelCache.put(ItemDisplayContext.FIRST_PERSON_RIGHT_HAND, dual);
+            playIdle(dual, fpModelIndex, "still");
 
             // 创建 tp 实例
             ItemAnimatable tp = new ItemAnimatable(itemStack, level);
             ModelIndex tpModelIndex = getModelIndex(itemStack, level, ItemDisplayContext.THIRD_PERSON_RIGHT_HAND);
             tp.getModelController().setModel(tpModelIndex);
+            applyTexture(tp, itemStack, level, ItemDisplayContext.THIRD_PERSON_RIGHT_HAND);
             dual.setTpInstance(tp);
             levelCache.put(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, tp);
+            playIdle(tp, tpModelIndex, "3rd_still");
         }
 
         if (isFirstPerson(context)) {
@@ -168,15 +197,47 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
 
     /**
      * 获取物品的模型索引
-     * 第一人称使用 swords_fp，第三人称使用 swords_tp
+     * 剑系共用 sword 模型（fp/tp 同一模型，动画按视角区分）
+     * 纹理默认取 ModelIndex 推导的 textures/item/sword.png（铁材质）；
+     * 后续其他材质用 setTextureLocation 覆盖
      */
     @Override
     public ModelIndex getModelIndex(ItemStack itemStack, Level level, ItemDisplayContext context) {
-        // 模型文件: spark_models/item/catoxidesbattlerebuild/iron_sword.json
-        // (fp/tp 共用该模型; 如需独立资源后续加 swords_fp/swords_tp 模型文件)
+        // 模型文件: spark_models/item/catoxidesbattlerebuild/sword.json
+        // 动画文件: spark_animations/item/catoxidesbattlerebuild/sword/*.json
         ResourceLocation modelLoc = ResourceLocation.fromNamespaceAndPath(
-                CatoxidesBattleRebuildConstants.MODID, "iron_sword");
+                CatoxidesBattleRebuildConstants.MODID, "sword");
         return new ModelIndex("item", modelLoc);
+    }
+
+    /**
+     * 单独设置该物品 3D 模型使用的贴图（第③项机制）。
+     *
+     * <p>Spark 默认贴图由 ModelIndex 推导为 {@code <ns>:textures/item/sword.png}（铁材质）。
+     * 剑系 7 材质共用同一 {@code sword} 模型、不同贴图，靠此钩子按物品覆盖：
+     * <pre>{@code
+     *   // 例：金剑用 golden_sword.png
+     *   public ResourceLocation getTextureLocation(ItemStack s, Level l, ItemDisplayContext c) {
+     *       return ResourceLocation.fromNamespaceAndPath(MODID, "textures/item/golden_sword");
+     *   }
+     * }</pre>
+     *
+     * <p>返回 {@code null} 表示用 ModelIndex 推导的默认贴图（当前铁剑）。
+     * 自定义 2D 贴图本身由后续提供，这里只保证"能按物品单独设置"。
+     */
+    public ResourceLocation getTextureLocation(ItemStack itemStack, Level level, ItemDisplayContext displayContext) {
+        return null; // 默认：textures/item/sword.png
+    }
+
+    /**
+     * 在实例创建后按 getTextureLocation 覆盖贴图。null 则保持 ModelIndex 推导的默认贴图。
+     */
+    private void applyTexture(ItemAnimatable animatable, ItemStack stack, Level level,
+                              ItemDisplayContext context) {
+        ResourceLocation tex = getTextureLocation(stack, level, context);
+        if (tex != null) {
+            animatable.getModelController().setTextureLocation(tex);
+        }
     }
 
     /**
@@ -192,17 +253,24 @@ public class IronSwordWeapon extends Item implements ICustomModelItem {
     }
 
     /**
-     * 获取渲染偏移
-     * 位置信息以第三人称动画为准，所有 context 返回相同参数
+     * 获取渲染偏移（单位：格；作用于模型根空间，见 GeoItemRenderer 矩阵顺序）。
+     *
+     * <p>方案B（叠加层）：玩家模型 = player_wrist（分节手臂/腿），剑 = 纯剑物品模型
+     * （sword.json 已去手臂），经 in-hand/Spark 机制锚到 player_wrist 的 rightItem（手腕）。
+     * 手臂由挥剑图层（sword_arm_idle/attack）驱动，剑跟着手腕走。
+     *
+     * <p>offset 初版归零（让机制定位），进游戏看效果后微调：
+     * 前/后调 z，上/下调 y，左/右调 x（值越大向该方向推得越多）。
      */
     @Override
     public Vector3f getRenderOffset(ItemStack itemStack, Level level, ItemDisplayContext displayContext) {
+        // 方案B：初版归零，进游戏微调
         return new Vector3f(0f, 0f, 0f);
     }
 
     /**
      * 获取渲染旋转
-     * 位置信息以第三人称动画为准，所有 context 返回相同参数
+     * 初始 (0,0,0)，与 offset 一同按游戏内效果迭代。
      */
     @Override
     public Vector3f getRenderRotation(ItemStack itemStack, Level level, ItemDisplayContext displayContext) {

@@ -1,0 +1,104 @@
+{
+  "animations": {
+    "3rd_still": {
+      "loop": "true",
+      "animation_length": 3,
+      "bones": {
+        "main": {
+          "rotation": {
+            "0": {
+              "post": [
+                0,
+                90,
+                0
+              ],
+              "lerp_mode": "linear"
+            }
+          },
+          "position": {
+            "0": {
+              "post": [
+                -6,
+                -2,
+                12.3
+              ],
+              "lerp_mode": "linear"
+            }
+          }
+        },
+        "left": {
+          "rotation": {
+            "0": {
+              "post": [
+                90,
+                0,
+                0
+              ],
+              "lerp_mode": "linear"
+            }
+          },
+          "position": {
+            "0": {
+              "post": [
+                0,
+                0,
+                0
+              ],
+              "lerp_mode": "linear"
+            }
+          }
+        },
+        "right": {
+          "rotation": {
+            "0": {
+              "post": [
+                60,
+                0,
+                0
+              ],
+              "lerp_mode": "catmullrom"
+            },
+            "1.5": {
+              "post": [
+                60.5,
+                0,
+                0
+              ],
+              "lerp_mode": "catmullrom"
+            },
+            "3": {
+              "post": [
+                60,
+                0,
+                0
+              ],
+              "lerp_mode": "linear"
+            }
+          },
+          "position": {
+            "0": {
+              "post": [
+                0,
+                0,
+                0
+              ],
+              "lerp_mode": "linear"
+            }
+          }
+        },
+        "shade": {
+          "scale": {
+            "0": {
+              "post": [
+                0,
+                1,
+                1
+              ],
+              "lerp_mode": "linear"
+            }
+          }
+        }
+      }
+    }
+  }
+}
