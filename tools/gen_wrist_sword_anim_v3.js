@@ -3,8 +3,9 @@
  * gen_wrist_sword_anim_v3.js
  *
  * 生成 player_wrist 的 MAIN 组动画（3rd_still / 3rd_attack），在用户剑物品动画
- * （main/left/right/shade，10/05 起经 A=Ry180 嵌入转换：rotation (fx,fy,fz)→(−fx,fy,−fz)、
- * position (px,py,pz)→(−px,py,−pz)，scale 原样）基础上加入抬臂关键帧（rightArm / rightForeArm）：
+ * （main/left/right/shade；10/05 17:53 定案 A=I 恒等嵌入 ⇒ 剑骨关键帧原样拷贝，scale 原样；
+ * 旧 A=Ry180 转换 (fx,fy,fz)→(−fx,fy,−fz)/(−px,py,−pz) 已随 A=I 作废）基础上加入抬臂关键帧
+ * （rightArm / rightForeArm）：
  *
  *   需求 4"手臂最低点朝上" → 手腕高于肘部（前臂朝上）。
  *   抬臂 IK（内部系数值解，Spark 精确约定）：
@@ -160,12 +161,12 @@ function scalePositions(bd) {
   return bd;
 }
 
-// ---------------------------------------------------------------- 10/05 朝向修正 A=Ry180：剑骨关键帧 A 转换（物品文件 → 嵌入文件）
-// 自洽条件：静态共轭 A·R·Aᵀ ≡ 本转换（A=Ry180 时 rotation (fx,fy,fz)→(−fx,fy,−fz)、
-// position (px,py,pz)→(−px,py,−pz)）；scale 原样（沿骨局部轴，帧一致旋转）。
+// ---------------------------------------------------------------- 10/05 17:53 定案 A=I：剑骨关键帧恒等拷贝（物品文件 → 嵌入文件）
+// 自洽条件：静态共轭 A·R·Aᵀ ≡ 本转换（A=I ⇒ rotation/position 原样）；scale 原样。
+// 内部系 +Z=后（10/05 实测）⇒ 物品原值直接嵌入即「静止=前+上30°、挥击=原版第三人称弧线」。
 // 身体臂关键帧（rightArm/rightForeArm）在身体坐标系、不在剑嵌入内，不转换。
 const SWORD_ANIM_BONES = new Set(['main', 'left', 'right', 'shade']);
-const convVec = (arr) => [-arr[0], arr[1], -arr[2]];
+const convVec = (arr) => [arr[0], arr[1], arr[2]];
 function convSwordBone(d) {
   const o = JSON.parse(JSON.stringify(d));
   for (const prop of ['rotation', 'position']) {

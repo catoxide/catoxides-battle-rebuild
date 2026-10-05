@@ -104,6 +104,8 @@ public class SwordPlayerModelHandler {
     private static final Set<UUID> active = new HashSet<>();
     /** 挥击上升沿检测（与 IronSwordWeapon 同款逻辑，独立跟踪） */
     private static final Map<UUID, Boolean> lastSwing = new HashMap<>();
+    /** 诊断：MAIN 层空区间起点 tick（节流日志用，10/05「挥砍消失」定位） */
+    private static final Map<UUID, Long> mainEmptySince = new HashMap<>();
 
     /**
      * 每玩家的动态皮肤复合贴图（身体=玩家本人皮肤 + 剑）。
@@ -195,6 +197,7 @@ public class SwordPlayerModelHandler {
         overlays.clear();
         active.clear();
         lastSwing.clear();
+        mainEmptySince.clear();
     }
 
     /** 释放动态复合贴图（texture==null 时 no-op） */
@@ -384,14 +387,29 @@ public class SwordPlayerModelHandler {
             if (!isPlaying(animatable, AnimGroups.MAIN, ANIM_SWORD_ATTACK.getName())) {
                 controller.stopAnimation(AnimGroups.MAIN);
                 play(animatable, ANIM_SWORD_ATTACK, AnimGroups.MAIN);
+                LOGGER.info("[SwordPlayerModel][swing] {} 上升沿 → 3rd_attack（MAIN 层回放后 isPlaying={}）",
+                        player.getGameProfile().getName(),
+                        isPlaying(animatable, AnimGroups.MAIN, ANIM_SWORD_ATTACK.getName()));
             }
         }
         lastSwing.put(player.getUUID(), swinging);
 
-        // MAIN 看门狗：attack（once）播完层空 → 恢复 3rd_still 循环
+        // MAIN 看门狗：attack（once）播完层空 → 恢复 3rd_still 循环。
+        // 10/05 竞态防护：若 attack 刚入层但 isPlaying() 尚未置真（同 tick 时序），
+        // 旧代码会立即用 still 覆盖 attack ⇒ 挥砍不可见；加 isPlaying(attack) 兜底。
         AnimLayer mainLayer = controller.getLayers().get(AnimGroups.MAIN);
-        if (mainLayer == null || !mainLayer.isPlaying()) {
+        boolean mainEmpty = (mainLayer == null || !mainLayer.isPlaying())
+                && !isPlaying(animatable, AnimGroups.MAIN, ANIM_SWORD_ATTACK.getName());
+        if (mainEmpty) {
             play(animatable, ANIM_SWORD_IDLE, AnimGroups.MAIN);
+            Long since = mainEmptySince.get(player.getUUID());
+            if (since == null || clientTick - since >= 20) {
+                LOGGER.info("[SwordPlayerModel][watchdog] {} MAIN 空 → 恢复 3rd_still（空区间 {} tick）",
+                        player.getGameProfile().getName(), since == null ? "?" : (clientTick - since));
+                mainEmptySince.put(player.getUUID(), (long) clientTick);
+            }
+        } else {
+            mainEmptySince.remove(player.getUUID());
         }
 
         // STATE 组由 Spark 内置 PlayerBaseAnimStateMachine 驱动：base_state.json（20 个状态动画，

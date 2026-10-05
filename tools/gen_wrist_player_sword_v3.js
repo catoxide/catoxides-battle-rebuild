@@ -15,30 +15,29 @@
  *       故 96 宽合图下原版 box-UV 像素坐标仍精确落在左 64px 身体区。）
  *
  *   剑层   = D:\Download\sword.geo.json 完整骨树，经刚体变换 M' = A·p + B 嵌入 rightItem（手腕）：
- *     · A = [[−1,0,0],[0,1,0],[0,0,−1]]，即 (x,y,z)→(−x,y,−z)（10/05 朝向修正：A=Ry(180°)，π 绕 Y）
- *       —— 内部系（Spark 解析后 = 实际渲染系：+X 右/+Y 上/+Z 前）下 Q=A 把物品静止剑轴
- *       (0,0.5,−0.866)（上+后）映到 (0,0.5,0.866)（前方+上 30°，= 原动画仰角、手柄在手里）。
- *       自洽条件（静态与动画同用 A 共轭）：动画文件 rotation (fx,fy,fz)→(−fx,fy,−fz)、
- *       position (px,py,pz)→(−px,py,−pz)（gen_wrist_sword_anim_v3 执行；scale 原样）。
+ *     · A = I 恒等（10/05 17:53 用户实测定案：物品静止剑轴（物品内部系）= (0,0.5,−0.866)
+ *       本身即「前+上30°」——内部系 +Z=后（10/05 双数据点钉死：旧版剑轴 (1,0,0) 渲染=玩家右
+ *       ⇒ +X右；A=Ry180 版剑轴 (0,0.5,0.866) 渲染=正后 ⇒ +Z后）。
+ *       A=Ry180 会把它多转 180° ⇒ 剑指后（17:52 实测症状）。自洽条件（静态与动画同用 A 共轭）：
+ *       A=I ⇒ 动画文件 rotation/position 原样拷贝（gen_wrist_sword_anim_v3 执行）。
  *     · anchor = 物品静止姿态 pommel（handle cube4 中心）→ 手腕（B = wrist − A·pommelFile）；
- *       旧锚（main 文件 pivot）在 A=Ry180 下会把静止剑送到玩家身后 27px，弃用
+ *       旧锚（main 文件 pivot）在任何 A 下都会偏离手里，弃用
  *     · 骨 pivot / cube pivot：Tpt = A·p + B
  *     · cube origin：Torigin = A·o + B + min(0, A·s)（逐分量）——
- *       Spark box = [origin, origin+size]（OVertexSet 逐行核对），origin 必须取旋转包围盒最小角；
- *       旧版 Tpt(o) 会把每个 cube 平移 |A·s| 的负分量（剑体散架，旧A build 从未实测过）
- *     · cube size：Tsize = |A·s| = (sx, sy, sz)（A=Ry180 ⇒ 恒等）
- *     · cube rotation：Trot = A·R·Aᵀ（共轭，正交阵 A⁻¹=Aᵀ）
+ *       Spark box = [origin, origin+size]（OVertexSet 逐行核对），origin 必须取旋转包围盒最小角
+ *     · cube size：Tsize = |A·s| = (sx, sy, sz)（A=I ⇒ 恒等）
+ *     · cube rotation：Trot = A·R·Aᵀ（共轭，正交阵 A⁻¹=Aᵀ；A=I ⇒ 原样）
  *     · face-UV：corner-matching remap（从 Spark OPolygon/OUVUnion 反编译推导）：
  *         per-face 分配（非镜像）：W0←(u+w,v) W1←(u,v) W2←(u,v+h) W3←(u+w,v+h)
- *         面法线对应 old→new：north→south, south→north, west→east, east→west, up→up, down→down
- *         角点对应（单位角点 (cx,cy,cz)）：→ (1−cx, cy, 1−cz)
+ *         面法线对应 old→new：A·n（A=I ⇒ 恒等 north→north 等）
+ *         角点对应（单位角点 (cx,cy,cz)）：A·c（A=I ⇒ 恒等）
  *         恒等/翻转面：解出带符号 (u,v,w,h) 直接写（区域不动、像素不动）
- *         90°面：A=Ry180 下每个面映到平行面（w/h 不变）⇒ 0 个；转置代码保留，job=0 时空转
+ *         90°面：A=I 下每个面映到自身（w/h 不变）⇒ 0 个；转置代码保留，job=0 时空转
  *       注：Spark 不解析 uv_rotation（OUVUnion.FaceUV 仅 uv/uv_size，全源码无 uv_rotation）→ 忽略
  *
  *   贴图   = 静态复合 96×64：
  *     BODY_TEX 64×64 @(0,0) + SWORD_TEX 32×32 @(64,0)（原样）
- *     + 90°面转置区域 @(64,32)-(96,64)（像素搬运；A=Ry180 下 0 job，区域为空）
+ *     + 90°面转置区域 @(64,32)-(96,64)（像素搬运；A=I 下 0 job，区域为空）
  *
  * 动画（方案B 叠加层，另见 gen_wrist_state_anim_v3.js）：
  *   STATE(1) = state.land.idle/move/jump/fall（base_state 原样驱动原版骨；
@@ -101,10 +100,13 @@ if (!bodyBoneMap.rightItem) { console.error('自检失败: 身体模型缺 right
 const wrist = bodyBoneMap.rightItem.pivot.slice();          // 恒等姿态下 world(rightItem) = 文件 pivot
 console.log('手腕 rightItem =', JSON.stringify(wrist));
 
-// A = [[−1,0,0],[0,1,0],[0,0,−1]]：(x,y,z)→(−x,y,−z)（10/05 朝向修正 A=Ry180，π 绕 Y）
-// 内部系（渲染系 +X右/+Y上/+Z前）：静止剑轴 (0,0.5,−0.866) → (0,0.5,0.866) 前方+上30°
-const A = [[-1, 0, 0], [0, 1, 0], [0, 0, -1]];
-const AT = [[-1, 0, 0], [0, 1, 0], [0, 0, -1]];             // Aᵀ = A⁻¹ = A（对称）
+// A = I：恒等嵌入（10/05 17:53 用户实测定案推翻 A=Ry180）
+// 内部系（渲染系）实测 = +X右/+Y上/+Z后（模型面朝 −Z）——10/05 双数据点钉死：
+//   旧版剑轴 (1,0,0) 渲染=玩家右 ⇒ +X右；新版 Ry180 剑轴 (0,0.5,0.866) 渲染=正后 ⇒ +Z后。
+// 物品静止剑轴（物品内部系）= (0,0.5,−0.866) = 前+上30°（原版第三人称手持 look）⇒
+// A=I 直接嵌入即得「柄在手里、剑指前上方」；Ry180 会多转 180° ⇒ 剑指后（用户所见）。
+const A = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+const AT = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];               // Aᵀ = A⁻¹ = I
 const mulA = (v) => [
   A[0][0]*v[0] + A[0][1]*v[1] + A[0][2]*v[2],
   A[1][0]*v[0] + A[1][1]*v[1] + A[1][2]*v[2],
@@ -203,10 +205,10 @@ const FACE_CORNERS = {
   up:    [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]],
   down:  [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],
 };
-// 面法线 old→new：n' = A·n
-const FACE_PAIR = { north: 'south', south: 'north', west: 'east', east: 'west', up: 'up', down: 'down' };
-// 角点对应：旧单位角点 (cx,cy,cz) → 新单位角点 (1−cx, cy, 1−cz)（min-corner 约定下推导）
-const mapCorner = (c) => [1 - c[0], c[1], 1 - c[2]];
+// 面法线 old→new：n' = A·n（A=I ⇒ 恒等；下方自检会按 A 验证）
+const FACE_PAIR = { north: 'north', south: 'south', west: 'west', east: 'east', up: 'up', down: 'down' };
+// 角点对应：A=I ⇒ 恒等（min-corner 约定下推导；自检同样覆盖）
+const mapCorner = (c) => [c[0], c[1], c[2]];
 // CORR[f] = [j0..j3]：旧面 f 的 Wi → 新面 FACE_PAIR[f] 的 Wj
 const CORR = {};
 for (const f of Object.keys(FACE_CORNERS)) {
@@ -639,12 +641,15 @@ else console.log(`  剑 cube 数 = ${dstCubes} ✓   总骨数 = ${bones.length}
       }
     }
   }
-  // 已知值抽查：A=Ry180 下 Rz(θ)→Rz(−θ)（z 轴反向）、Ry(θ)→Ry(θ)（y 轴保持）、Rx(θ)→Rx(−θ)（x 轴反向）
+  // 已知值抽查（按 A 通用）：对角 A=diag(ax,ay,az) 共轭 ⇒ x 旋转×(ay·az)、y 旋转×(az·ax)、z 旋转×(ax·ay)
+  //   A=I ⇒ 恒等 [45,45,45]→[45,45,45]；A=Ry180=diag(−1,1,−1) ⇒ [45,45,45]→[−45,45,−45]
   const spot = Trot([45, 45, 45]);
-  if (JSON.stringify(spot) !== JSON.stringify([-45, 45, -45])) {
-    console.error(`  [FAIL] Trot 抽查 [45,45,45] -> ${JSON.stringify(spot)}（应为 [-45,45,-45]）`); fail++;
+  const kx = A[1][1] * A[2][2], ky = A[2][2] * A[0][0], kz = A[0][0] * A[1][1];
+  const spotWant = [45 * kx, 45 * ky, 45 * kz];
+  if (JSON.stringify(spot) !== JSON.stringify(spotWant)) {
+    console.error(`  [FAIL] Trot 抽查 [45,45,45] -> ${JSON.stringify(spot)}（应为 ${JSON.stringify(spotWant)}）`); fail++;
   } else {
-    console.log('  Trot 共轭抽查 [45,45,45] -> [-45,45,-45] ✓（≡ 动画转换 (−fx,fy,−fz)）');
+    console.log(`  Trot 共轭抽查 [45,45,45] -> ${JSON.stringify(spot)} ✓（按 A=${JSON.stringify([kx, ky, kz])}）`);
   }
 }
 // 8) 复合贴图回读校验尺寸
