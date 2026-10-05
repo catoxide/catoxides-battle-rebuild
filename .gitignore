@@ -56,3 +56,10 @@ openclaude_config.json
 ### Scratch (临时脚本/探针，不入库；说明见 .scratch/README.md) ###
 .scratch/
  
+### Spark source extractions / probes (not for repo) ###
+tools/_spark_src/
+tools/_spark_core/
+tools/_spark_core_src/
+tools/jvavtest/
+tools/*.class
+1/

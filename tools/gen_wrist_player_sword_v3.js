@@ -15,26 +15,30 @@
  *       故 96 宽合图下原版 box-UV 像素坐标仍精确落在左 64px 身体区。）
  *
  *   剑层   = D:\Download\sword.geo.json 完整骨树，经刚体变换 M' = A·p + B 嵌入 rightItem（手腕）：
- *     · A = [[0,0,−1],[1,0,0],[0,−1,0]]，即 (x,y,z)→(−z,x,−y)（新A；search_embedding_v3 48 候选）
- *     · anchor = main 骨 pivot；B = wrist − A·mainPivot
+ *     · A = [[−1,0,0],[0,1,0],[0,0,−1]]，即 (x,y,z)→(−x,y,−z)（10/05 朝向修正：A=Ry(180°)，π 绕 Y）
+ *       —— 内部系（Spark 解析后 = 实际渲染系：+X 右/+Y 上/+Z 前）下 Q=A 把物品静止剑轴
+ *       (0,0.5,−0.866)（上+后）映到 (0,0.5,0.866)（前方+上 30°，= 原动画仰角、手柄在手里）。
+ *       自洽条件（静态与动画同用 A 共轭）：动画文件 rotation (fx,fy,fz)→(−fx,fy,−fz)、
+ *       position (px,py,pz)→(−px,py,−pz)（gen_wrist_sword_anim_v3 执行；scale 原样）。
+ *     · anchor = 物品静止姿态 pommel（handle cube4 中心）→ 手腕（B = wrist − A·pommelFile）；
+ *       旧锚（main 文件 pivot）在 A=Ry180 下会把静止剑送到玩家身后 27px，弃用
  *     · 骨 pivot / cube pivot：Tpt = A·p + B
  *     · cube origin：Torigin = A·o + B + min(0, A·s)（逐分量）——
  *       Spark box = [origin, origin+size]（OVertexSet 逐行核对），origin 必须取旋转包围盒最小角；
  *       旧版 Tpt(o) 会把每个 cube 平移 |A·s| 的负分量（剑体散架，旧A build 从未实测过）
- *     · cube size：Tsize = |A·s| = (sz, sx, sy)
+ *     · cube size：Tsize = |A·s| = (sx, sy, sz)（A=Ry180 ⇒ 恒等）
  *     · cube rotation：Trot = A·R·Aᵀ（共轭，正交阵 A⁻¹=Aᵀ）
  *     · face-UV：corner-matching remap（从 Spark OPolygon/OUVUnion 反编译推导）：
  *         per-face 分配（非镜像）：W0←(u+w,v) W1←(u,v) W2←(u,v+h) W3←(u+w,v+h)
- *         面法线对应 old→new：north→east, south→west, up→north, down→south, east→up, west→down
- *         角点对应（单位角点 (cx,cy,cz)）：→ (1−cz, cx, 1−cy)
+ *         面法线对应 old→new：north→south, south→north, west→east, east→west, up→up, down→down
+ *         角点对应（单位角点 (cx,cy,cz)）：→ (1−cx, cy, 1−cz)
  *         恒等/翻转面：解出带符号 (u,v,w,h) 直接写（区域不动、像素不动）
- *         90°面（south→west, up→north, down→south）：转置 (|h|×|w|) 区域装进合图下剑区
- *               (64,32)-(96,64)，像素按角点导出的仿射映射搬运（双线性采样）
+ *         90°面：A=Ry180 下每个面映到平行面（w/h 不变）⇒ 0 个；转置代码保留，job=0 时空转
  *       注：Spark 不解析 uv_rotation（OUVUnion.FaceUV 仅 uv/uv_size，全源码无 uv_rotation）→ 忽略
  *
  *   贴图   = 静态复合 96×64：
  *     BODY_TEX 64×64 @(0,0) + SWORD_TEX 32×32 @(64,0)（原样）
- *     + 90°面转置区域 @(64,32)-(96,64)（像素搬运）
+ *     + 90°面转置区域 @(64,32)-(96,64)（像素搬运；A=Ry180 下 0 job，区域为空）
  *
  * 动画（方案B 叠加层，另见 gen_wrist_state_anim_v3.js）：
  *   STATE(1) = state.land.idle/move/jump/fall（base_state 原样驱动原版骨；
@@ -97,18 +101,56 @@ if (!bodyBoneMap.rightItem) { console.error('自检失败: 身体模型缺 right
 const wrist = bodyBoneMap.rightItem.pivot.slice();          // 恒等姿态下 world(rightItem) = 文件 pivot
 console.log('手腕 rightItem =', JSON.stringify(wrist));
 
-const mainPivot = swordBoneMap.main.pivot.slice();          // 剑 main 骨 pivot（剑模型文件 px）
-// A = [[0,0,−1],[1,0,0],[0,−1,0]]：(x,y,z)→(−z,x,−y)（交接书 §5 新A；48 候选穷举解）
-const A = [[0, 0, -1], [1, 0, 0], [0, -1, 0]];
-const AT = [[0, 1, 0], [0, 0, -1], [-1, 0, 0]];             // Aᵀ = A⁻¹
+// A = [[−1,0,0],[0,1,0],[0,0,−1]]：(x,y,z)→(−x,y,−z)（10/05 朝向修正 A=Ry180，π 绕 Y）
+// 内部系（渲染系 +X右/+Y上/+Z前）：静止剑轴 (0,0.5,−0.866) → (0,0.5,0.866) 前方+上30°
+const A = [[-1, 0, 0], [0, 1, 0], [0, 0, -1]];
+const AT = [[-1, 0, 0], [0, 1, 0], [0, 0, -1]];             // Aᵀ = A⁻¹ = A（对称）
 const mulA = (v) => [
   A[0][0]*v[0] + A[0][1]*v[1] + A[0][2]*v[2],
   A[1][0]*v[0] + A[1][1]*v[1] + A[1][2]*v[2],
   A[2][0]*v[0] + A[2][1]*v[1] + A[2][2]*v[2],
 ];
-const aMain = mulA(mainPivot);
-const B = [+(wrist[0] - aMain[0]).toFixed(4), +(wrist[1] - aMain[1]).toFixed(4), +(wrist[2] - aMain[2]).toFixed(4)];
-console.log('A·main =', JSON.stringify(aMain.map((x) => +x.toFixed(4))), '  平移 B =', JSON.stringify(B));
+const DEG = Math.PI / 180;
+// ---------------------------------------------------------------- 锚点 = 物品静止姿态 pommel（10/05 朝向修正）
+// 旧锚（main 文件 pivot）在 A=Ry180 下把静止剑送到玩家身后 27px ⇒ 改锚 pommel（handle cube4 中心）。
+// 物品内部系约定（Spark 解析，verify_pose_v3 已对实测校准）：
+//   点/position (x,y,z)→(−x,y,z)；rotation 文件 (fx,fy,fz) → 内部矩阵 Rz(fz)·Ry(−fy)·Rx(−fx)
+// 静止关键帧（3rd_still@0）从物品动画文件读取，不硬编码。
+let B = [0, 0, 0];
+let pommelFile = null;
+{
+  const st = readJSON(PACK + `/animations/${NS}/item/sword/3rd_still.json`).animations['3rd_still'].bones;
+  const kfArr = (bd, prop) => { const v = bd && bd[prop] && bd[prop]['0']; return v ? (Array.isArray(v) ? v : v.post || v.pre) : null; };
+  const M4I = () => [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
+  const M4mul = (a, b) => a.map((row, i) => [0,1,2,3].map((j) => row[0]*b[0][j] + row[1]*b[1][j] + row[2]*b[2][j] + row[3]*b[3][j]));
+  const M4t = (v) => { const m = M4I(); m[0][3] = v[0]; m[1][3] = v[1]; m[2][3] = v[2]; return m; };
+  const M3to4 = (m) => [[m[0][0],m[0][1],m[0][2],0],[m[1][0],m[1][1],m[1][2],0],[m[2][0],m[2][1],m[2][2],0],[0,0,0,1]];
+  const M4apply = (m, v) => [m[0][0]*v[0]+m[0][1]*v[1]+m[0][2]*v[2]+m[0][3], m[1][0]*v[0]+m[1][1]*v[1]+m[1][2]*v[2]+m[1][3], m[2][0]*v[0]+m[2][1]*v[1]+m[2][2]*v[2]+m[2][3]];
+  const bmap = {}; for (const b of swordGeo.bones) bmap[b.name] = b;
+  const chainW = (name) => {
+    const path = []; let cur = name;
+    while (cur && cur !== 'bb_main') { path.unshift(cur); cur = bmap[cur].parent || 'bb_main'; }
+    let W = M4I();
+    for (const n of path) {
+      const b = bmap[n];
+      const piv = [-b.pivot[0], b.pivot[1], b.pivot[2]];
+      const a = st[n] || {};
+      const posRaw = kfArr(a, 'position');
+      const pos = posRaw ? [-posRaw[0], posRaw[1], posRaw[2]] : [0, 0, 0];
+      const rotRaw = kfArr(a, 'rotation');
+      const R = rotRaw ? M3to4(eulToMat([-rotRaw[0], -rotRaw[1], rotRaw[2]])) : M4I();
+      W = M4mul(W, M4mul(M4t([piv[0]+pos[0], piv[1]+pos[1], piv[2]+pos[2]]), M4mul(R, M4t([-piv[0], -piv[1], -piv[2]]))));
+    }
+    return W;
+  };
+  const pc = bmap.handle.cubes[4];                          // pommel（中心 = cube 中心；cube 自带旋转绕自身中心）
+  const pommelInt = M4apply(chainW('handle'), [-pc.origin[0] - pc.size[0]/2, pc.origin[1] + pc.size[1]/2, pc.origin[2] + pc.size[2]/2]);
+  pommelFile = [-pommelInt[0], pommelInt[1], pommelInt[2]];
+  console.log('静止姿态 pommel =', JSON.stringify(pommelInt.map((x) => +x.toFixed(4))), '（内部系）  文件系 =', JSON.stringify(pommelFile.map((x) => +x.toFixed(4))));
+  const aPom = mulA(pommelFile);
+  B = [+(wrist[0] - aPom[0]).toFixed(4), +(wrist[1] - aPom[1]).toFixed(4), +(wrist[2] - aPom[2]).toFixed(4)];
+  console.log('A·pommel =', JSON.stringify(aPom.map((x) => +x.toFixed(4))), '  平移 B =', JSON.stringify(B));
+}
 const Tpt = (p) => { const q = mulA(p); return [+(q[0]+B[0]).toFixed(4), +(q[1]+B[1]).toFixed(4), +(q[2]+B[2]).toFixed(4)]; };
 // cube origin = 旋转包围盒最小角（Spark box=[origin,origin+size]，OVertexSet 核对）
 const Torigin = (o, s) => {
@@ -116,10 +158,9 @@ const Torigin = (o, s) => {
   const t = Tpt(o);
   return [+(t[0] + Math.min(0, q[0])).toFixed(4), +(t[1] + Math.min(0, q[1])).toFixed(4), +(t[2] + Math.min(0, q[2])).toFixed(4)];
 };
-// cube size = |A·s|：对 A=(x,y,z)→(−z,x,−y) 即 (sz, sx, sy)
-const Tsize = (v) => [+v[2], +v[0], +v[1]];
+// cube size = |A·s|：对 A=(x,y,z)→(−x,y,−z) 即 (sx, sy, sz)（恒等）
+const Tsize = (v) => [+v[0], +v[1], +v[2]];
 // cube/bone 自带 rotation：R' = A·R·Aᵀ（共轭）
-const DEG = Math.PI / 180;
 function eulToMat(e) {
   const [x, y, z] = e.map((d) => d * DEG);
   const cx = Math.cos(x), sx = Math.sin(x), cy = Math.cos(y), sy = Math.sin(y), cz = Math.cos(z), sz = Math.sin(z);
@@ -163,9 +204,9 @@ const FACE_CORNERS = {
   down:  [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],
 };
 // 面法线 old→new：n' = A·n
-const FACE_PAIR = { north: 'east', south: 'west', up: 'north', down: 'south', east: 'up', west: 'down' };
-// 角点对应：旧单位角点 (cx,cy,cz) → 新单位角点 (1−cz, cx, 1−cy)（min-corner 约定下推导）
-const mapCorner = (c) => [1 - c[2], c[0], 1 - c[1]];
+const FACE_PAIR = { north: 'south', south: 'north', west: 'east', east: 'west', up: 'up', down: 'down' };
+// 角点对应：旧单位角点 (cx,cy,cz) → 新单位角点 (1−cx, cy, 1−cz)（min-corner 约定下推导）
+const mapCorner = (c) => [1 - c[0], c[1], 1 - c[2]];
 // CORR[f] = [j0..j3]：旧面 f 的 Wi → 新面 FACE_PAIR[f] 的 Wj
 const CORR = {};
 for (const f of Object.keys(FACE_CORNERS)) {
@@ -557,14 +598,16 @@ console.log('  身体 10 骨 = player_slim 1:1 ✓（slim 3 宽臂；0.9375 运�
     console.log(`  几何 ✓ 脚=${minY} 头顶=${maxY.toFixed(4)}px(=${(maxY / 16).toFixed(4)}块) 帽顶=${hatTop.toFixed(4)}px(=${(hatTop / 16).toFixed(4)}块)；×${RS} 渲染=${(maxY * RS / 16).toFixed(4)}/${(hatTop * RS / 16).toFixed(4)}块（=原版 1.875/1.9043）`);
   }
 }
-// 3) 剑 main 骨（A 变换后）pivot 恰在手腕（= line 95 的 wrist，恒等姿态 rightItem pivot）—— 锚点
+// 3) 锚点 = 物品静止姿态 pommel → 手腕（10/05 朝向修正）：A·pommelFile + B == wrist
 const mb = bones.find((b) => b.name === 'main');
 if (!mb || mb.parent !== 'right') { console.error('  [FAIL] main 缺失或父级非 right'); fail++; }
+else if (!pommelFile) { console.error('  [FAIL] pommel 锚点未计算'); fail++; }
 else {
   const ws = wrist.map((v) => r5(v * VANILLA_RENDER_SCALE));
-  const d = Math.hypot(mb.pivot[0] - ws[0], mb.pivot[1] - ws[1], mb.pivot[2] - ws[2]);
-  if (d > 0.01) { console.error(`  [FAIL] main pivot 不在手腕: ${JSON.stringify(mb.pivot)} (d=${d.toFixed(4)})`); fail++; }
-  else console.log(`  main pivot = ${JSON.stringify(mb.pivot)} = 手腕 ${JSON.stringify(ws)} ✓（锚点）`);
+  const ap = mulA(pommelFile);
+  const d = Math.hypot(ap[0] + B[0] - ws[0], ap[1] + B[1] - ws[1], ap[2] + B[2] - ws[2]);
+  if (d > 0.01) { console.error(`  [FAIL] pommel 锚点不在手腕: d=${d.toFixed(4)}`); fail++; }
+  else console.log(`  pommel 锚点 = 手腕 ${JSON.stringify(ws)} ✓（静止姿态 pommel→手腕；含动画 pos 的实际落点由 verify_pose_v3 验）`);
 }
 // 4) 剑子树 parent 链
 for (const [n, p] of Object.entries(SWORD_PARENT)) {
@@ -596,12 +639,12 @@ else console.log(`  剑 cube 数 = ${dstCubes} ✓   总骨数 = ${bones.length}
       }
     }
   }
-  // 已知值抽查：新A 下 Rz(θ) → Rx(−θ)（A 把 z 轴映到 −x）
-  const spot = Trot([0, 0, 45]);
-  if (JSON.stringify(spot) !== JSON.stringify([-45, 0, 0])) {
-    console.error(`  [FAIL] Trot 抽查 [0,0,45] -> ${JSON.stringify(spot)}（应为 [-45,0,0]）`); fail++;
+  // 已知值抽查：A=Ry180 下 Rz(θ)→Rz(−θ)（z 轴反向）、Ry(θ)→Ry(θ)（y 轴保持）、Rx(θ)→Rx(−θ)（x 轴反向）
+  const spot = Trot([45, 45, 45]);
+  if (JSON.stringify(spot) !== JSON.stringify([-45, 45, -45])) {
+    console.error(`  [FAIL] Trot 抽查 [45,45,45] -> ${JSON.stringify(spot)}（应为 [-45,45,-45]）`); fail++;
   } else {
-    console.log('  Trot 共轭抽查 [0,0,45] -> [-45,0,0] ✓');
+    console.log('  Trot 共轭抽查 [45,45,45] -> [-45,45,-45] ✓（≡ 动画转换 (−fx,fy,−fz)）');
   }
 }
 // 8) 复合贴图回读校验尺寸

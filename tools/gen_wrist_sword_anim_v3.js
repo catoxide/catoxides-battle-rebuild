@@ -3,7 +3,8 @@
  * gen_wrist_sword_anim_v3.js
  *
  * 生成 player_wrist 的 MAIN 组动画（3rd_still / 3rd_attack），在用户剑物品动画
- * （main/left/right/shade 原样）基础上加入抬臂关键帧（rightArm / rightForeArm）：
+ * （main/left/right/shade，10/05 起经 A=Ry180 嵌入转换：rotation (fx,fy,fz)→(−fx,fy,−fz)、
+ * position (px,py,pz)→(−px,py,−pz)，scale 原样）基础上加入抬臂关键帧（rightArm / rightForeArm）：
  *
  *   需求 4"手臂最低点朝上" → 手腕高于肘部（前臂朝上）。
  *   抬臂 IK（内部系数值解，Spark 精确约定）：
@@ -159,19 +160,42 @@ function scalePositions(bd) {
   return bd;
 }
 
+// ---------------------------------------------------------------- 10/05 朝向修正 A=Ry180：剑骨关键帧 A 转换（物品文件 → 嵌入文件）
+// 自洽条件：静态共轭 A·R·Aᵀ ≡ 本转换（A=Ry180 时 rotation (fx,fy,fz)→(−fx,fy,−fz)、
+// position (px,py,pz)→(−px,py,−pz)）；scale 原样（沿骨局部轴，帧一致旋转）。
+// 身体臂关键帧（rightArm/rightForeArm）在身体坐标系、不在剑嵌入内，不转换。
+const SWORD_ANIM_BONES = new Set(['main', 'left', 'right', 'shade']);
+const convVec = (arr) => [-arr[0], arr[1], -arr[2]];
+function convSwordBone(d) {
+  const o = JSON.parse(JSON.stringify(d));
+  for (const prop of ['rotation', 'position']) {
+    if (!o[prop]) continue;
+    for (const t of Object.keys(o[prop])) {
+      const v = o[prop][t];
+      if (Array.isArray(v)) o[prop][t] = convVec(v);
+      else if (v && typeof v === 'object') {
+        const nv = {};
+        for (const [k, val] of Object.entries(v)) nv[k] = ((k === 'post' || k === 'pre') && Array.isArray(val)) ? convVec(val) : val;
+        o[prop][t] = nv;
+      }
+    }
+  }
+  return o;
+}
+
 // ---------------------------------------------------------------- 组装动画
-// 3rd_still：剑骨原样（position 1:1 原值）+ 臂 0 点静态
+// 3rd_still：剑骨 A 转换（rotation/position 按 A=Ry180）+ 臂 0 点静态
 function stillOut() {
   const bones = {};
-  for (const [n, d] of Object.entries(stillBones)) bones[n] = scalePositions(JSON.parse(JSON.stringify(d)));
+  for (const [n, d] of Object.entries(stillBones)) bones[n] = scalePositions(SWORD_ANIM_BONES.has(n) ? convSwordBone(d) : JSON.parse(JSON.stringify(d)));
   bones.rightArm = { rotation: { '0': armRot.rightArm } };
   bones.rightForeArm = { rotation: { '0': armRot.rightForeArm } };
   return { format_version: itemStill.animations['3rd_still'].format_version || itemStill.format_version || '1.8.0', animations: { '3rd_still': { bones } } };
 }
-// 3rd_attack：剑骨原样（position 1:1 原值）+ 臂在所有剑关键帧时刻钉死同一值（避免插值漂移）
+// 3rd_attack：剑骨 A 转换 + 臂在所有剑关键帧时刻钉死同一值（避免插值漂移）
 function attackOut() {
   const bones = {};
-  for (const [n, d] of Object.entries(attackBones)) bones[n] = scalePositions(JSON.parse(JSON.stringify(d)));
+  for (const [n, d] of Object.entries(attackBones)) bones[n] = scalePositions(SWORD_ANIM_BONES.has(n) ? convSwordBone(d) : JSON.parse(JSON.stringify(d)));
   // 取 3rd_attack 里所有出现过的时间点并集（剑骨），臂在每个点都放同一值
   const times = new Set(['0']);
   for (const d of Object.values(attackBones)) {
