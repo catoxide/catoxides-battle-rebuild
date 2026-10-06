@@ -1,12 +1,8 @@
-package com.catoxide.catoxidesbattlerebuild.client.quest;
+package example.contentpack.questtest.client;
 
-import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
-import com.catoxide.catoxidesbattlerebuild.network.QuestSyncPacket;
+import example.contentpack.questtest.network.QuestSyncPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 
 import java.util.ArrayList;
@@ -14,11 +10,12 @@ import java.util.List;
 
 /**
  * 任务状态简易 HUD（左上角，测试用）。
- * <p>显示当前玩家的激活任务树：根任务（标题+状态）+ 缩进子任务（标题+状态）。
+ * <p>显示当前玩家的激活任务树：根任务（标题+状态+进度）+ 缩进子任务（标题+状态）。
  * <p>数据源：{@link ClientQuestCache}（服务端经 QuestSyncPacket 定时同步）。
+ * <p><b>M3 迁移</b>：由 core 移入本包。原 core 版用 {@code @EventBusSubscriber}（A7），
+ * 改为 {@link #onRenderGui} 显式处理，由 {@code QuestTestPack.register()} 挂到 game 总线。
  */
-@EventBusSubscriber(modid = CatoxidesBattleRebuildConstants.MODID, value = Dist.CLIENT)
-public class QuestHUD {
+public final class QuestHUD {
 
     private static final int PADDING = 3;
     private static final int LINE_HEIGHT = 10;
@@ -28,8 +25,12 @@ public class QuestHUD {
     private static final int COLOR_COMPLETED = 0xFF55FF55;
     private static final int COLOR_FAILED = 0xFFFF5555;
     private static final int COLOR_SUBTASK = 0xFFAAAAAA;
+    private static final int COLOR_PROGRESS = 0xFFFFAA00;
 
-    @SubscribeEvent
+    private QuestHUD() {
+    }
+
+    /** RenderGuiEvent.Post 处理（由包 register() 显式挂到 game 总线） */
     public static void onRenderGui(RenderGuiEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.options.hideGui) {
@@ -47,13 +48,18 @@ public class QuestHUD {
         // 收集显示行：根 + 缩进子任务（未完成）
         List<HudLine> lines = new ArrayList<>();
         for (QuestSyncPacket.QuestEntry root : roots) {
-            lines.add(new HudLine(formatQuest(root), colorOf(root)));
+            String progress = ClientQuestCache.formatProgress(root.progress());
+            String rootLine = formatQuest(root) + (progress.isEmpty() ? "" : " (" + progress + ")");
+            lines.add(new HudLine(rootLine, colorOf(root)));
             for (QuestSyncPacket.QuestEntry child :
                     ClientQuestCache.getInstance().getChildren(root.instanceId())) {
                 if (!"ACTIVE".equals(child.state())) {
                     continue;
                 }
-                lines.add(new HudLine("  ▸ " + formatSub(child), COLOR_SUBTASK));
+                String childProgress = ClientQuestCache.formatProgress(child.progress());
+                String subLine = "  ▸ " + formatSub(child)
+                        + (childProgress.isEmpty() ? "" : " (" + childProgress + ")");
+                lines.add(new HudLine(subLine, COLOR_SUBTASK));
             }
         }
 

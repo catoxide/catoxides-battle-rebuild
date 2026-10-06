@@ -1,3 +1,5 @@
 {
-  "config.jade.plugin_catoxidesbattlerebuild.bone_health": "Bone Health"
+  "config.jade.plugin_catoxidesbattlerebuild.bone_health": "Bone Health",
+  "key.categories.catoxides": "Catoxides",
+  "key.catoxidesbattlerebuild.sword_hitbox_debug": "Toggle Sword Hitbox Debug Overlay"
 }

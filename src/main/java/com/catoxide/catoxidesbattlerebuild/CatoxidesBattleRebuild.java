@@ -10,7 +10,6 @@ import com.catoxide.catoxidesbattlerebuild.registry.ModWeapons;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.EntityBoneSystem;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.ServerBoneSyncManager;
 import com.catoxide.catoxidesbattlerebuild.server.damage.DamageProcessor;
-import com.catoxide.catoxidesbattlerebuild.server.quest.QuestSyncManager;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.CreativeModeTab;
@@ -41,12 +40,8 @@ public class CatoxidesBattleRebuild {
         com.catoxide.catoxidesbattlerebuild.core.combat.CombatConfig.register(modContainer);
         // 骨骼位置同步管理器（懒单例：必须主动初始化，否则事件监听不注册 → 客户端无骨骼数据）
         ServerBoneSyncManager.getInstance();
-        // 任务状态同步管理器（懒单例：同上，否则客户端无任务数据）
-        QuestSyncManager.getInstance();
-        // 任务调试命令 /quest
-        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener(
-                (net.neoforged.neoforge.event.RegisterCommandsEvent e) ->
-                        com.catoxide.catoxidesbattlerebuild.core.quest.command.QuestCommand.register(e.getDispatcher()));
+        // 任务系统（M3 已迁入 quest-test-pack）：同步管理器/命令/按键/HUD/网络
+        // 均由 QuestTestPack.register() 显式注册；不装任务包时 core 侧零残留（R3）
 
         BLOCKS.register(modEventBus);
         ITEMS.register(modEventBus);

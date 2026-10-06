@@ -1,3 +1,5 @@
 {
-  "config.jade.plugin_catoxidesbattlerebuild.bone_health": "部位血量"
+  "config.jade.plugin_catoxidesbattlerebuild.bone_health": "部位血量",
+  "key.categories.catoxides": "Katoxides",
+  "key.catoxidesbattlerebuild.sword_hitbox_debug": "显示/隐藏剑碰撞调试可视化"
 }

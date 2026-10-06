@@ -1,7 +1,7 @@
-package com.catoxide.catoxidesbattlerebuild.client.quest;
+package example.contentpack.questtest.client;
 
-import com.catoxide.catoxidesbattlerebuild.network.QuestSyncPacket;
-import com.catoxide.catoxidesbattlerebuild.network.QuestToggleStarPacket;
+import example.contentpack.questtest.network.QuestSyncPacket;
+import example.contentpack.questtest.network.QuestToggleStarPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -13,8 +13,9 @@ import java.util.List;
 /**
  * 任务界面（类原版成就界面）。
  * <p>左侧：任务滚动列表（自定义，鼠标滚轮滚动 + 点击选中，自带滑条视觉）；
- * 右侧：选中任务详情（描述/状态/子任务）；按钮：星标切换、关闭。
+ * <p>右侧：选中任务详情（描述/状态/进度/子任务）；按钮：星标切换、关闭。
  * <p>数据源：{@link ClientQuestCache}（服务端 QuestSyncPacket 同步）。
+ * <p><b>M3 迁移</b>：由 core 移入本包（普通 Screen 类，无注解依赖，原样搬迁）。
  */
 public class QuestScreen extends Screen {
 
@@ -91,7 +92,8 @@ public class QuestScreen extends Screen {
         // 本地预览
         selected = new QuestSyncPacket.QuestEntry(
                 selected.instanceId(), selected.definitionId(), selected.title(), selected.description(),
-                selected.state(), !selected.starred(), selected.parentInstanceId(), selected.location());
+                selected.state(), !selected.starred(), selected.parentInstanceId(), selected.location(),
+                selected.progress());
         updateStarButton();
         ClientQuestCache.getInstance().applyStar(selected.instanceId(), selected.starred());
         // 刷新列表快照（★ 标记立刻反映 + 保持当前分区筛选，不等同步包回推）
@@ -134,8 +136,10 @@ public class QuestScreen extends Screen {
             if (quest == selected) {
                 graphics.fill(LIST_X, y, LIST_X + LIST_WIDTH, y + ITEM_HEIGHT, 0x33FFFFFF);
             }
+            String progress = ClientQuestCache.formatProgress(quest.progress());
             String line = quest.title() + "  " + stateCn(quest.state())
-                    + (quest.starred() ? " ★" : "");
+                    + (quest.starred() ? " ★" : "")
+                    + (progress.isEmpty() ? "" : "  " + progress);
             graphics.drawString(this.font, line, LIST_X + 4, y + 7, stateColor(quest.state()));
         }
     }
@@ -155,6 +159,11 @@ public class QuestScreen extends Screen {
         }
         graphics.drawString(this.font, "状态: " + stateCn(selected.state()), x, y, stateColor(selected.state()));
         y += 12;
+        String progress = ClientQuestCache.formatProgress(selected.progress());
+        if (!progress.isEmpty()) {
+            graphics.drawString(this.font, "进度: " + progress, x, y, 0xFFFFAA00);
+            y += 12;
+        }
         List<QuestSyncPacket.QuestEntry> children =
                 ClientQuestCache.getInstance().getChildren(selected.instanceId());
         if (!children.isEmpty()) {
@@ -164,6 +173,10 @@ public class QuestScreen extends Screen {
                 StringBuilder line = new StringBuilder("  ▸ " + child.title() + " " + stateCn(child.state()));
                 if (!child.location().isEmpty()) {
                     line.append(" 📍(").append(child.location()).append(')');
+                }
+                String childProgress = ClientQuestCache.formatProgress(child.progress());
+                if (!childProgress.isEmpty()) {
+                    line.append("  ").append(childProgress);
                 }
                 graphics.drawString(this.font, line.toString(), x, y, stateColor(child.state()));
                 y += 11;

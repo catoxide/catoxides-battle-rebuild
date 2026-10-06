@@ -1,4 +1,4 @@
-package com.catoxide.catoxidesbattlerebuild.core.quest.command;
+package example.contentpack.questtest.command;
 
 import com.catoxide.catoxidesbattlerebuild.core.quest.QuestDefinition;
 import com.catoxide.catoxidesbattlerebuild.core.quest.QuestInstance;
@@ -13,7 +13,6 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Collection;
@@ -33,6 +32,9 @@ import java.util.List;
  * /quest star &lt;definition_id&gt; [target]        星标切换
  * </pre>
  * 权限：2（op）。target 缺省 = 执行者。
+ * <p><b>M3 迁移</b>：由 core 移入本包（纯 brigadier 命令，只引用 core 契约，
+ * 由 {@code QuestTestPack.register()} 挂 RegisterCommandsEvent）。
+ * 不装任务包时 /quest 不存在（R3）。
  */
 public final class QuestCommand {
 

@@ -1,14 +1,16 @@
-package com.catoxide.catoxidesbattlerebuild.client.quest;
+package example.contentpack.questtest.client;
 
-import com.catoxide.catoxidesbattlerebuild.network.QuestSyncPacket;
+import example.contentpack.questtest.network.QuestSyncPacket;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
  * 客户端任务缓存（接收服务端 QuestSyncPacket 后更新）。
  * <p>HUD/UI 统一从此读数据（单机/多人一致，不直接碰服务端 QuestSystem）。
+ * <p><b>M3 迁移</b>：由 core 移入本包。
  */
 public final class ClientQuestCache {
 
@@ -58,9 +60,30 @@ public final class ClientQuestCache {
             if (e.instanceId().equals(instanceId)) {
                 entries.set(i, new QuestSyncPacket.QuestEntry(
                         e.instanceId(), e.definitionId(), e.title(), e.description(),
-                        e.state(), starred, e.parentInstanceId(), e.location()));
+                        e.state(), starred, e.parentInstanceId(), e.location(), e.progress()));
                 return;
             }
         }
+    }
+
+    /** 进度显示格式："killed=2 need=2"（整数值去掉 .0；空 map 返回空串） */
+    public static String formatProgress(Map<String, Float> progress) {
+        if (progress == null || progress.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (var e : progress.entrySet()) {
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(e.getKey()).append('=').append(fmt(e.getValue()));
+        }
+        return sb.toString();
+    }
+
+    private static String fmt(float v) {
+        return v == Math.floor(v) && !Float.isInfinite(v)
+                ? String.valueOf((long) v)
+                : String.valueOf(v);
     }
 }

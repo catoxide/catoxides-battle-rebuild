@@ -11,11 +11,24 @@ import com.catoxide.catoxidesbattlerebuild.core.quest.IQuestGiver;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import example.contentpack.questtest.client.ClientQuestCache;
+import example.contentpack.questtest.client.QuestHUD;
+import example.contentpack.questtest.client.QuestKeyBindings;
+import example.contentpack.questtest.command.QuestCommand;
+import example.contentpack.questtest.network.QuestSyncPacket;
+import example.contentpack.questtest.network.QuestToggleStarPacket;
+import example.contentpack.questtest.server.QuestSyncManager;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -184,6 +197,42 @@ public class QuestTestPack implements ContentPack {
                 questSystem.checkAllQuests(player);
             }
         });
+
+        // ===== 6. /quest 命令（M3 迁移：由 core 主类移入；不装包时命令不存在，R3）=====
+        NeoForge.EVENT_BUS.addListener((RegisterCommandsEvent e) ->
+                QuestCommand.register(e.getDispatcher()));
+
+        // ===== 7. 任务网络（M3 迁移：V1 先例——包自己注册 payload）=====
+        // registrar("1") 无 modid 参数 ⇒ 归入主 mod 协议 "1"；payload id 保持
+        // catoxidesbattlerebuild:* 不变（B6：命名空间不随包走）。
+        context.getModEventBus().addListener(RegisterPayloadHandlersEvent.class, e -> {
+            PayloadRegistrar reg = e.registrar("1");
+            reg.playToClient(QuestSyncPacket.TYPE, QuestSyncPacket.STREAM_CODEC,
+                    (p, c) -> c.enqueueWork(() ->
+                            ClientQuestCache.getInstance().update(c.player().getUUID(), p.entries())));
+            reg.playToServer(QuestToggleStarPacket.TYPE, QuestToggleStarPacket.STREAM_CODEC,
+                    (p, c) -> c.enqueueWork(() -> {
+                        ServerPlayer player = (ServerPlayer) c.player();
+                        QuestSystem qs = QuestSystem.getInstance();
+                        for (QuestInstance root : qs.getPlayerQuests(player.getUUID())) {
+                            for (QuestInstance q : KillGoal.flattenAll(root)) {
+                                if (q.getInstanceId().equals(p.instanceId())) {
+                                    qs.setStarred(q, !q.isStarred());
+                                    return;
+                                }
+                            }
+                        }
+                    }));
+        });
+
+        // ===== 8. 任务同步管理器（M3 迁移：服务端 tick 推送整树 + 进度通道）=====
+        QuestSyncManager.getInstance();
+
+        // ===== 9. 客户端：按键 + HUD（M3 迁移；显式 addListener——包不能用 @EventBusSubscriber，A7）=====
+        context.getModEventBus().addListener(RegisterKeyMappingsEvent.class,
+                e -> e.register(QuestKeyBindings.getOpenQuest()));
+        NeoForge.EVENT_BUS.addListener((ClientTickEvent.Post e) -> QuestKeyBindings.onClientTick());
+        NeoForge.EVENT_BUS.addListener((RenderGuiEvent.Post e) -> QuestHUD.onRenderGui(e));
 
         LogManager.serverInfo(TAG, "QuestTestPack registered");
     }
