@@ -185,13 +185,23 @@ function convSwordBone(d) {
 }
 
 // ---------------------------------------------------------------- 组装动画
+// ⚠️ Spark OAnimation codec 默认值（10/06「只能挥砍一次」根因，字节码定案）：
+//   loop 默认 ONCE、animation_length 默认 9999999.0f。
+//   ONCE 动画仅当 time > animation_length 才发 Finish → EXIT → IDLE → 离开层；
+//   animation_length 缺省 ⇒ 永远不离开层（卡 WORK 持末帧）⇒ handler isPlaying 恒真
+//   ⇒ 看门狗不恢复 still + 下次挥砍被拦。loop/animation_length 必须显式声明
+//   （原样继承物品动画；缺失才用兜底值）。
+const loopOf = (a, fallback) => (a && a.loop !== undefined ? a.loop : fallback);
+const lenOf = (a, fallback) => (a && a.animation_length !== undefined ? a.animation_length : fallback);
 // 3rd_still：剑骨 A 转换（rotation/position 按 A=Ry180）+ 臂 0 点静态
 function stillOut() {
   const bones = {};
   for (const [n, d] of Object.entries(stillBones)) bones[n] = scalePositions(SWORD_ANIM_BONES.has(n) ? convSwordBone(d) : JSON.parse(JSON.stringify(d)));
   bones.rightArm = { rotation: { '0': armRot.rightArm } };
   bones.rightForeArm = { rotation: { '0': armRot.rightForeArm } };
-  return { format_version: itemStill.animations['3rd_still'].format_version || itemStill.format_version || '1.8.0', animations: { '3rd_still': { bones } } };
+  const src = itemStill.animations['3rd_still'];
+  return { format_version: src.format_version || itemStill.format_version || '1.8.0',
+    animations: { '3rd_still': { bones, loop: loopOf(src, true), animation_length: lenOf(src, 3) } } };
 }
 // 3rd_attack：剑骨 A 转换 + 臂在所有剑关键帧时刻钉死同一值（避免插值漂移）
 function attackOut() {
@@ -210,7 +220,9 @@ function attackOut() {
     for (const t of timesArr) kfs[String(t)] = armRot[bn];
     bones[bn] = { rotation: kfs };
   }
-  return { format_version: itemAttack.animations['3rd_attack'].format_version || itemAttack.format_version || '1.8.0', animations: { '3rd_attack': { bones } } };
+  const src = itemAttack.animations['3rd_attack'];
+  return { format_version: src.format_version || itemAttack.format_version || '1.8.0',
+    animations: { '3rd_attack': { bones, loop: loopOf(src, 'once'), animation_length: lenOf(src, 0.5) } } };
 }
 
 // ---------------------------------------------------------------- 写盘（pack + src + build）

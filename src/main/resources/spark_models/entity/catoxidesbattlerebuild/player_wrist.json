@@ -332,7 +332,7 @@
         },
         {
           "name": "hands",
-          "parent": "rightItem",
+          "parent": "body",
           "pivot": [
             11.2435,
             23.3688,

@@ -6,6 +6,7 @@ import cn.solarmoon.spark_core.animation.anim.AnimInstance;
 import cn.solarmoon.spark_core.animation.anim.AnimLayer;
 import cn.solarmoon.spark_core.animation.anim.KeyAnimData;
 import cn.solarmoon.spark_core.animation.anim.origin.AnimIndex;
+import cn.solarmoon.spark_core.animation.model.BonePose;
 import cn.solarmoon.spark_core.animation.model.ModelIndex;
 import cn.solarmoon.spark_core.event.BoneUpdateEvent;
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
@@ -62,9 +63,13 @@ import java.util.UUID;
  *       fall、fall_fly、jump、jump_land、climb.*），由 Spark 内置 PlayerBaseAnimStateMachine
  *       按玩家状态自动播放——身体/腿/头/双臂/手持位与 Spark 默认玩家模型完全一致
  *       （=「把默认动画叠上去」）。Java 只在 STATE 层空时兜底补播近似状态。</li>
- *   <li>MAIN(4)：3rd_still（循环常驻，用户剑物品动画，驱动剑骨 main/left/right/shade）；
- *       挥击上升沿 → stopAnimation(MAIN) + 3rd_attack（once），
- *       attack 结束后 MAIN 层空 → 看门狗恢复 3rd_still</li>
+ *   <li>MAIN(4)：3rd_still（loop=true 循环常驻，驱动剑骨 main/left/right/shade）；
+ *       挥击上升沿 → 清空 MAIN 层 + 3rd_attack（loop=once）。
+ *       存活判定<b>纯时间窗</b>（自跟踪起始 tick，10/06 v2：不读 AnimInstance 状态——
+ *       跨线程读 Spark 状态机与 60Hz 物理线程竞态，误判会把刚入层的新实例误杀，
+ *       动作被裁剪；也不信 isPlaying 层内检测——once 动画 animation_length 缺省
+ *       9999999 时恒真，永久拦截后续挥砍）。挥砍窗口（1.0s）内上升沿忽略
+ *       （= 原版物品行为，挥砍不可中断），attack 结算后看门狗恢复 3rd_still</li>
  * </ul>
  *
  * <p><b>尺寸（0.9375，2026-10-03 源码定案 / 2026-10-05 落地方式）</b>：原版玩家渲染 =
@@ -106,6 +111,43 @@ public class SwordPlayerModelHandler {
     private static final Map<UUID, Boolean> lastSwing = new HashMap<>();
     /** 诊断：MAIN 层空区间起点 tick（节流日志用，10/05「挥砍消失」定位） */
     private static final Map<UUID, Long> mainEmptySince = new HashMap<>();
+    /**
+     * 当前在播的 3rd_attack 实例 + 起始 tick（10/06「只能挥砍一次」+「动作被裁剪」修复）。
+     * 所有判定<b>纯时间</b>（clientTick 差值）：不读 AnimInstance.getState()——它是
+     * 跨线程读 Spark 状态机，与 60Hz 物理线程的状态写入竞态，误判"不存活"会把刚入层
+     * 的新实例立刻移除（=用户实测"整个动作被裁剪"的根因）；也不信 isPlaying 层内
+     * 检测（once 动画 animation_length 缺省 9999999 时恒真，永久拦截后续挥砍）。
+     */
+    private static final Map<UUID, AnimInstance> liveAttack = new HashMap<>();
+    private static final Map<UUID, Long> attackStartTick = new HashMap<>();
+    /**
+     * 挥砍窗口（client tick，20t/s）：20 tick = 1.0s。attack 实际总时长 ≈0.52s 真实
+     * 时间——Spark 物理 TPS=60（PhysicsLevel.TPS 字节码定案），动画时间=真实时间 1:1，
+     * in/out 渐入渐出已关（v2）：WORK 0.5s 后 Finish。窗口内上升沿忽略（原版物品
+     * 同行为：挥砍不可中断），保证当前挥砍完整播完不被中途清层裁剪；主动交接在
+     * 0.5s（ATTACK_END_TICKS）发生后，窗口实际只覆盖挥砍前半程。
+     */
+    private static final long SWING_WINDOW_TICKS = 20;
+    /**
+     * attack 总时长预算（client tick）：60 tick = 3s（0.8s 实际时长的 3.75 倍）——
+     * 僵尸兜底线：once 生命周期未结算（实例超预算仍在层内）时看门狗强制清层。
+     */
+    private static final long ATTACK_BUDGET_TICKS = 60;
+    /**
+     * 挥砍结束主动交接点（client tick）：10 tick = 0.5s。in/out 渐入渐出已关（v2），
+     * attack 实际总时长 ≈0.52s（60Hz 物理线程：30 个 physTick 走完 0.5s 关键帧后 Finish）；
+     * 结束瞬间实例进 EXIT，weight 立即归零（Spark 字节码：outTransitionTick==0 ⇒
+     * currentWeight=0）→ 剑跳到"无动画"零姿态（=模型默认位置）。0.5s 时关键帧已回到
+     * 静止位，此刻先放 3rd_still 入层再移除 attack，剑全程停在原地，无缝隙。
+     */
+    private static final long ATTACK_END_TICKS = 10;
+    // TODO（常备方案，用户 10/06 指示保留、暂不实施）：Spark 完全接管整个玩家——不做
+    // 每次切物品的 setModel 切换，ModelInstance/BonePose 初始化只在实体生成时做一次
+    // （发生在玩家可见前，零姿态窗口天然不可见）；剑平时挂在身上（静止位=挂位），
+    // 战斗选中时用"拔剑"动画取到手里。实施后模型切换闪烁结构性消失，但仍需本文件的
+    // 挥砍结束交接 + 看门狗（实例生命周期间隙与模型切换无关）。
+    // 待用户决策：是否对所有玩家常备 / 挂位位置 / 拔剑触发（切热栏 or 首次攻击）/
+    // 战斗后留手 or 自动收鞘 / 拔剑动画时长。
 
     /**
      * 每玩家的动态皮肤复合贴图（身体=玩家本人皮肤 + 剑）。
@@ -181,6 +223,9 @@ public class SwordPlayerModelHandler {
             }
             releaseOverlayTexture(overlays.remove(id));
             active.remove(id);
+            liveAttack.remove(id);
+            attackStartTick.remove(id);
+            mainEmptySince.remove(id);
             return true;
         });
     }
@@ -198,6 +243,8 @@ public class SwordPlayerModelHandler {
         active.clear();
         lastSwing.clear();
         mainEmptySince.clear();
+        liveAttack.clear();
+        attackStartTick.clear();
     }
 
     /** 释放动态复合贴图（texture==null 时 no-op） */
@@ -220,6 +267,7 @@ public class SwordPlayerModelHandler {
         try {
             IEntityAnimatable<?> animatable = (IEntityAnimatable<?>) player;
             animatable.getModelController().setModel(PLAYER_WRIST_MODEL);
+            seedSwordRestPose(animatable);   // 10/06：首帧预置剑骨静止位（消除激活/切物品的"默认位置"闪现）
             logModelHeight(player, "叠加层");   // [测高] 叠加层模型（rest 姿态；预期 1.875 块 = vanilla 0.9375 缩放）
             ResourceLocation tex = WRIST_TEX;
             try {
@@ -370,6 +418,9 @@ public class SwordPlayerModelHandler {
         releaseOverlayTexture(overlays.remove(player.getUUID()));
         active.remove(player.getUUID());
         lastSwing.remove(player.getUUID());
+        liveAttack.remove(player.getUUID());
+        attackStartTick.remove(player.getUUID());
+        mainEmptySince.remove(player.getUUID());
         LOGGER.info("[SwordPlayerModel] deactivated for {}", player.getGameProfile().getName());
     }
 
@@ -380,27 +431,68 @@ public class SwordPlayerModelHandler {
 
         maintainSkinOverlay(player, animatable);
 
-        // 挥击上升沿 → 3rd_attack（先停 MAIN 避免与 still 混合）
+        // 挥击上升沿 → 3rd_attack（10/06 v2）：窗口判定纯时间（不读状态——跨线程
+        // 读 Spark 状态机与 60Hz 物理线程竞态，误判会误杀刚入层的新实例，动作被裁剪）。
+        // 窗口内上升沿忽略 = 挥砍不可中断（与原版物品行为一致），当前挥砍完整播完。
         boolean swinging = player.swinging;
         boolean was = lastSwing.getOrDefault(player.getUUID(), false);
         if (swinging && !was) {
-            if (!isPlaying(animatable, AnimGroups.MAIN, ANIM_SWORD_ATTACK.getName())) {
-                controller.stopAnimation(AnimGroups.MAIN);
-                play(animatable, ANIM_SWORD_ATTACK, AnimGroups.MAIN);
-                LOGGER.info("[SwordPlayerModel][swing] {} 上升沿 → 3rd_attack（MAIN 层回放后 isPlaying={}）",
+            if (!inSwingWindow(player.getUUID())) {
+                purgeMainLayer(animatable, player);   // 清层（僵尸 attack + 旧 still）
+                AnimInstance inst = play(animatable, ANIM_SWORD_ATTACK, AnimGroups.MAIN);
+                if (inst != null) {
+                    liveAttack.put(player.getUUID(), inst);
+                    attackStartTick.put(player.getUUID(), (long) clientTick);
+                }
+                LOGGER.info("[SwordPlayerModel][swing] {} 上升沿 → 3rd_attack（新实例）",
+                        player.getGameProfile().getName());
+            } else {
+                LOGGER.info("[SwordPlayerModel][swing] {} 上升沿忽略（挥砍窗口内 age={} tick）",
                         player.getGameProfile().getName(),
-                        isPlaying(animatable, AnimGroups.MAIN, ANIM_SWORD_ATTACK.getName()));
+                        clientTick - attackStartTick.getOrDefault(player.getUUID(), 0L));
             }
         }
         lastSwing.put(player.getUUID(), swinging);
 
-        // MAIN 看门狗：attack（once）播完层空 → 恢复 3rd_still 循环。
-        // 10/05 竞态防护：若 attack 刚入层但 isPlaying() 尚未置真（同 tick 时序），
-        // 旧代码会立即用 still 覆盖 attack ⇒ 挥砍不可见；加 isPlaying(attack) 兜底。
+        // 挥砍结束主动交接（10/06 v4）：attack 结束时 Spark weight 立即归零（EXIT 零姿态
+        // = 默认位置），而 v2 看门狗还卡着 1s 挥砍窗口不许补 still ⇒ 剑在默认位置停一阵
+        // 才"回到手里"（用户 07:53 实测"先回默认大概 0.2s 再回到手里"）。
+        // 修法：被跟踪的 attack 到 0.5s（关键帧已回静止位）→ 先放 3rd_still 入层，再把
+        // attack 从层里移除（实例不再被物理线程 tick，直接丢弃）：剑全程停在静止位，
+        // 无零姿态间隙；同时清除跟踪，下一次挥砍立即可触发（与原版物品行为一致）。
+        Long atkStart = attackStartTick.get(player.getUUID());
+        if (atkStart != null && clientTick - atkStart >= ATTACK_END_TICKS) {
+            AnimInstance atk = liveAttack.remove(player.getUUID());
+            attackStartTick.remove(player.getUUID());
+            AnimLayer handoffLayer = controller.getLayers().get(AnimGroups.MAIN);
+            if (atk != null && handoffLayer != null) {
+                boolean hasStill = false;
+                for (AnimInstance a : handoffLayer.getAnimations()) {
+                    if (a != atk && a.getAnimIndex() != null
+                            && ANIM_SWORD_IDLE.getName().equals(a.getAnimIndex().getName())) {
+                        hasStill = true;
+                        break;
+                    }
+                }
+                if (!hasStill) {
+                    play(animatable, ANIM_SWORD_IDLE, AnimGroups.MAIN);
+                }
+                handoffLayer.getAnimations().remove(atk);
+                LOGGER.info("[SwordPlayerModel][handoff] {} 挥砍结束交接：still 就位、attack 离层（age={} tick）",
+                        player.getGameProfile().getName(), clientTick - atkStart);
+            }
+        }
+
+        // MAIN 看门狗（10/06 v4）：⚠️ 永不移除刚入层的实例（状态读竞态误杀=裁剪根因）。
+        // 层空 → 立即恢复 3rd_still（v2 的"无年轻 attack"门去掉——1s 窗口只管上升沿
+        // 判定，若等窗口过才补 still，挥砍结束后剑会停在默认位置一段时间）；
+        // 超总时长预算（僵尸）→ 强制清层兜底。
         AnimLayer mainLayer = controller.getLayers().get(AnimGroups.MAIN);
-        boolean mainEmpty = (mainLayer == null || !mainLayer.isPlaying())
-                && !isPlaying(animatable, AnimGroups.MAIN, ANIM_SWORD_ATTACK.getName());
-        if (mainEmpty) {
+        if (exceedsBudget(player.getUUID())) {
+            purgeMainLayer(animatable, player);
+            mainLayer = controller.getLayers().get(AnimGroups.MAIN);
+        }
+        if (mainLayer == null || mainLayer.getAnimations().isEmpty()) {
             play(animatable, ANIM_SWORD_IDLE, AnimGroups.MAIN);
             Long since = mainEmptySince.get(player.getUUID());
             if (since == null || clientTick - since >= 20) {
@@ -483,29 +575,116 @@ public class SwordPlayerModelHandler {
         }
     }
 
-    /** 指定分组中是否正在播放名为 name 的动画 */
-    private static boolean isPlaying(IEntityAnimatable<?> animatable, int group, String name) {
-        AnimLayer layer = animatable.getAnimController().getLayers().get(group);
-        if (layer == null) {
-            return false;
-        }
-        for (AnimInstance anim : layer.getAnimations()) {
-            if (name.equals(anim.getAnimIndex().getName())) {
-                return true;
-            }
-        }
-        return false;
+    /** 挥砍窗口内（10/06 v2）：有被跟踪 attack 且未超窗口。纯时间判定，无跨线程状态读。 */
+    private static boolean inSwingWindow(UUID id) {
+        Long start = attackStartTick.get(id);
+        return start != null && clientTick - start < SWING_WINDOW_TICKS;
     }
 
-    /** 创建 AnimInstance 并入组播放（enter 提交到物理层 + playAnimation 加入层） */
-    private static void play(IEntityAnimatable<?> animatable, AnimIndex index, int group) {
+    /** 已超总时长预算（僵尸兜底线）。 */
+    private static boolean exceedsBudget(UUID id) {
+        Long start = attackStartTick.get(id);
+        return start != null && clientTick - start >= ATTACK_BUDGET_TICKS;
+    }
+
+    /**
+     * 强制清空 MAIN 层（10/06）：移除全部实例——含 Spark 未能自行移除的"僵尸"
+     * （once 动画卡 WORK/EXIT 永驻层）与旧 still。正常路径下 attack 结算后 Spark
+     * 会自行移除（IDLE→removeIf）；此清理是兜底，保证挥砍永不被残留实例拦截。
+     */
+    private static void purgeMainLayer(IEntityAnimatable<?> animatable, AbstractClientPlayer player) {
+        AnimLayer layer = animatable.getAnimController().getLayers().get(AnimGroups.MAIN);
+        if (layer != null) {
+            layer.getAnimations().clear();
+        }
+        liveAttack.remove(player.getUUID());
+        attackStartTick.remove(player.getUUID());
+    }
+
+    /**
+     * 剑骨静止位预置表（10/06「闪现」修复 v3）：值 = 3rd_still t=0 关键帧（A=I，物品原值
+     * 直接拷贝，文件系坐标）——与第一个物理 tick 的 blend 结果完全一致（blendBone 字节码：
+     * weight=1 时 pos=lerp(0,t0,1)=t0、rot=slerp(I→R(t0),1)≈t0、scale=lerp(1,t0s,1)=t0s）。
+     */
+    private static final Map<String, KeyAnimData> SWORD_REST_POSES = Map.of(
+            "main", new KeyAnimData(new Vec3(-6, -2, 12.3), new Vec3(0, 90, 0), new Vec3(1, 1, 1)),
+            "left", new KeyAnimData(new Vec3(0, 0, 0), new Vec3(90, 0, 0), new Vec3(1, 1, 1)),
+            "right", new KeyAnimData(new Vec3(0, 0, 0), new Vec3(60, 0, 0), new Vec3(1, 1, 1)),
+            "shade", new KeyAnimData(new Vec3(0, 0, 0), new Vec3(0, 0, 0), new Vec3(0, 1, 1)));
+    private static final java.util.List<java.lang.reflect.Field> bonePoseFields = new java.util.ArrayList<>();
+    private static boolean bonePoseFieldsFailed = false;
+
+    /**
+     * 首帧预置剑骨 BonePose 为静止位（10/06「闪现」修复 v3）。
+     *
+     * <p>v2（关 in/out 渐入）后仍残留"零姿态窗口"：全新 ModelInstance 的 BonePose 初始为
+     * 空 KeyAnimData（=零姿态：剑骨无动画位移/旋转，剑不在手里），要等 setModel 之后的
+     * 第一个 60Hz 物理 tick 才更新到静止位 ⇒ 激活/切物品时剑先以默认姿态渲染 1–2 帧
+     * （16–32ms，低帧率下更明显）再跳进手里（用户 07:06 实机："还是闪现"）。
+     *
+     * <p>修法：setModel 后立刻把 main/left/right/shade 四剑骨的 BonePose 三个变换字段
+     * （oLocalTransform/localTransform/internalTransform）直接写成静止位 ⇒ 第一帧起
+     * 剑就在手里。字段私有（updateInternal 是 internal 混淆名，外部不可调）⇒ 反射；
+     * 物理线程首 tick 会以同值覆盖，无竞态。反射失败（Spark 升级改字段）→ 记一次日志
+     * 回退 v2 行为（≤2 帧过渡），绝不崩。
+     */
+    private static void seedSwordRestPose(IEntityAnimatable<?> animatable) {
+        if (bonePoseFieldsFailed) {
+            return;
+        }
+        try {
+            if (bonePoseFields.isEmpty()) {
+                for (String f : new String[]{"oLocalTransform", "localTransform", "internalTransform"}) {
+                    java.lang.reflect.Field field = BonePose.class.getDeclaredField(f);
+                    field.setAccessible(true);
+                    bonePoseFields.add(field);
+                }
+            }
+            var mi = animatable.getModelController().getModel();
+            if (mi == null) {
+                return;
+            }
+            var pose = mi.getPose();
+            for (Map.Entry<String, KeyAnimData> e : SWORD_REST_POSES.entrySet()) {
+                BonePose bp = pose.getBonePoseOrCreateEmpty(e.getKey());
+                for (java.lang.reflect.Field field : bonePoseFields) {
+                    field.set(bp, e.getValue());
+                }
+            }
+        } catch (Throwable ex) {
+            bonePoseFieldsFailed = true;
+            LOGGER.warn("[SwordPlayerModel] 剑骨静止位预置失败（回退 ≤2 帧过渡）: {}", ex.getMessage());
+        }
+    }
+
+    /**
+     * 创建 AnimInstance 并入组播放（enter 提交到物理层 + playAnimation 加入层）。返回实例供自跟踪；失败 null。
+     *
+     * <p>10/06「初始化先到默认位置、下一 tick 才移到手里」修复：AnimInstance 构造器硬编码
+     * inTransitionTime=outTransitionTime=0.15f（字节码定案）——每次新实例入层都要从
+     * weight=0（=模型默认姿态，剑不在手里）渐入到 weight=1（=静止位）共 0.15s，表现为
+     * 剑先出现在默认位置、~3 tick 内滑进手里（激活/每次挥砍结束恢复 still 都会闪一下）。
+     * 置 0 后 stepWeight 在 ENTER 首个 physTick 即把 currentWeight 跳到 1（字节码：
+     * inTransitionTick==0 ⇒ currentWeight=weight 并立即 TransitionFinish），只剩渲染
+     * partialTicks 插值的 ≤1 帧过渡（16ms，不可感知）。out 同理：挥砍结束实例在静止位
+     * 立即离层，不再从手里滑回默认位置。
+     * ⚠️ 不能用"模型默认值烘焙静止位"替代：Spark 骨变换 = T(pivot)·T(animPos)·
+     * R(animRot+静态Rot)·S(animScale)·T(−pivot)（BonePose.getLocalTransformMatrix 字节码）
+     * ——静态 rotation 是<b>加法</b>（烘焙 t0 会双倍旋转），OBone 根本没有 position/scale
+     * 静态字段（只有 pivot+rotation），位置/缩放只能来自动画 ⇒ 数据侧无解，只能关渐入。
+     */
+    private static AnimInstance play(IEntityAnimatable<?> animatable, AnimIndex index, int group) {
         try {
             AnimInstance anim = new AnimInstance(animatable, index);
             anim.setGroup(group);
+            anim.setInTransitionTime(0f);
+            anim.setOutTransitionTime(0f);
             anim.enter();
             animatable.getAnimController().playAnimation(anim);
+            return anim;
         } catch (Exception e) {
             LOGGER.warn("[SwordPlayerModel] failed to play {}: {}", index.getName(), e.getMessage());
+            return null;
         }
     }
 }
