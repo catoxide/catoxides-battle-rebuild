@@ -86,10 +86,10 @@
     }
   ],
   "templatePools": [
-    { "name": "start", "elements": [{ "template": "main_hall", "weight": 1, "projection": "rigid" }], "fallback": "minecraft:empty_pool_element" },
-    { "name": "main_hall", "elements": [{ "template": "main_hall", "weight": 1, "projection": "rigid" }], "fallback": "minecraft:empty_pool_element" },
-    { "name": "tower", "elements": [{ "template": "tower", "weight": 1, "projection": "rigid" }], "fallback": "minecraft:empty_pool_element" },
-    { "name": "corridor", "elements": [{ "template": "corridor", "weight": 1, "projection": "rigid" }], "fallback": "minecraft:empty_pool_element" }
+    { "name": "start", "elements": [{ "template": "main_hall", "weight": 1, "projection": "rigid" }], "fallback": "minecraft:empty" },
+    { "name": "main_hall", "elements": [{ "template": "main_hall", "weight": 1, "projection": "rigid" }], "fallback": "minecraft:empty" },
+    { "name": "tower", "elements": [{ "template": "tower", "weight": 1, "projection": "rigid" }], "fallback": "minecraft:empty" },
+    { "name": "corridor", "elements": [{ "template": "corridor", "weight": 1, "projection": "rigid" }], "fallback": "minecraft:empty" }
   ],
   "structureSet": {
     "spacing": 32,

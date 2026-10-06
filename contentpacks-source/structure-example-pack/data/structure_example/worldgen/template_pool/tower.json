@@ -6,9 +6,11 @@
         "element_type": "minecraft:single_pool_element",
         "location": "structure_example:tower",
         "projection": "rigid",
-        "processors": []
+        "processors": {
+          "processors": []
+        }
       }
     }
   ],
-  "fallback": "minecraft:empty_pool_element"
+  "fallback": "minecraft:empty"
 }
