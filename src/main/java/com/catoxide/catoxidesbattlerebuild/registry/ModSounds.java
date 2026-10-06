@@ -8,7 +8,8 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 
 /**
  * 模组自定义 SoundEvent 注册器
- * <p>当前为空，留待 ContentPack 的 MobSoundLoader 自动注册自定义声音事件。
+ * <p>当前为空。主 mod 自定义声音事件可在此按需声明；内容包的音效应通过
+ * {@code ContentPackContext#registerSound} 注册。
  *
  * <h3>使用示例（未来）</h3>
  * <pre>{@code
@@ -21,12 +22,12 @@ import net.neoforged.neoforge.registries.DeferredRegister;
  * <p>对应资源文件需放在 {@code assets/catoxidesbattlerebuild/sounds/zombie2/ambient.ogg}，
  * 并在 {@code assets/catoxidesbattlerebuild/sounds.json} 中声明。
  *
- * <p><b>TODO</b>：实现 {@code MobSoundLoader} 后，由其自动调用 {@link #SOUNDS} 注册
- * 扫描到的 .ogg 文件，无需手动声明每个 DeferredHolder。
+ * <p><b>注意</b>：此注册表仅供主 mod 使用；内容包的声音事件请走
+ * {@code ContentPackContext#registerSound}。
  */
 public class ModSounds {
     public static final DeferredRegister<SoundEvent> SOUNDS =
             DeferredRegister.create(Registries.SOUND_EVENT, CatoxidesBattleRebuildConstants.MODID);
 
-    // TODO: 由 MobSoundLoader 自动注册自定义声音事件
+    // 内容包的声音事件请走 ContentPackContext#registerSound；此注册表仅供主 mod 使用
 }

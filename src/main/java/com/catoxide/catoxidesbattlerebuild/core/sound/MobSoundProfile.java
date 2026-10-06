@@ -10,8 +10,8 @@ import java.util.Optional;
 /**
  * 生物声音配置（数据驱动）
  * <p>定义一个 {@code AnimatedMob} 子类所需的所有声音事件 ID。
- * 用于 ContentPack 的 mob 配置 JSON 中，通过 {@link MobSoundLoader} 加载
- * 对应的 .ogg 资源并注册为 {@link SoundEvent}。
+ * 用于 ContentPack 的 mob 配置 JSON 中；对应的 .ogg 资源由包侧加载，
+ * 并注册为 {@link SoundEvent}（见 {@code ContentPackContext#registerSound}）。
  *
  * <h3>JSON 示例</h3>
  * <pre>{@code
@@ -30,7 +30,7 @@ import java.util.Optional;
  * <ul>
  *   <li>所有字段均可选（{@code null} 表示该生物没有此声音）</li>
  *   <li>仅定义声音事件 ID（ResourceLocation），实际 {@link SoundEvent} 对象
- *       由 {@link MobSoundLoader} 在 mod 加载阶段注册</li>
+ *       由内容包侧在加载阶段注册（{@code ContentPackContext#registerSound}）</li>
  *   <li>{@code volume} / {@code pitch} 提供合理默认值，可被 AnimatedMob
  *       的 {@code getSoundVolume()} / {@code getVoicePitch()} override 进一步调整</li>
  * </ul>

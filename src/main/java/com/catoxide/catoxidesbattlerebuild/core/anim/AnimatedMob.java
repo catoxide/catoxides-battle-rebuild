@@ -406,8 +406,8 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
     //
     // 子类按需 override 即可：
     //   - 短期：返回 vanilla SoundEvents（如 SoundEvents.ZOMBIE_AMBIENT）
-    //   - 长远：返回 ModSounds.SOME_SOUND.get()（自定义 SoundEvent，由 ModSounds
-    //     或 ContentPack 的 MobSoundLoader 自动从 .ogg 资源注册）
+    //   - 长远：返回 ModSounds.SOME_SOUND.get()（自定义 SoundEvent，在 ModSounds
+    //     中声明注册；内容包的音效则由包侧通过 ContentPackContext#registerSound 注册）
 
     @Override
     protected SoundEvent getAmbientSound() {

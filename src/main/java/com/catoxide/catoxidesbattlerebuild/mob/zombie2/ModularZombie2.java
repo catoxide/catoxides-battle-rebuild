@@ -344,8 +344,8 @@ public class ModularZombie2 extends AnimatedMob<ModularZombie2> {
 
     // ========== Sound Overrides ==========
     //
-    // 临时使用 vanilla Zombie 音效。未来替换为 ModSounds 注册的自定义音效（.ogg 资源
-    // 由 MobSoundLoader 自动注册，或通过 ContentPack 的 mob 配置 JSON 指定）。
+    // 临时使用 vanilla Zombie 音效。未来替换为 ModSounds 注册的自定义音效（.ogg 资源），
+    // 或由内容包的 mob 配置 JSON 指定（SoundEvent 由包侧自行注册）。
     //
     // getStepSound 非 vanilla override（Mob 没有此方法），由 AnimatedMob 的
     // playStepSound(BlockPos, BlockState) 调用，模仿 Zombie 的模式。
