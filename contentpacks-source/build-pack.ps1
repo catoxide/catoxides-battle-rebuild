@@ -39,7 +39,7 @@ if ($entryLine) {
 if (Test-Path $temp) { Remove-Item -Recurse -Force $temp }
 New-Item -ItemType Directory -Force -Path (Join-Path $temp "META-INF") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $temp "entities") | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $temp $pkgPath) | Out-Null
+if ($pkgPath) { New-Item -ItemType Directory -Force -Path (Join-Path $temp $pkgPath) | Out-Null }
 
 # 3. Copy MANIFEST + resources + entry classes
 Copy-Item $manifestPath (Join-Path $temp "META-INF/MANIFEST.MF")
@@ -91,18 +91,20 @@ if (Test-Path $srcJava) {
     if ($javaFiles.Count -eq 0) { Write-Error "No .java files in $srcJava"; exit 1 }
     & javac -encoding UTF-8 -cp $cp -d $classesOut $javaFiles
     if ($LASTEXITCODE -ne 0) { Write-Error "javac compile failed"; exit 1 }
-    if ($pkgPath) {
-        $outPkg = Join-Path $classesOut $pkgPath
-        if (Test-Path $outPkg) {
-            Copy-Item (Join-Path $outPkg "*.class") (Join-Path $temp $pkgPath)
-        } else {
-            Write-Warning "Compiled entry package not found: $outPkg"
-        }
+    # 整树复制 javac 输出：$classesOut 是本包专用的临时目录，可整树搬。
+    # 若只复制入口包那一层，子包（goals/ handlers/ ai/ combat/ ...）会被【静默丢弃】，
+    # 表现为运行期 NoClassDefFoundError，而打包成功、jar tf 只见入口类、零警告。（BUG-1）
+    # 整树复制同时让「多顶层包」的包也能正常打包。
+    Copy-Item (Join-Path $classesOut '*') $temp -Recurse -Force
+    if ($pkgPath -and -not (Test-Path (Join-Path $temp "$pkgPath/$className.class"))) {
+        Write-Warning "Entry class not found after copy: $pkgPath/$className.class"
     }
     Write-Output "Compiled pack Java independently ($($javaFiles.Count) files)"
 } elseif ($entryClasses -and (Test-Path $entryClasses)) {
-    # Fallback: collect from main mod build output (legacy mode)
-    Copy-Item (Join-Path $entryClasses "*.class") (Join-Path $temp $pkgPath)
+    # Fallback: collect from main mod build output (legacy mode).
+    # 这里【不能】整树复制 —— $classes 是整个主 mod 的输出，整树会把它一并打进包里。
+    # 改为递归复制入口包，修掉同样的丢子包问题（BUG-1）。
+    Copy-Item (Join-Path $entryClasses '*') (Join-Path $temp $pkgPath) -Recurse -Force
 } elseif ($entryClasses) {
     Write-Warning "Entry classes not found: $entryClasses (run gradlew compileJava first)"
 }

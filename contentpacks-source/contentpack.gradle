@@ -1,0 +1,126 @@
+// ============================================================
+// ContentPack 子项目 —— 共享构建约定（单一真源）
+//
+// 用法（每个包的 build.gradle，5 行样板）：
+//     plugins {
+//         id 'java-library'
+//         id 'net.neoforged.gradle.userdev'
+//     }
+//     apply from: '../contentpack.gradle'
+//     dependencies { /* 本包特有的额外编译依赖 */ }
+//
+// 为什么 plugins {} 不放在这里：Gradle 不允许 `apply from` 的脚本里出现
+// plugins {} 块（只有 buildscript {} / plugins {} 能在脚本头部），所以插件
+// 声明留在各包 build.gradle，其余全部共享。
+//
+// 规范见 design/GRADLE_MULTIPROJECT.md §2.2 / design/CONTENTPACK_FORMAT.md §2。
+// ============================================================
+
+// NeoGradle 要求显式配置 java toolchain（否则 "requires a configured java toolchain"）
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+// ------------------------------------------------------------
+// 仓库：必须在这里声明，不能只靠 settings.gradle 的 dependencyResolutionManagement。
+//
+// 实测（GRADLE_MULTIPROJECT.md §4.3 的结论已修正）：userdev 插件会给每个应用它的
+// 项目【注入自己的】repositories（neoForm 本地 maven + maven.neoforged.net +
+// libraries.minecraft.net + mavenCentral）。配合 RepositoriesMode.PREFER_PROJECT，
+// 结果是「项目声明了仓库 ⇒ settings 里声明的仓库对该项目整体被忽略」：
+//
+//     Could not find dev.ryanhcode.sable:sable-neoforge-1.21.1:2.0.3.
+//     Searched in: .../.gradle/repositories/... , repo.maven.apache.org,
+//                  libraries.minecraft.net, maven.neoforged.net
+//     ↑ RyanHCode Maven 不在列表里 —— 它只写在 settings.gradle
+//
+// 所以包项目自己声明所需的第三方仓库（保持「只在共享脚本里写一次」）。
+// ------------------------------------------------------------
+repositories {
+    maven { name = 'NeoForged'; url = 'https://maven.neoforged.net/releases' }
+    maven { name = 'RyanHCode Maven'; url = 'https://maven.ryanhcode.dev/releases' }
+    maven { name = 'KotlinForForge'; url = 'https://thedarkcolour.github.io/KotlinForForge/' }
+    maven { name = 'GeckoLib'; url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/' }
+    maven { name = 'Modrinth'; url = 'https://api.modrinth.com/maven' }
+    mavenCentral()
+}
+
+// 保持既有磁盘布局：<包目录>/java = 源码，其余一切 = 包资源（由 jar 任务整树收集）。
+// 编译产物重定向到根 build/ 下，不污染包源目录。
+sourceSets {
+    main {
+        java.srcDirs = ['java']
+        resources.srcDirs = []
+    }
+}
+layout.buildDirectory = rootProject.layout.buildDirectory.dir("packs/${project.name}")
+
+dependencies {
+    // MC 由 userdev 提供；NeoForge 本体（net.neoforged.*）需显式声明：
+    // userdev 只给 MC，消费根项目 compileClasspath 又因 dummy 记号不可行。
+    compileOnly "net.neoforged:neoforge:${neo_version}"
+    // core：本包编译期唯一指向根项目的依赖（引用方向 包 ──▶ core，永不反向）
+    compileOnly project(':')
+}
+
+// ------------------------------------------------------------
+// MANIFEST.MF 是包声明的唯一真源；Jar 任务从它派生 MANIFEST 属性，
+// 避免「MANIFEST 与构建脚本两处维护」。（规范 §2 硬坑）
+// ------------------------------------------------------------
+def moduleManifest = file('MANIFEST.MF')
+def moduleAttrs = [:]
+if (moduleManifest.exists()) {
+    moduleManifest.eachLine('UTF-8') { String line ->
+        int i = line.indexOf(':')
+        if (i > 0 && line.substring(0, i) ==~ /[A-Za-z][A-Za-z0-9-]*/) {
+            moduleAttrs[line.substring(0, i).trim()] = line.substring(i + 1).trim()
+        }
+    }
+}
+
+// ------------------------------------------------------------
+// Module-Lib-Requires 声明的外部纯类库：contentpacks-source/_libs/<库名>/*.jar
+// 与 build-pack.ps1 的 [lib-cp] 行为一致（编译期可见）。
+// 当前零使用者 —— 属休眠能力，见 CONTENTPACK_FORMAT.md。
+// ------------------------------------------------------------
+def libRequires = moduleAttrs['Module-Lib-Requires']
+if (libRequires) {
+    libRequires.split(',').each { String raw ->
+        String libName = raw.trim()
+        if (!libName) {
+            return
+        }
+        def libJars = fileTree(rootProject.file("contentpacks-source/_libs/${libName}")) {
+            include '**/*.jar'
+        }
+        if (libJars.isEmpty()) {
+            logger.warn("[contentpack] ${project.name}: Module-Lib-Requires '${libName}' " +
+                    "未在 contentpacks-source/_libs/${libName}/ 找到 jar")
+        } else {
+            project.dependencies.add('compileOnly', libJars)
+        }
+    }
+}
+
+tasks.register('contentpackJar', Jar) {
+    group = 'contentpack'
+    description = '构建内容包 jar（MANIFEST 属性取自包内 MANIFEST.MF）'
+    archiveFileName = "${moduleAttrs['Module-Name'] ?: project.name}.jar"
+    destinationDirectory = rootProject.layout.projectDirectory.dir('contentpacks')
+    manifest {
+        attributes(moduleAttrs)
+    }
+    // Java 产物整树（含子包 —— 见规范 §9.1 BUG-1：只搬入口包那层会静默丢子包）
+    from sourceSets.main.output
+    // 包资源：包目录下除源码/manifest/构建脚本/构建产物之外的一切
+    from(projectDir) {
+        exclude 'java/**'
+        exclude 'MANIFEST.MF'
+        exclude 'build.gradle'
+        exclude 'settings.gradle'
+        exclude 'build/**'
+        exclude '.gradle/**'
+        // userdev 会在包目录下生成 runs/（junit 参数文件），不属于包内容
+        exclude 'runs/**'
+        exclude 'bin/**'
+        exclude 'out/**'
+    }
+}

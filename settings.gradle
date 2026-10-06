@@ -18,3 +18,69 @@ pluginManagement {
 }
 
 rootProject.name = 'CatoxidesBattleRebuild'
+
+// 依赖仓库：根项目自己的 repositories {} 保持不变（PREFER_PROJECT），
+// 这里补的是子项目（内容包）解析 core 传递依赖时所需的回退仓库。
+dependencyResolutionManagement {
+    repositoriesMode = org.gradle.api.initialization.resolve.RepositoriesMode.PREFER_PROJECT
+    repositories {
+        maven { name = 'NeoForged'; url = 'https://maven.neoforged.net/releases' }
+        maven { name = 'RyanHCode Maven'; url = 'https://maven.ryanhcode.dev/releases' }
+        maven { name = 'KotlinForForge'; url = 'https://thedarkcolour.github.io/KotlinForForge/' }
+        maven { name = 'GeckoLib'; url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/' }
+        maven { name = 'Modrinth'; url = 'https://api.modrinth.com/maven' }
+        mavenCentral()
+    }
+}
+
+// ============================================================
+// ContentPack 子项目（引用结构：内容包 ──▶ core，永不反向）
+// 磁盘布局保持不变（仍在 contentpacks-source/<包名>/），
+// 只是把它们纳入 Gradle，使「内容包 → core」成为声明式依赖，
+// 取代 build-pack.ps1 的手工 classpath 文本文件。
+//
+// 只有【含 java/ 源码】的包才需要 Gradle 项目；纯数据包
+// （structure-example-pack）由 build-pack.ps1 打包即可，无需登记。
+// 新增代码包：复制一份 5 行 build.gradle 放进包目录即【自动】成为 Gradle 包
+// （见下方自动发现），无需改动 settings.gradle —— 避免多会话抢同一个文件。
+// ============================================================
+
+// ------------------------------------------------------------
+// ⚠️ 条件纳入：只在【显式请求】时才把包项目挂进构建图。
+//
+// 为什么必须条件化（实测，见 design/GRADLE_MULTIPROJECT.md §8）：
+// Gradle 的【无路径任务名】会跨项目匹配 —— 包项目一旦被纳入，
+// 主 mod 的日常 `gradlew compileJava` 会连带执行全部 5 套 neoForm
+// 流水线（实测 dry-run：额外 115 个任务，decompile/transform/recompile
+// 各 5 份）。后果有两层：
+//   ① 日常编译变慢数分钟、CPU/磁盘被占满；
+//   ② 两个并发 Gradle 进程争抢同一 build/ 与同一构建缓存时，
+//      实测出现 FROM-CACHE 恢复【残缺】的 transformed 源码树
+//      （955 / 1022 个文件 vs 完整的 7104），随后 neoFormRecompile
+//      以 "NoSuchFileException: .../chunk/status" 失败。
+// 本仓库存在【多个 agent 并行构建】的工作流（PARALLEL_DEV_WORKFLOW.md），
+// 因此这条不是「不方便」而是必须先拆掉的结构性风险。
+//
+// 触发方式（任选）：
+//   gradlew contentpackJar                          → 构建全部包的 jar
+//   gradlew :packs:durability-pack:contentpackJar    → 只构建一个包
+//   gradlew -PwithContentPacks ...                   → 显式强制纳入
+// 否则包项目【连配置都不做】，与单模块工程的开销完全一致。
+// ------------------------------------------------------------
+def requestedTasks = gradle.startParameter.taskRequests.collectMany { it.args ?: [] }
+boolean includeContentPacks = providers.gradleProperty('withContentPacks').isPresent()
+        || requestedTasks.any { String arg -> arg.startsWith(':packs') || arg.contains('contentpack') }
+
+if (includeContentPacks) {
+    def packRoot = file('contentpacks-source')
+    // 自动发现：包目录下有 build.gradle 即为 Gradle 包；纯数据包天然被跳过。
+    def packDirs = (packRoot.listFiles() ?: new File[0])
+            .findAll { File d -> d.isDirectory() && new File(d, 'build.gradle').isFile() }
+            .sort { File a, File b -> a.name <=> b.name }
+    include 'packs'
+    project(':packs').projectDir = packRoot
+    packDirs.each { File d ->
+        include "packs:${d.name}"
+        project(":packs:${d.name}").projectDir = d
+    }
+}

@@ -63,3 +63,9 @@ tools/_spark_core_src/
 tools/jvavtest/
 tools/*.class
 1/
+
+### ContentPack subproject build output (Gradle) -- not pack content ###
+contentpacks-source/*/runs/
+contentpacks-source/*/build/
+contentpacks-source/*/bin/
+contentpacks-source/*/out/

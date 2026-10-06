@@ -1,0 +1,17 @@
+// ============================================================
+// ContentPack: durability-pack
+// 引用方向：本包 ──▶ core（根项目），永不反向。
+// 规范约束见 design/CONTENTPACK_FORMAT.md（R2 契约住 core、实现住包；
+// F1 逻辑住普通类；§4 规则 A/B 类加载器边界）。
+// 构建约定全部在 ../contentpack.gradle（共享单一真源）。
+// ============================================================
+plugins {
+    id 'java-library'
+    // 必须自己应用 userdev：NeoGradle 的 MC/NeoForge 依赖是内部 dummy 记号
+    // （ng_dummy_ng.net.neoforged:neoforge），只在应用了 userdev 的项目里可解析，
+    // 因此「消费根项目的 compileClasspath」这条路走不通。
+    id 'net.neoforged.gradle.userdev'
+}
+apply from: '../contentpack.gradle'
+
+// 本包无额外编译依赖（只用 core + MC + NeoForge）

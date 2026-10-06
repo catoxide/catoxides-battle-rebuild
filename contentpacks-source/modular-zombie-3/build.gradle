@@ -1,0 +1,16 @@
+// ============================================================
+// ContentPack: modular-zombie-3
+// 引用方向：本包 ──▶ core（根项目），永不反向。
+// 构建约定全部在 ../contentpack.gradle（共享单一真源）。
+// ============================================================
+plugins {
+    id 'java-library'
+    id 'net.neoforged.gradle.userdev'
+}
+apply from: '../contentpack.gradle'
+
+dependencies {
+    // spark-core（Bedrock 动画模型/渲染器）：本地 jar，与根项目同一份。
+    // 运行期由 ChildFirstClassLoader 的 parent-only mods 提供，故 compileOnly。
+    compileOnly rootProject.files('libs/spark-core.jar')
+}
