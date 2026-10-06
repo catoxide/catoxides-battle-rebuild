@@ -14,7 +14,6 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -53,6 +52,9 @@ public final class ContentPackLoader {
 
     private static final String TAG = "ContentPackLoader";
 
+    /** 数据预检最多逐条打印多少个问题（剩下的折叠成一行，避免刷屏）。 */
+    private static final int MAX_LOGGED_DATA_ISSUES = 20;
+
     private ContentPackLoader() {}
 
     /**
@@ -79,62 +81,181 @@ public final class ContentPackLoader {
         LogManager.serverInfo(TAG, "Host mod version: %s", hostVersion);
 
         List<ScannablePack> discovered = new ArrayList<>();
+        ScanStats stats = new ScanStats();
 
         // Step 1: 扫描所有目录（同时收集 _libs/ 下的外部 jar 库）
         for (String dirPath : scanDirs) {
-            scanDirectory(dirPath, hostVersion, discovered);
+            scanDirectory(dirPath, hostVersion, discovered, stats);
         }
 
-        if (discovered.isEmpty()) {
+        if (stats.jarsScanned == 0) {
             LogManager.serverInfo(TAG, "No ContentPack JARs found in scanned directories");
             LogManager.serverInfo(TAG, "Expected directories: %s", scanDirs);
             LogManager.serverInfo(TAG, "To add ContentPacks, place .jar files with Module-Type=contentpack in these directories");
             return 0;
         }
 
-        LogManager.serverInfo(TAG, "Discovered %d ContentPack candidate(s)", discovered.size());
+        LogManager.serverInfo(TAG, "Discovered %d ContentPack candidate(s) from %d jar(s)",
+                discovered.size(), stats.jarsScanned);
 
-        // Step 2: 构建委托链 —— 计算每个插件的可见闭包（自身 + 所有可达依赖的 jar）
-        Map<String, File> jarByName = new HashMap<>();
-        Map<String, ContentPackManifest> manifestByName = new HashMap<>();
+        // Step 2: 建立依赖图 + 硬依赖校验（包 → 包）。
+        // 图的节点是 MANIFEST 的 Module-Name；扫描期就判死的包（版本不兼容等）先入图再标失败，
+        // 于是依赖它们的包会在同一步被连带取消加载 —— 传递闭包由 ContentPackGraph 负责，
+        // 不再需要这里手写固定点迭代。这一步取代了旧的「把依赖包 jar 注入类加载闭包」。
+        ContentPackGraph.reset();
         for (ScannablePack p : discovered) {
-            jarByName.put(p.manifest.moduleName(), p.jarFile);
-            manifestByName.put(p.manifest.moduleName(), p.manifest);
+            ContentPackGraph.register(p.manifest.moduleName(),
+                    p.manifest.dependencyNames(), p.manifest.optionalDependencyNames());
+            if (p.skipReason != null) {
+                quarantine(p.manifest.moduleName(), "manifest", p.skipReason);
+            }
         }
-        Map<String, List<File>> closures = new HashMap<>();
+
+        // Step 2.5: 数据面预检 —— 必须在 data/ 挂载之前。
+        //
+        // 代码面失败已经有 catch(Throwable) + 隔离兜底，但 data/ 里写错的 JSON 和读不出来的
+        // .nbt 不会经过任何 Java 代码路径：它们由 RegistryDataLoader 在挂载之后才读，
+        // 一旦出错就是 "Failed to load registries" —— 世界根本打不开，只能进安全模式。
+        // 所以在挂载前静态查一遍，把这类失败拉回与代码失败同一条隔离路径。
+        //
+        // 跨包索引一次建好：引用是否悬空（start_pool / location / biome tag …）需要看到所有包提供了什么。
+        List<File> discoveredJars = new ArrayList<>();
         for (ScannablePack p : discovered) {
-            closures.put(p.manifest.moduleName(),
-                    computeClosure(p.manifest, jarByName, manifestByName));
+            discoveredJars.add(p.jarFile);
         }
-
-        // Step 3: 按依赖拓扑序加载并注册
-        int loaded = 0;
-        int failed = 0;
-        int skipped = 0;
-
-        List<ScannablePack> ordered = topologicalSort(discovered, jarByName);
-        for (ScannablePack pack : ordered) {
-            if (pack.skipReason != null) {
-                skipped++;
+        ContentPackDataValidator.Index dataIndex = ContentPackDataValidator.indexAll(discoveredJars);
+        for (ScannablePack p : discovered) {
+            if (p.skipReason != null) {
                 continue;
             }
+            List<ContentPackDataValidator.Issue> dataIssues =
+                    ContentPackDataValidator.validate(p.jarFile, dataIndex);
+            if (dataIssues.isEmpty()) {
+                continue;
+            }
+            for (int i = 0; i < dataIssues.size() && i < MAX_LOGGED_DATA_ISSUES; i++) {
+                LogManager.serverError(TAG, "  ✗ '%s' %s", p.manifest.moduleName(), dataIssues.get(i));
+            }
+            if (dataIssues.size() > MAX_LOGGED_DATA_ISSUES) {
+                LogManager.serverError(TAG, "  ✗ '%s' ... and %d more data problem(s)",
+                        p.manifest.moduleName(), dataIssues.size() - MAX_LOGGED_DATA_ISSUES);
+            }
+            quarantine(p.manifest.moduleName(), "data", ContentPackDataValidator.summarize(dataIssues));
+        }
 
-            if (loadAndRegister(pack, hostVersion, closures.get(pack.manifest.moduleName()))) {
+        applyHardDependencyChecks(discovered);
+
+        // Step 3: 按依赖拓扑序加载并注册（保序写入 ContentPackRegistry）
+        List<ScannablePack> ordered = topologicalSort(discovered);
+
+        int loaded = 0;
+        int failed = 0;
+        for (ScannablePack pack : ordered) {
+            if (loadAndRegister(pack, buildClasspath(pack))) {
                 loaded++;
             } else {
                 failed++;
+                // 加载失败的包必须进隔离：否则依赖它的包会照常 register()，
+                // 拿不到能力却继续注册内容 —— 那正是「东西在，但不工作」的来源。
+                quarantine(pack.manifest.moduleName(), "load",
+                        pack.failureReason != null ? pack.failureReason : "load failed");
             }
         }
 
-        // 总结
+        // Step 4: 四段式总结 —— 被跳过的包不再从统计里消失（旧实现里 skipped 恒为 0）
+        int skipped = 0;
+        for (ScannablePack p : discovered) {
+            if (p.skipReason != null) {
+                skipped++;
+            }
+        }
+
         LogManager.serverInfo(TAG, "=== ContentPack Load Summary ===");
-        LogManager.serverInfo(TAG, "Loaded: %d, Failed: %d, Skipped: %d", loaded, failed, skipped);
+        LogManager.serverInfo(TAG, "Scanned: %d jar(s) | Loaded: %d | Skipped: %d | Failed: %d",
+                stats.jarsScanned, loaded, skipped, failed);
+        if (stats.rejected > 0) {
+            LogManager.serverInfo(TAG, "  %d jar(s) rejected before dependency resolution (not a ContentPack / no Module-Name)", stats.rejected);
+        }
+        for (ScannablePack p : discovered) {
+            if (p.skipReason != null) {
+                LogManager.serverWarn(TAG, "  skipped '%s': %s", p.manifest.moduleName(), p.skipReason);
+            }
+        }
         LogManager.serverInfo(TAG, "Total in registry: %d", ContentPackRegistry.getPackCount());
 
         return loaded;
     }
 
-    private static void scanDirectory(String dirPath, String hostVersion, List<ScannablePack> discovered) {
+    /**
+     * 硬依赖校验：{@code Module-Dependencies} 中任何一个包缺失，或该包自身已被跳过，
+     * 则本包标记为跳过。
+     *
+     * <p>用固定点迭代处理依赖链：A→B→C 时若 C 被跳过，先标记 B，再在下一轮标记 A。
+     */
+    private static void applyHardDependencyChecks(List<ScannablePack> discovered) {
+        Set<String> known = new HashSet<>();
+        for (ScannablePack p : discovered) {
+            known.add(p.manifest.moduleName());
+        }
+
+        // 这里只需判「依赖根本不存在」：依赖存在但已失败/已被取消的情况，
+        // 已由 ContentPackGraph 沿反向边自动传递到位（含多级链路），不必再手写固定点迭代。
+        for (ScannablePack p : discovered) {
+            if (p.skipReason != null) {
+                continue;
+            }
+            for (String dep : p.manifest.dependencyNames()) {
+                if (!known.contains(dep)) {
+                    quarantine(p.manifest.moduleName(), "manifest",
+                            String.format("missing required pack '%s' (declared in Module-Dependencies)", dep));
+                    break;
+                }
+            }
+        }
+
+        // 图里的判定回写到 ScannablePack：拓扑排序与四段式总结仍按 skipReason 工作。
+        for (ScannablePack p : discovered) {
+            if (p.skipReason == null && ContentPackGraph.isQuarantined(p.manifest.moduleName())) {
+                p.skipReason = ContentPackGraph.reasonOf(p.manifest.moduleName());
+            }
+        }
+    }
+
+    /**
+     * 隔离一个包：标记它失败，并沿硬依赖链连带取消所有（直接或间接）依赖它的包。
+     *
+     * <p>这是故障隔离的<b>唯一入口</b> —— 扫描、加载、register、init 的失败路径全走这里，
+     * 保证「一个包死了，依赖它的包一起下车」这条语义在任何阶段都一致。
+     *
+     * <p>注意语义是<b>切断消费</b>而非回滚：NeoForge 的 DeferredRegister 没有反注册 API，
+     * 所以被隔离包已注册的 EntityType 会留下（惰性残留），但不再有任何东西认领它们。
+     */
+    private static void quarantine(String id, String phase, String reason) {
+        LogManager.serverError(TAG, "  ✗ ContentPack '%s' quarantined at %s: %s", id, phase, reason);
+        for (ContentPackGraph.Fallout fallout : ContentPackGraph.fail(id, phase, reason)) {
+            LogManager.serverWarn(TAG, "    ⤬ cancelling dependent ContentPack '%s': %s",
+                    fallout.id(), ContentPackGraph.reasonOf(fallout.id()));
+            if (fallout.wasActive()) {
+                LogManager.serverWarn(TAG,
+                        "      note: '%s' had already run register() - its registrations remain, but inert", fallout.id());
+            }
+        }
+    }
+
+    /** 异常描述，覆盖 Error 子类（如 NoClassDefFoundError —— 包少带一个类时的典型症状）。 */
+    private static String describe(Throwable t) {
+        String message = t.getMessage();
+        return t.getClass().getSimpleName() + (message == null || message.isBlank() ? "" : ": " + message);
+    }
+
+    /** 扫描期统计（用于四段式总结）。 */
+    private static final class ScanStats {
+        int jarsScanned;
+        int rejected;
+    }
+
+    private static void scanDirectory(String dirPath, String hostVersion,
+                                      List<ScannablePack> discovered, ScanStats stats) {
         File dir = new File(dirPath);
         if (!dir.exists() || !dir.isDirectory()) {
             LogManager.serverDebug(TAG, "ContentPack directory '%s' does not exist, skipping", dirPath);
@@ -147,6 +268,7 @@ public final class ContentPackLoader {
         } else {
             LogManager.serverInfo(TAG, "Scanning %d .jar file(s) in %s", jars.length, dirPath);
         }
+        stats.jarsScanned += (jars == null ? 0 : jars.length);
 
         // 先收集 _libs/ 子目录下的外部 jar 库（不当作 contentpack，仅入类加载闭包）
         File libsDir = new File(dir, "_libs");
@@ -175,6 +297,7 @@ public final class ContentPackLoader {
         for (File jar : jars) {
             ContentPackManifest manifest = ContentPackManifest.fromJar(jar);
             if (manifest == null) {
+                stats.rejected++;
                 // Diagnostic: check if JAR has a manifest at all, and if it has required attributes
                 try (JarFile testJar = new JarFile(jar)) {
                     java.util.jar.Manifest jManifest = testJar.getManifest();
@@ -216,29 +339,84 @@ public final class ContentPackLoader {
                         manifest.moduleName(), missing);
             }
 
+            // 重名检测：Module-Name 是依赖图的键，重名会让依赖解析产生歧义 → 拒绝后来者
+            ScannablePack duplicate = findByModuleName(discovered, manifest.moduleName());
+            if (duplicate != null) {
+                stats.rejected++;
+                LogManager.serverError(TAG, "Duplicate ContentPack Module-Name '%s': ignoring '%s' (already provided by '%s')",
+                        manifest.moduleName(), jar.getName(), duplicate.jarFile.getName());
+                continue;
+            }
+
             LogManager.serverInfo(TAG, "  ✓ '%s' v%s passes compatibility check",
                     manifest.moduleName(), manifest.moduleVersion());
             discovered.add(new ScannablePack(jar, manifest, null));
         }
     }
 
+    /** 在已发现列表中按 Module-Name 查找。 */
+    private static ScannablePack findByModuleName(List<ScannablePack> discovered, String moduleName) {
+        for (ScannablePack p : discovered) {
+            if (p.manifest.moduleName().equals(moduleName)) {
+                return p;
+            }
+        }
+        return null;
+    }
+
     /**
-     * 加载并注册单个 ContentPack
+     * 加载并注册单个 ContentPack。
      *
-     * @param pack         扫描到的插件
-     * @param hostVersion  主 mod 版本号
-     * @param closureJars  可见闭包 jar（自身 + 所有可达依赖），用于构建委托链 ClassLoader
+     * @param pack      扫描到的包
+     * @param classpath 类加载闭包：自身 jar + 本包声明的 {@code _libs} 库（<b>不含</b>依赖包的 jar）
      */
-    private static boolean loadAndRegister(ScannablePack pack, String hostVersion, List<File> closureJars) {
+    /**
+     * 加载并注册单个 ContentPack，并保证它<b>永远不会把异常抛给调用方</b>。
+     *
+     * <p>这里刻意 catch {@link Throwable}：只 catch {@code Exception} 的话，
+     * 包少带一个类（{@code NoClassDefFoundError}）或静态初始化炸掉
+     * （{@code ExceptionInInitializerError}）会直接终止整个加载循环 —— 游戏打不开。
+     * 而 {@link VirtualMachineError}（OOM / StackOverflow）必须放行：那不是包的错，
+     * 吞掉只会让后续状态更乱。
+     */
+    private static boolean loadAndRegister(ScannablePack pack, List<File> classpath) {
+        try {
+            return doLoadAndRegister(pack, classpath);
+        } catch (Throwable t) {
+            if (t instanceof VirtualMachineError vme) {
+                throw vme;
+            }
+            pack.failureReason = describe(t);
+            LogManager.serverError(TAG, String.format("Unhandled error while loading ContentPack '%s': %s",
+                    pack.manifest.moduleName(), describe(t)), t);
+            return false;
+        }
+    }
+
+    private static boolean doLoadAndRegister(ScannablePack pack, List<File> classpath) {
         File jar = pack.jarFile;
         ContentPackManifest manifest = pack.manifest;
 
+        // 纯数据包（无 Module-Entry）：没有类要加载。构造一个虚拟 ContentPack，
+        // 使其 assets/ 与 data/ 仍能挂载 —— 否则规范承诺的「L0/L1 免代码能力」是断的。
+        if (manifest.moduleEntry() == null) {
+            ContentPack dataOnly = new DataOnlyContentPack(manifest.moduleName(), manifest.moduleVersion());
+            bridgeSparkResources(jar, manifest.moduleName());
+            if (!ContentPackRegistry.register(dataOnly, jar)) {
+                LogManager.serverError(TAG, "Failed to register data-only ContentPack '%s'", manifest.moduleName());
+                return false;
+            }
+            LogManager.serverInfo(TAG, "  ✓ Registered pure data ContentPack '%s' (no code, resources only)",
+                    manifest.moduleName());
+            return true;
+        }
+
         LogManager.serverInfo(TAG, "Loading ContentPack: '%s' v%s", manifest.moduleName(), manifest.moduleVersion());
 
-        // Step 1: 创建委托链 ClassLoader（自身 + 依赖插件的合并空间，黑名单 parent-only）
+        // Step 1: 创建类加载器（自身 jar + 声明的 _libs 库；黑名单 parent-only）
         URLClassLoader classLoader;
         try {
-            classLoader = ChildFirstClassLoader.of(closureJars, ContentPackManifest.class.getClassLoader());
+            classLoader = ChildFirstClassLoader.of(classpath, ContentPackManifest.class.getClassLoader());
         } catch (Exception e) {
             LogManager.serverError(TAG, String.format("Failed to create ClassLoader for '%s': %s",
                     manifest.moduleName(), e.getMessage()));
@@ -285,85 +463,73 @@ public final class ContentPackLoader {
             return false;
         }
 
+        // 依赖图以 Module-Name 为键，注册表以 getId() 为键。两者不一致时隔离会漏掉人
+        // （标记失败的是图里那个名字，消费方查的却是另一个），所以这里主动报警。
+        if (!contentPack.getId().equals(manifest.moduleName())) {
+            LogManager.serverWarn(TAG,
+                    "  ⚠ id mismatch: getId()='%s' but Manifest Module-Name='%s' (%s) - the dependency graph is keyed by Module-Name, keep both identical",
+                    contentPack.getId(), manifest.moduleName(), jar.getName());
+        }
+
         LogManager.serverInfo(TAG, "  ✓ Successfully loaded ContentPack '%s'", contentPack.getId());
         return true;
     }
 
     /**
-     * 计算插件的【可见闭包】：自身 jar + 所有可达依赖插件的 jar（BFS，环安全）。
-     * <p>顺序：自身优先（child-first 语义——同名类时自己的赢），随后按 BFS 层级加入依赖。
-     * 声明了依赖但未扫描到的包只跳过（软性，不阻止加载）。
-     * <p>另外把 Module-Lib-Requires 声明的外部 jar 库（来自 contentpacks/_libs/）加入闭包——
-     * 库 jar 提供类与资源，不注册、不初始化，仅类加载可见。
+     * 构建本包的<b>类加载闭包</b>：自身 jar + {@code Module-Lib-Requires} 声明的外部 jar 库。
+     *
+     * <p><b>不再包含依赖包的 jar。</b>旧实现（{@code computeClosure}）把 {@code Module-Dependencies}
+     * 中所有可达依赖包的 jar 一并注入，好让包 A 能「看到」包 B 的类 —— 但那会让 B 的类在 A 的
+     * loader 里再加载一份，与 B 自己那份是<b>不同的 Class 对象</b>，于是 B 的静态状态静默发散。
+     * 跨包功能传递一律走 {@link Capability} / {@link CapabilityRegistry}（接口住 core，全局单例）。
+     *
+     * <p>保留 {@code _libs} 库注入：那是纯类库，不存在「属于某个包」的静态状态，安全。
      */
-    private static List<File> computeClosure(ContentPackManifest manifest,
-                                             Map<String, File> jarByName,
-                                             Map<String, ContentPackManifest> manifestByName) {
-        List<File> closure = new ArrayList<>();
-        Set<String> visited = new HashSet<>();
-        ArrayDeque<String> queue = new ArrayDeque<>();
+    private static List<File> buildClasspath(ScannablePack pack) {
+        List<File> classpath = new ArrayList<>();
+        classpath.add(pack.jarFile);
 
-        File self = jarByName.get(manifest.moduleName());
-        if (self != null) {
-            closure.add(self);
-        }
-        visited.add(manifest.moduleName());
-        queue.addAll(manifest.dependencyNames());
-
-        // 库依赖：把声明的外部 jar 库加入闭包（缺失时警告，不阻止加载）
-        for (String libName : manifest.libNames()) {
+        for (String libName : pack.manifest.libNames()) {
             File libJar = LIBRARIES.get(libName);
             if (libJar != null) {
-                closure.add(libJar);
+                classpath.add(libJar);
                 LogManager.serverInfo(TAG, "ContentPack '%s' linked library jar: %s -> %s",
-                        manifest.moduleName(), libName, libJar.getName());
+                        pack.manifest.moduleName(), libName, libJar.getName());
             } else {
                 LogManager.serverWarn(TAG, "ContentPack '%s' declares library '%s' but no matching jar found in _libs/ (skip)",
-                        manifest.moduleName(), libName);
+                        pack.manifest.moduleName(), libName);
             }
         }
-
-        while (!queue.isEmpty()) {
-            String dep = queue.poll();
-            if (!visited.add(dep)) {
-                continue;
-            }
-            File depJar = jarByName.get(dep);
-            if (depJar != null) {
-                closure.add(depJar);
-                ContentPackManifest depManifest = manifestByName.get(dep);
-                if (depManifest != null) {
-                    queue.addAll(depManifest.dependencyNames());
-                    // 传递库依赖：依赖包声明的库，对依赖者可见
-                    for (String libName : depManifest.libNames()) {
-                        File libJar = LIBRARIES.get(libName);
-                        if (libJar != null) closure.add(libJar);
-                    }
-                }
-            }
-        }
-        return closure;
+        return classpath;
     }
 
     /**
-     * 拓扑排序（DFS）：按依赖序排列插件——依赖者先加载、被依赖者先注册。
+     * 拓扑排序（DFS）：被依赖者排在依赖者之前。
+     *
+     * <p><b>这个顺序现在真的有用了</b>：{@link ContentPackRegistry} 保序存储，
+     * 因此 {@code getAllPacks()} 的返回顺序就是这里算出的顺序，
+     * 于是 {@code register()} 的调用顺序 = 拓扑序，包 A 能确定地看到已声明依赖的包已注册。
+     *
      * <ul>
-     *   <li>声明了依赖但未扫描到的包 → 警告 + 忽略（软依赖，不阻止加载）</li>
-     *   <li>循环依赖 → 警告 + 尽力排序（executeAllRegistries 的两阶段 init 兜底，功能不损失）</li>
+     *   <li>已标记跳过的包不参与依赖图（也不会被加载）</li>
+     *   <li>软依赖（{@code Module-Dependencies-Optional}）<b>不参与排序</b>：它只表达「在就启用」</li>
+     *   <li>循环依赖 → 警告 + 尽力排序（两阶段 register/init 兜底）</li>
      * </ul>
+     *
+     * <p>缺失的硬依赖到不了这里 —— {@link #applyHardDependencyChecks} 已把依赖者标记为跳过。
+     * <p>用 {@link LinkedHashMap} 保证基序稳定（发现顺序），使排序结果可复现、日志可比对。
      */
-    private static List<ScannablePack> topologicalSort(List<ScannablePack> packs,
-                                                       Map<String, File> jarByName) {
-        Map<String, ScannablePack> byName = new HashMap<>();
+    private static List<ScannablePack> topologicalSort(List<ScannablePack> packs) {
+        Map<String, ScannablePack> byName = new LinkedHashMap<>();
         for (ScannablePack p : packs) {
             if (p.skipReason != null) {
-                continue; // 兼容性失败的包不参与依赖图（反正不会被加载）
+                continue; // 跳过/等不到的包不参与依赖图（反正不会被加载）
             }
             byName.put(p.manifest.moduleName(), p);
         }
 
         // 第二遍构建依赖集（确保 byName 完整后再判断 containsKey）
-        Map<String, Set<String>> depSet = new HashMap<>();
+        Map<String, Set<String>> depSet = new LinkedHashMap<>();
         for (ScannablePack p : packs) {
             if (p.skipReason != null) {
                 continue;
@@ -373,7 +539,7 @@ public final class ContentPackLoader {
                 if (byName.containsKey(dep)) {
                     deps.add(dep);
                 } else {
-                    LogManager.serverWarn(TAG, "ContentPack '%s' declares dependency '%s' but it is not loaded (soft-ignore)",
+                    LogManager.serverWarn(TAG, "ContentPack '%s' declares hard dependency '%s' which is not loadable (ignoring edge)",
                             p.manifest.moduleName(), dep);
                 }
             }
@@ -518,7 +684,13 @@ public final class ContentPackLoader {
         LogManager.serverInfo(TAG, "Loading %d pending Spark-Core package(s)", pendingSparkPackages.size());
 
         // 将包加入 graph（客户端供 readPackageContent 使用，服务端供 collectRemote 同步使用）
+        // 已被隔离的包跳过：它的模型/动画引用的是不再生效的内容，加载进来只会制造错配。
         for (SparkPackage pack : pendingSparkPackages) {
+            ResourceLocation sparkId = pack.getMeta().getId();
+            if (sparkId != null && ContentPackGraph.isQuarantined(sparkId.getPath())) {
+                LogManager.serverWarn(TAG, "  Skipping Spark resources of cancelled ContentPack '%s'", sparkId.getPath());
+                continue;
+            }
             try {
                 SparkPackLoader.INSTANCE.getGraph().addNode(pack);
                 LogManager.serverInfo(TAG, "  Added Spark package: %s", pack.getMeta().getId());
@@ -549,6 +721,10 @@ public final class ContentPackLoader {
                 int animCount = 0;
 
                 for (SparkPackage pack : pendingSparkPackages) {
+                    ResourceLocation sparkId = pack.getMeta().getId();
+                    if (sparkId != null && ContentPackGraph.isQuarantined(sparkId.getPath())) {
+                        continue;
+                    }
                     // 注册模型
                     if (modelModule != null && pack.getEntries().get("models") != null) {
                         for (Map.Entry<String, byte[]> entry : pack.getEntries().get("models").entrySet()) {
@@ -590,42 +766,151 @@ public final class ContentPackLoader {
     }
 
     /**
-     * 在主 mod 构造完成后调用，执行所有 ContentPack 的 register() 和 init()
+     * 在主 mod 构造完成后调用，执行所有 ContentPack 的 register() 和 init()。
+     *
+     * <p>两阶段：先全部 {@code register()}（按<b>拓扑序</b>，见 {@link ContentPackRegistry}），
+     * 再锁注册表，最后全部 {@code init()}。
+     *
+     * <p>{@code register()} 阶段会为每个包设置 {@code context} 的「当前包」作用域，
+     * 使 {@code ctx.provide(...)} 能记录到正确的提供者 id。
+     *
+     * <h4>故障隔离（KubeJS 式）</h4>
+     * 任何包的 {@code register()} / {@code init()} 抛错都<b>不会</b>阻止游戏启动：
+     * <ol>
+     *   <li>该包被隔离（回收它已提供的能力，见 {@link CapabilityRegistry#revokeAllFrom}）</li>
+     *   <li>沿硬依赖链连带取消所有依赖它的包（{@link ContentPackGraph}）</li>
+     *   <li>被取消的包不再执行后续阶段 —— 因为它拿不到依赖的能力，
+     *       硬跑只会把「东西在，但不工作」的僵尸内容注册进游戏</li>
+     * </ol>
+     * 拓扑序是这一切的前提：失败包的依赖者必然排在它后面，所以隔离总能赶在它们之前生效。
+     * 循环依赖会让拓扑序退化为尽力排序，那时隔离可能来晚一步（日志会标注）。
      */
     public static void executeAllRegistries(ContentPackContext context) {
         LogManager.serverInfo(TAG, "Executing registries for %d ContentPack(s)", ContentPackRegistry.getPackCount());
 
+        // 阶段 1：register（拓扑序 —— 被依赖者先）
         for (ContentPackRegistry.LoadedPack loaded : ContentPackRegistry.getAllPacks()) {
+            String id = loaded.id();
+            if (ContentPackGraph.isQuarantined(id)) {
+                LogManager.serverWarn(TAG, "  Skipping register() for '%s' (cancelled: %s)",
+                        id, ContentPackGraph.reasonOf(id));
+                continue;
+            }
             try {
-                LogManager.serverInfo(TAG, "  Registering: '%s'", loaded.id());
+                LogManager.serverInfo(TAG, "  Registering: '%s'", id);
+                context.beginPack(id);
                 loaded.pack().register(context);
-            } catch (Exception e) {
+                ContentPackGraph.activate(id);
+            } catch (Throwable t) {
+                if (t instanceof VirtualMachineError vme) {
+                    throw vme;
+                }
+                // 先回收它已经 provide() 出去的能力：否则依赖者会拿到半初始化的实现当好的用
+                CapabilityRegistry.revokeAllFrom(id);
                 LogManager.serverError(TAG, String.format("Failed to register ContentPack '%s': %s",
-                        loaded.id(), e.getMessage()), e);
+                        id, describe(t)), t);
+                quarantine(id, "register", describe(t));
+            } finally {
+                context.endPack();
             }
         }
 
+        // 阶段 2：锁定（此后不可再注册包 / 不可再提供能力）
         ContentPackRegistry.lock();
+        CapabilityRegistry.lock();
         BehaviorRouter.lock();
 
+        // 阶段 3：init（只读阶段）
         for (ContentPackRegistry.LoadedPack loaded : ContentPackRegistry.getAllPacks()) {
+            String id = loaded.id();
+            if (ContentPackGraph.isQuarantined(id)) {
+                continue;
+            }
             try {
                 loaded.pack().init();
-            } catch (Exception e) {
+            } catch (Throwable t) {
+                if (t instanceof VirtualMachineError vme) {
+                    throw vme;
+                }
                 LogManager.serverError(TAG, String.format("Failed to init ContentPack '%s': %s",
-                        loaded.id(), e.getMessage()), e);
+                        id, describe(t)), t);
+                // init 阶段注册表已锁定，能力无法回收（revokeAllFrom 会拒绝）；
+                // 但依赖者还没 init（拓扑序），仍然救得回来。
+                quarantine(id, "init", describe(t));
             }
         }
 
-        LogManager.serverInfo(TAG, "All ContentPack registries executed");
+        // 阶段 4：隔离总结 —— 让「为什么某个包没生效」在日志里一眼可见，
+        // 而不是让玩家对着一个半死不活的包猜。
+        List<ContentPackGraph.Snapshot> quarantined = ContentPackGraph.quarantined();
+        if (quarantined.isEmpty()) {
+            LogManager.serverInfo(TAG, "All ContentPack registries executed");
+        } else {
+            LogManager.serverWarn(TAG, "All ContentPack registries executed, but %d pack(s) were cancelled:",
+                    quarantined.size());
+            for (ContentPackGraph.Snapshot snapshot : quarantined) {
+                LogManager.serverWarn(TAG, "  [%s] '%s' (%s): %s",
+                        snapshot.status(), snapshot.id(), snapshot.phase(), snapshot.reason());
+            }
+            LogManager.serverWarn(TAG, "  The game keeps running; no other pack was blocked.");
+        }
     }
 
     /**
-     * 扫描结果包装
+     * 扫描结果包装。
+     * <p>{@code skipReason} 可变：硬依赖校验发生在扫描<b>之后</b>，需要在此追加跳过原因。
      */
-    private record ScannablePack(
-            File jarFile,
-            ContentPackManifest manifest,
-            String skipReason
-    ) {}
+    private static final class ScannablePack {
+        final File jarFile;
+        final ContentPackManifest manifest;
+        String skipReason;
+        /** 加载阶段失败原因，由 {@link #loadAndRegister} 回填，供隔离日志说明依赖者为什么也下车。 */
+        String failureReason;
+
+        ScannablePack(File jarFile, ContentPackManifest manifest, String skipReason) {
+            this.jarFile = jarFile;
+            this.manifest = manifest;
+            this.skipReason = skipReason;
+        }
+    }
+
+    /**
+     * 纯数据包的虚拟 {@link ContentPack} 实现（MANIFEST 中无 {@code Module-Entry}）。
+     *
+     * <p>存在的唯一目的：让这样的 JAR 也能进入 {@link ContentPackRegistry}，
+     * 从而被 {@link ContentPackRepositorySource} 挂载 {@code assets/} 与 {@code data/}。
+     * 它没有任何代码——{@code register()} 是空实现。
+     *
+     * <p>本类定义在主 mod（parent-only 前缀）中，不随包加载，因此不存在类身份问题。
+     */
+    private static final class DataOnlyContentPack implements ContentPack {
+
+        private final String id;
+        private final String version;
+
+        DataOnlyContentPack(String id, String version) {
+            this.id = id;
+            this.version = version;
+        }
+
+        @Override
+        public String getId() {
+            return id;
+        }
+
+        @Override
+        public String getDisplayName() {
+            return id;
+        }
+
+        @Override
+        public String getVersion() {
+            return version;
+        }
+
+        @Override
+        public void register(ContentPackContext context) {
+            // 纯数据包：无代码可注册。资源由 ContentPackRepositorySource 挂载。
+        }
+    }
 }

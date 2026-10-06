@@ -2,11 +2,11 @@ package com.catoxide.catoxidesbattlerebuild.core.contentpack;
 
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.packs.FilePackResources;
 import net.minecraft.server.packs.PackLocationInfo;
 import net.minecraft.server.packs.PackResources;
 import net.minecraft.server.packs.PackSelectionConfig;
 import net.minecraft.server.packs.PackType;
-import net.minecraft.server.packs.PathPackResources;
 import net.minecraft.server.packs.metadata.pack.PackMetadataSection;
 import net.minecraft.server.packs.repository.KnownPack;
 import net.minecraft.server.packs.repository.Pack;
@@ -42,6 +42,14 @@ public final class ContentPackRepositorySource implements RepositorySource {
     @Override
     public void loadPacks(Consumer<Pack> onLoad) {
         for (ContentPackRegistry.LoadedPack loaded : ContentPackRegistry.getAllPacks()) {
+            // 被隔离的包（自身出错，或硬依赖链上被连带取消）不挂载资源。
+            // 这条是「一个包写坏 data/ 就把整个世界卡在安全模式」的解药：
+            // 取消加载 = 它的 JSON 根本不进入注册表加载流程。
+            if (ContentPackGraph.isQuarantined(loaded.id())) {
+                LogManager.serverWarn(TAG, "Not mounting resources of cancelled ContentPack '%s' (%s)",
+                        loaded.id(), ContentPackGraph.reasonOf(loaded.id()));
+                continue;
+            }
             File jar = loaded.jarFile();
             if (jar == null || !jar.isFile()) {
                 continue;
@@ -63,18 +71,14 @@ public final class ContentPackRepositorySource implements RepositorySource {
                 Optional.of(new KnownPack("contentpack", loaded.id(), loaded.version()))
         );
 
-        // 直接从 jar 文件提供资源（无需 pack.mcmeta）
-        Pack.ResourcesSupplier supplier = new Pack.ResourcesSupplier() {
-            @Override
-            public PackResources openPrimary(PackLocationInfo loc) {
-                return new PathPackResources(loc, jar.toPath());
-            }
-
-            @Override
-            public PackResources openFull(PackLocationInfo loc, Pack.Metadata metadata) {
-                return new PathPackResources(loc, jar.toPath());
-            }
-        };
+        // 直接从 jar 文件提供资源（无需 pack.mcmeta）。
+        //
+        // 必须用 FilePackResources（zip/jar 语义）。原实现用的是 PathPackResources
+        // （目录语义），传 jar 路径时 getNamespaces() 返回空集、getResource() 恒为 null
+        // —— 内容包的 assets/ 与 data/ 实际上从未生效过。已用 PackMountProbe 实测确认：
+        //   PathPackResources(jar) -> namespaces=[]，resource=null
+        //   FilePackResources(jar) -> namespaces=[structure_example]，resource 可读
+        Pack.ResourcesSupplier supplier = new FilePackResources.FileResourcesSupplier(jar);
 
         Pack.Metadata metadata = new Pack.Metadata(
                 Component.literal(loaded.displayName()),

@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 /**
@@ -53,6 +54,13 @@ public final class ContentPackContext {
 
     /** 本 context 下注册的所有数据驱动实体（供客户端通用渲染器注册） */
     private final List<DeferredHolder<EntityType<?>, EntityType<DataDrivenMob>>> dataDrivenEntities = new ArrayList<>();
+
+    /**
+     * 当前正在执行 {@code register()} 的包 id（由 {@link ContentPackLoader} 设置）。
+     * <p>只有一个 context 实例被所有包共用，所以需要这个作用域来给
+     * {@link #provide} 记录正确的提供者。
+     */
+    private String currentPackId;
 
     public ContentPackContext(String modId,
                               DeferredRegister<SoundEvent> soundRegister,
@@ -406,6 +414,89 @@ public final class ContentPackContext {
         } catch (IOException e) {
             LogManager.serverError("ContentPackContext", "Failed to scan structures directory: %s", e.getMessage());
         }
+    }
+
+    // ==================== 跨包能力（Capability）====================
+
+    /**
+     * 由 {@link ContentPackLoader} 在调用 {@code register()} 前设置「当前包」作用域。
+     * <p>包代码不需要、也不应该调用。
+     */
+    void beginPack(String packId) {
+        this.currentPackId = packId;
+    }
+
+    /** 由加载器在 {@code register()} 返回后清除作用域。 */
+    void endPack() {
+        this.currentPackId = null;
+    }
+
+    /** 当前正在 {@code register()} 的包 id；不在注册阶段则为 null。 */
+    public String currentPackId() {
+        return currentPackId;
+    }
+
+    /**
+     * 提供一个跨包能力实现（本包实现 {@code capability.type()} 所声明的接口）。
+     *
+     * <h4>前置条件（必须满足，否则会静默拿不到）</h4>
+     * <ul>
+     *   <li>接口与 token <b>必须定义在主 mod 包名下</b>（parent-only），
+     *       这样所有包看到同一个 Class 对象，跨包转换才成立。</li>
+     *   <li>实现类可以是本包私有的 —— 它只在消费者通过接口调用时被用到，
+     *       消费者从不 import 它，因此不会产生第二份 Class 副本。</li>
+     * </ul>
+     *
+     * <p>只能在 {@code register()} 阶段调用；注册表锁定后调用会被拒绝并报错。
+     * 同一 token 重复提供时，<b>第一个提供者生效</b>，后续提供者报错。
+     *
+     * @param capability 能力 token（建议放在 core 的 {@code *Caps} 常量类里）
+     * @param impl       实现实例（通常是匿名类或本包私有类）
+     * @param <T>        能力接口类型
+     */
+    public <T> void provide(Capability<T> capability, T impl) {
+        CapabilityRegistry.provide(capability, impl, currentPackId != null ? currentPackId : "<unknown>");
+    }
+
+    /**
+     * 获取一个跨包能力；<b>无人提供时返回 {@link Optional#empty()}</b>。
+     *
+     * <p>这正是「包 A 的部分内容在包 B 存在时启用」的写法 —— 空值不是错误，而是
+     * 预期分支：
+     * <pre>{@code
+     * ctx.capability(SomeCaps.FOO).ifPresent(impl -> registerCompat(ctx, impl));
+     * }</pre>
+     *
+     * <p>顺序保证：若 A 在 MANIFEST 中用 {@code Module-Dependencies} 声明依赖 B，
+     * 则 B 的 {@code register()} 一定先执行，A 在这里必然拿得到 B 提供的能力。
+     * 若用的是 {@code Module-Dependencies-Optional}，则<b>不保证顺序</b>，拿不到就是拿不到。
+     */
+    public <T> Optional<T> capability(Capability<T> capability) {
+        return CapabilityRegistry.get(capability);
+    }
+
+    /** 某个能力是否已被提供（不关心类型是否匹配调用方预期）。 */
+    public boolean hasCapability(Capability<?> capability) {
+        return CapabilityRegistry.has(capability);
+    }
+
+    /**
+     * 某个内容包是否已加载（存在性探测，不涉及类空间）。
+     * <p>仅在 {@code register()} 阶段可靠：那时所有通过校验的包都已进入注册表。
+     */
+    public boolean hasPack(String packId) {
+        // 被隔离的包一律视为「不存在」：这正是「包 B 在的时候才启用 A 的兼容内容」该有的语义 ——
+        // 隔离后的 B 不能再触发 A 的兼容分支，否则 A 会去调用一个半死包的实现。
+        return ContentPackRegistry.getPack(packId).isPresent() && !ContentPackGraph.isQuarantined(packId);
+    }
+
+    /** 已加载的全部包 id，<b>按拓扑序</b>（被依赖者在前）。 */
+    public List<String> loadedPackIds() {
+        List<String> ids = new ArrayList<>();
+        for (ContentPackRegistry.LoadedPack loaded : ContentPackRegistry.getAllPacks()) {
+            ids.add(loaded.id());
+        }
+        return ids;
     }
 
     /**

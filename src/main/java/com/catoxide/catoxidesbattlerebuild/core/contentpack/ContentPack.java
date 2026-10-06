@@ -29,15 +29,23 @@ package com.catoxide.catoxidesbattlerebuild.core.contentpack;
  * <h3>已实现</h3>
  * <ul>
  *   <li>{@code ContentPackLoader}：扫描目录、解析 manifest、兼容验证、ClassLoader 加载</li>
- *   <li>{@code ContentPackRegistry}：管理已加载的 ContentPack</li>
- *   <li>{@code ContentPackContext}：提供 EntityType/SoundEvent 注册 API</li>
+ *   <li>{@code ContentPackRegistry}：管理已加载的 ContentPack（<b>保序</b>，见其类文档）</li>
+ *   <li>{@code ContentPackContext}：提供 EntityType/SoundEvent 注册 API + 跨包能力 API</li>
+ *   <li>{@code Capability} / {@code CapabilityRegistry}：<b>包间能力传递</b>
+ *       （接口住 core、实现在包内，不共享类空间）</li>
  *   <li>ModularZombie3：第一个 ContentPack example</li>
  * </ul>
+ *
+ * <h3>包间依赖</h3>
+ * 在 MANIFEST 中声明 {@code Module-Dependencies}（硬，缺失则跳过本包）或
+ * {@code Module-Dependencies-Optional}（软，缺失仅警告）。两者都<b>只表达顺序与存在性</b>，
+ * 不会把依赖包的类注入本包 —— 跨包调用请用 {@link ContentPackContext#provide} /
+ * {@link ContentPackContext#capability}。
  *
  * <h3>TODO</h3>
  * <ol>
  *   <li>编辑器支持：可视化编辑器，生成 ContentPack 所需的 JSON + 骨架代码</li>
- *   <li>ContentPack 间依赖声明</li>
+ *   <li><s>ContentPack 间依赖声明</s> —— 已完成：硬/软依赖 + 能力注册表（见上）</li>
  *   <li>热加载支持</li>
  * </ol>
  */
