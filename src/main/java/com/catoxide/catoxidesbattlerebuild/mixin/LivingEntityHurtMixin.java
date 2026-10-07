@@ -1,8 +1,10 @@
 package com.catoxide.catoxidesbattlerebuild.mixin;
 
+import com.catoxide.catoxidesbattlerebuild.core.combat.ArrowCombatState;
 import com.catoxide.catoxidesbattlerebuild.core.combat.AttackProperties;
 import com.catoxide.catoxidesbattlerebuild.core.combat.CombatResult;
 import com.catoxide.catoxidesbattlerebuild.core.combat.CombatSystem;
+import com.catoxide.catoxidesbattlerebuild.core.combat.SwordCombat;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.BodyPart;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.BodyUnit;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.EntityBoneSystem;
@@ -41,6 +43,14 @@ public abstract class LivingEntityHurtMixin {
         LivingEntity target = (LivingEntity) (Object) this;
         if (target.level().isClientSide()) {
             LogManager.serverDebug("TEST-HurtMixin", "  [SKIP] Client-side");
+            return;
+        }
+
+        // 剑/弓 mixin 已接管处理（原版链已切断，此 hurt 是它们回基础血量的调用）→ 跳过，防二次处理
+        // ⚠️ flag 必须读普通类（SwordCombat / ArrowCombatState）：本 handler 内联进 LivingEntity 后
+        // 属非 mixin 字节码，直接引用 mixin 包类会 IllegalClassLoadError（2026-10-06 23:00 实崩）
+        if (SwordCombat.isProcessingSwordHit() || ArrowCombatState.isProcessing()) {
+            LogManager.serverDebug("TEST-HurtMixin", "  [SKIP] already processed by sword/arrow mixin");
             return;
         }
 

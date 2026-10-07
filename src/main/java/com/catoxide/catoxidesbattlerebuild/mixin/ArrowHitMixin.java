@@ -1,14 +1,12 @@
 package com.catoxide.catoxidesbattlerebuild.mixin;
 
+import com.catoxide.catoxidesbattlerebuild.core.combat.ArrowCombatState;
 import com.catoxide.catoxidesbattlerebuild.core.combat.AttackProperties;
-import com.catoxide.catoxidesbattlerebuild.core.combat.CombatResult;
-import com.catoxide.catoxidesbattlerebuild.core.combat.CombatSystem;
+import com.catoxide.catoxidesbattlerebuild.core.combat.CombatExecutor;
 import com.catoxide.catoxidesbattlerebuild.core.collision.ArrowBoneCollision;
 import com.catoxide.catoxidesbattlerebuild.core.physics.ArrowPhysics;
 import com.catoxide.catoxidesbattlerebuild.core.physics.ArrowTrajectory;
-import com.catoxide.catoxidesbattlerebuild.server.bodypart.BodyPart;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.BodyUnit;
-import com.catoxide.catoxidesbattlerebuild.server.bodypart.EntityBoneSystem;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -19,23 +17,18 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
+
 
 /**
  * 弓箭/投射物 mixin：将射箭伤害纳入战斗系统。
  * <p>弓射箭默认参数：5 穿甲值，5 贯穿值，基础伤害由箭矢携带。</p>
- * <p>使用 isProcessingArrowHit 标记通知 LivingEntityHurtMixin 跳过处理。</p>
+ * <p>使用 {@link com.catoxide.catoxidesbattlerebuild.core.combat.ArrowCombatState} 标记通知
+ * LivingEntityHurtMixin 跳过处理（flag 必须放普通类：mixin 包类禁止被内联后的非 mixin 字节码引用）。</p>
  * <p>在 onHitEntity HEAD 注入中 ci.cancel() 完全切断原版 AABB 伤害链路。</p>
  * <p>同时注入自定义物理系统更新箭矢轨迹。</p>
  */
 @Mixin(AbstractArrow.class)
 public abstract class ArrowHitMixin {
-
-    // 标记：当前正在处理箭矢命中，LivingEntityHurtMixin 应跳过
-    // Mixin 要求所有静态字段必须 private
-    private static final AtomicBoolean IS_PROCESSING_ARROW_HIT = new AtomicBoolean(false);
 
     // 锁定的目标实体映射（箭矢 UUID -> 被锁定的 LivingEntity）
     // 防止箭矢在同一飞行周期内命中多个目标
@@ -192,8 +185,8 @@ public abstract class ArrowHitMixin {
      */
     private void processCombat(AbstractArrow arrow, LivingEntity target, ArrowBoneCollision.BoneCollisionResult hitResult) {
         try {
-            // 设置处理标记，防止 LivingEntityHurtMixin 重复处理
-            IS_PROCESSING_ARROW_HIT.set(true);
+            // 设置处理标记，防止 LivingEntityHurtMixin 重复处理（flag 在普通类 ArrowCombatState）
+            ArrowCombatState.setProcessing(true);
 
             LivingEntity shooter = arrow.getOwner() instanceof LivingEntity ? (LivingEntity) arrow.getOwner() : null;
             if (shooter == null) {
@@ -207,23 +200,12 @@ public abstract class ArrowHitMixin {
             LogManager.serverInfo("TEST-ArrowHit", "  [COMBAT] Processing hit: target={}, damage={}, part={}",
                 target.getId(), baseDamage, hitResult.partName());
 
-            AttackProperties attack = AttackProperties.of(armorPen, piercing, baseDamage);
-
-            // 获取目标的骨骼单位
-            EntityBoneSystem boneSystem = EntityBoneSystem.getInstance();
-            java.util.List<BodyUnit> units = new java.util.ArrayList<>();
-
-            for (BodyPart part : boneSystem.getBodyParts(target.getId())) {
-                units.addAll(part.getUnits());
-            }
-
-            if (units.isEmpty()) {
-                units = boneSystem.getDefaultBodyUnits(target.getId());
-            }
+            // 目标部位（剑/弓共用：CombatExecutor）
+            java.util.List<BodyUnit> units = CombatExecutor.getTargetUnits(target.getId());
 
             if (units.isEmpty()) {
                 LogManager.serverWarn("TEST-ArrowHit", "  [SKIP] No body units for target={}", target.getId());
-                IS_PROCESSING_ARROW_HIT.set(false);
+                ArrowCombatState.setProcessing(false);
                 return;
             }
 
@@ -238,60 +220,23 @@ public abstract class ArrowHitMixin {
                 LogManager.serverDebug("TEST-ArrowHit", "  [FALLBACK] Using all units for target={}", target.getId());
             }
 
-            // 收集 BodyPart 模块血量
-            float[] healths = new float[hitUnits.size()];
-            for (int i = 0; i < hitUnits.size(); i++) {
-                healths[i] = hitUnits.get(i).getParentPart().getModuleHealth();
-            }
+            // 共享执行（CombatExecutor）：管线 → 部位模块血量 → 总HP（RAW=管线原始总伤=弓现行行为，
+            // 是否切 TRANSMITTED 与剑统一待用户拍板）→ 致命 kill
+            CombatExecutor.Execution execution = CombatExecutor.execute(target,
+                    target.damageSources().mobAttack(shooter),
+                    CombatExecutor.BaseHpMode.RAW,
+                    AttackProperties.of(armorPen, piercing, baseDamage), hitUnits, "TEST-ArrowHit");
 
-            // 执行战斗计算
-            CombatResult combatResult = CombatSystem.getInstance().processAttack(attack, hitUnits, healths);
-
-            if (combatResult.totalDamage() > 0) {
-                // 按 BodyPart 聚合伤害
-                Map<BodyPart, Float> partDamageMap = new HashMap<>();
-                for (CombatResult.HitResult hit : combatResult.hitResults()) {
-                    BodyPart part = hit.bodyUnit().getParentPart();
-                    partDamageMap.merge(part, hit.actualDamage(), Float::sum);
-                }
-
-                // 扣除血量
-                boolean hasFatalDestroyed = false;
-                for (Map.Entry<BodyPart, Float> entry : partDamageMap.entrySet()) {
-                    BodyPart part = entry.getKey();
-                    float damageToPart = entry.getValue();
-                    float before = part.getModuleHealth();
-                    part.applyDamage(damageToPart);
-                    float after = part.getModuleHealth();
-
-                    LogManager.serverInfo("TEST-ArrowHit", "  [DAMAGE] part={}, before={}, damage={}, after={}, destroyed={}",
-                        part.getPartName(), before, damageToPart, after, part.isDestroyed());
-
-                    if (part.isDestroyed() && part.isFatal()) {
-                        hasFatalDestroyed = true;
-                    }
-                }
-
-                // 应用总伤害到实体
-                target.hurt(target.damageSources().mobAttack(shooter), combatResult.totalDamage());
-
-                if (hasFatalDestroyed) {
-                    LogManager.serverInfo("TEST-ArrowHit", "  💀 Fatal part destroyed, killing target");
-                    target.kill();
-                }
-
+            if (execution.damaged()) {
                 // 销毁箭矢，防止下一tick重复判定
                 LogManager.serverInfo("TEST-ArrowHit", "  [DISCARD] Discarding arrow after bone hit");
                 arrow.discard();
-
-            } else {
-                LogManager.serverDebug("TEST-ArrowHit", "  [BLOCKED] Attack blocked by armor/piercing");
             }
 
         } catch (Exception e) {
             LogManager.serverWarn("ArrowHitMixin", "Combat processing failed: {}", e.getMessage());
         } finally {
-            IS_PROCESSING_ARROW_HIT.set(false);
+            ArrowCombatState.setProcessing(false);
         }
     }
 
