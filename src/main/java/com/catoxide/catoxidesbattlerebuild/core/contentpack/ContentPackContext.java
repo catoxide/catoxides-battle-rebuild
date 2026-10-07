@@ -92,6 +92,14 @@ public final class ContentPackContext {
                 fileName, type);
     }
 
+    /**
+     * 注册服务端配置（ModConfig.Type.SERVER 糖）。
+     * <p>供 pack 代码使用：FML 类（ModConfig.Type）不在包编译类路，pack 用此重载、不直接引用 FML 类型。
+     */
+    public void registerServerConfig(net.neoforged.neoforge.common.ModConfigSpec spec, String fileName) {
+        registerConfig(net.neoforged.fml.config.ModConfig.Type.SERVER, spec, fileName);
+    }
+
     public String getModId() {
         return modId;
     }

@@ -17,53 +17,13 @@ public class ModNetworkHandler {
     @SubscribeEvent
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
         final PayloadRegistrar registrar = event.registrar(PROTOCOL_VERSION);
-        registrar.playBidirectional(HitAttemptPacket.TYPE, HitAttemptPacket.STREAM_CODEC,
-                new DirectionalPayloadHandler<>(
-                        ModNetworkHandler::handleHitAttemptOnClient,
-                        ModNetworkHandler::handleHitAttemptOnServer
-                ));
-        registrar.playBidirectional(SyncDamageResultPacket.TYPE, SyncDamageResultPacket.STREAM_CODEC,
-                new DirectionalPayloadHandler<>(
-                        ModNetworkHandler::handleSyncDamageResultOnClient,
-                        ModNetworkHandler::handleSyncDamageResultOnServer
-                ));
-        registrar.playBidirectional(SyncBodyPartConfigPacket.TYPE, SyncBodyPartConfigPacket.STREAM_CODEC,
-                new DirectionalPayloadHandler<>(
-                        ModNetworkHandler::handleSyncBodyPartConfigOnClient,
-                        ModNetworkHandler::handleSyncBodyPartConfigOnServer
-                ));
         // Server to client only packet
         registrar.playToClient(SyncBoneDataPacket.TYPE, SyncBoneDataPacket.STREAM_CODEC,
                 ModNetworkHandler::handleSyncBoneDataOnClient);
+        // M6：HitAttemptPacket / SyncDamageResultPacket / SyncBodyPartConfigPacket 已迁入
+        // melee-combat-pack：由 MeleeCombatPack.register() 自注册（V1 先例，registrar("1")）
         // 任务相关 payload（QuestSyncPacket / QuestToggleStarPacket）M3 已迁入
         // quest-test-pack：由 QuestTestPack.register() 自行注册（V1 先例）
-    }
-
-    private static void handleHitAttemptOnClient(HitAttemptPacket packet, IPayloadContext context) {
-    }
-
-    private static void handleHitAttemptOnServer(HitAttemptPacket packet, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            CatoxidesBattleRebuildConstants.LOGGER.debug("Received hit attempt: entityId={}, boneName={}", packet.entityId(), packet.boneName());
-        });
-    }
-
-    private static void handleSyncDamageResultOnClient(SyncDamageResultPacket packet, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            CatoxidesBattleRebuildConstants.LOGGER.debug("Received damage result: entityId={}, damage={}", packet.entityId(), packet.damage());
-        });
-    }
-
-    private static void handleSyncDamageResultOnServer(SyncDamageResultPacket packet, IPayloadContext context) {
-    }
-
-    private static void handleSyncBodyPartConfigOnClient(SyncBodyPartConfigPacket packet, IPayloadContext context) {
-        context.enqueueWork(() -> {
-            CatoxidesBattleRebuildConstants.LOGGER.debug("Received body part config: entityId={}", packet.entityId());
-        });
-    }
-
-    private static void handleSyncBodyPartConfigOnServer(SyncBodyPartConfigPacket packet, IPayloadContext context) {
     }
 
     private static void handleSyncBoneDataOnClient(SyncBoneDataPacket packet, IPayloadContext context) {

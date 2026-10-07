@@ -1,0 +1,7 @@
+Manifest-Version: 1.0
+Module-Name: melee-combat-pack
+Module-Version: 1.0.0
+Module-Requires: catoxidesbattlerebuild>=0.2.0
+Module-Lib-Requires: spark
+Module-Type: contentpack
+Module-Entry: example.contentpack.meleecombat.MeleeCombatPack

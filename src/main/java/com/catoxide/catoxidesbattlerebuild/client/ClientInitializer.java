@@ -5,11 +5,11 @@ import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuild;
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
 import com.catoxide.catoxidesbattlerebuild.client.geometry.EntityBoneManager;
 import com.catoxide.catoxidesbattlerebuild.client.models.ModelDataManager;
-import com.catoxide.catoxidesbattlerebuild.client.renderer.CustomProjectileRenderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.DataDrivenMobRenderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.IronSwordRenderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombie2Renderer;
 import com.catoxide.catoxidesbattlerebuild.client.renderer.ModularZombieRenderer;
+import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackGraph;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackLoader;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackRegistry;
 import com.catoxide.catoxidesbattlerebuild.mob.zombie1.ModularZombie;
@@ -53,12 +53,14 @@ public class ClientInitializer {
         event.registerEntityRenderer(ModEntities.MODULAR_ZOMBIE_2.get(), ModularZombie2Renderer::new);
         LogManager.clientStartup("ClientInitializer", "ModularZombie2Renderer registered");
 
-        LogManager.clientStartup("ClientInitializer", "Registering CustomProjectileRenderer...");
-        event.registerEntityRenderer(ModEntities.CUSTOM_PROJECTILE.get(), CustomProjectileRenderer::new);
-        LogManager.clientStartup("ClientInitializer", "CustomProjectileRenderer registered");
 
         // 内容包渲染器注册：pack 通过 registerClientRenderers 自注册（主 mod 不依赖具体类）
+        // 被隔离的包跳过（含硬依赖链上被连带取消的）—— 它们的内容不应该再出现在屏幕上。
         for (ContentPackRegistry.LoadedPack loaded : ContentPackRegistry.getAllPacks()) {
+            if (ContentPackGraph.isQuarantined(loaded.id())) {
+                LogManager.clientWarn("ClientInitializer", "Skipping client renderers for cancelled pack '{}'", loaded.id());
+                continue;
+            }
             try {
                 loaded.pack().registerClientRenderers((holder, provider) ->
                         event.registerEntityRenderer((net.minecraft.world.entity.EntityType) holder.get(), provider));
