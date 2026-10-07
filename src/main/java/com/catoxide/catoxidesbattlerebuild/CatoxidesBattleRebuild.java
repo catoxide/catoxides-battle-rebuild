@@ -9,7 +9,6 @@ import com.catoxide.catoxidesbattlerebuild.registry.ModSounds;
 import com.catoxide.catoxidesbattlerebuild.registry.ModWeapons;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.EntityBoneSystem;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.ServerBoneSyncManager;
-import com.catoxide.catoxidesbattlerebuild.server.damage.DamageProcessor;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.item.CreativeModeTab;
@@ -35,11 +34,18 @@ public class CatoxidesBattleRebuild {
         CatoxidesBattleRebuildConstants.init();
         ModNetworkHandler.init();
         EntityBoneSystem.getInstance();
-        DamageProcessor.getInstance();
         // 战斗（穿深）配置：toml 可调（穿甲阈值/伤害因子）
         com.catoxide.catoxidesbattlerebuild.core.combat.CombatConfig.register(modContainer);
         // 骨骼位置同步管理器（懒单例：必须主动初始化，否则事件监听不注册 → 客户端无骨骼数据）
         ServerBoneSyncManager.getInstance();
+        // 战斗挂钩实现（F4 单一注册点；M6 起这三行随实现类整体移入 melee-combat-pack 的
+        // register()，core 不再持有战斗实现，注释掉即可 R3 回归原版）
+        com.catoxide.catoxidesbattlerebuild.core.combat.HurtInterceptors.register(
+                new com.catoxide.catoxidesbattlerebuild.core.combat.handler.MeleeHurtInterceptor());
+        com.catoxide.catoxidesbattlerebuild.core.combat.SwordAttackHandlers.register(
+                new com.catoxide.catoxidesbattlerebuild.core.combat.handler.SwordAttackHandler());
+        com.catoxide.catoxidesbattlerebuild.core.combat.ArrowCombatHandlers.register(
+                new com.catoxide.catoxidesbattlerebuild.core.combat.handler.ArrowCombatHandler());
         // 任务系统（M3 已迁入 quest-test-pack）：同步管理器/命令/按键/HUD/网络
         // 均由 QuestTestPack.register() 显式注册；不装任务包时 core 侧零残留（R3）
 

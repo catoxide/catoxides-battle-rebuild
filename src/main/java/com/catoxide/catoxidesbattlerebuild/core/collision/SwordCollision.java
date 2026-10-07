@@ -32,7 +32,7 @@ import java.util.Map;
  */
 public final class SwordCollision {
 
-    private static final String TAG = "TEST-SwordHit";
+    private static final String TAG = "SwordCollision";
 
     /** 剑攻击距离（格），与原近战判定一致 */
     public static final double SWORD_REACH = 4.5;

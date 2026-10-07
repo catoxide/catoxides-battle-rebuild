@@ -78,7 +78,7 @@ public final class CombatExecutor {
      * @param mode     总 HP 取值方式（见 {@link BaseHpMode}）
      * @param attack   攻击参数（穿甲/贯穿/基础伤害）
      * @param hitUnits 命中单位（按深度/距离升序；管线按序贯穿衰减）
-     * @param logTag   日志标签（"TEST-SwordHit" / "TEST-ArrowHit"）
+     * @param logTag   日志标签（"SwordCombat" / "ArrowCombat"）
      */
     public static Execution execute(LivingEntity target, DamageSource source, BaseHpMode mode,
                                     AttackProperties attack, List<BodyUnit> hitUnits, String logTag) {

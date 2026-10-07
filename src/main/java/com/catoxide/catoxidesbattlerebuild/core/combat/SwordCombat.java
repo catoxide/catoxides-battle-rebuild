@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class SwordCombat {
 
-    private static final String TAG = "TEST-SwordHit";
+    private static final String TAG = "SwordCombat";
 
     /** 标记：当前正在处理剑攻击，LivingEntityHurtMixin 应跳过（防二次处理，弓的对应 flag 在 ArrowCombatState） */
     private static final AtomicBoolean IS_PROCESSING_SWORD_HIT = new AtomicBoolean(false);

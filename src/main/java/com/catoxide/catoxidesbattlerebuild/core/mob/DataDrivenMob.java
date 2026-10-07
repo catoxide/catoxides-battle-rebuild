@@ -2,7 +2,6 @@ package com.catoxide.catoxidesbattlerebuild.core.mob;
 
 import cn.solarmoon.spark_core.animation.model.ModelIndex;
 import com.catoxide.catoxidesbattlerebuild.core.anim.AnimatedMob;
-import com.catoxide.catoxidesbattlerebuild.core.behavior.HurtContext;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -335,21 +334,4 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         return def();
     }
 
-    /**
-     * 向行为组件广播受击事件（供外部/其他系统调用）。
-     * @return true = 已有组件接管该次受击
-     */
-    public boolean routeHurt(LivingEntity attacker, String boneName, float damage) {
-        HurtContext ctx = new HurtContext(attacker, this, boneName, damage);
-        for (IMobBehavior behavior : behaviors()) {
-            try {
-                if (behavior.onHit(this, ctx)) {
-                    return true;
-                }
-            } catch (Exception e) {
-                LogManager.serverError(TAG, "Behavior onHit threw: {}", e.getMessage(), e);
-            }
-        }
-        return false;
-    }
 }

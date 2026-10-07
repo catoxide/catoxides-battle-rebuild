@@ -21,7 +21,7 @@ import java.util.Optional;
  * <pre>
  * executeAllRegistries():
  *   ① 按拓扑序对每个包调用 register()   ← provide() 在此阶段可用；后面的包能看到前面包提供的能力
- *   ② ContentPackRegistry.lock() / CapabilityRegistry.lock() / BehaviorRouter.lock()
+ *   ② ContentPackRegistry.lock() / CapabilityRegistry.lock()
  *   ③ 对所有包调用 init()                ← 只能读（get/has）
  * </pre>
  *

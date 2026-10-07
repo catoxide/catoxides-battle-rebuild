@@ -5,7 +5,6 @@ import cn.solarmoon.spark_core.pack.graph.SparkPackMetaInfo;
 import cn.solarmoon.spark_core.pack.graph.SparkPackage;
 import cn.solarmoon.spark_core.pack.modules.SparkPackModule;
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
-import com.catoxide.catoxidesbattlerebuild.core.behavior.BehaviorRouter;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -818,7 +817,6 @@ public final class ContentPackLoader {
         // 阶段 2：锁定（此后不可再注册包 / 不可再提供能力）
         ContentPackRegistry.lock();
         CapabilityRegistry.lock();
-        BehaviorRouter.lock();
 
         // 阶段 3：init（只读阶段）
         for (ContentPackRegistry.LoadedPack loaded : ContentPackRegistry.getAllPacks()) {
