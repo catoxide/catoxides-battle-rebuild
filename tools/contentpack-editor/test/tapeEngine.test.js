@@ -393,6 +393,65 @@ test('still→walking→alert→running→aggressive→attack→settle 全流程
     assert.strictEqual(m.trackStates().body, 'alert');
 });
 
+console.log('=== 6. 完备性（可达性 / 停机 / 终态纯度） ===');
+test('不可达状态 → warning', () => {
+    const doc = { tracks: { b: { initial: 'a', states: {
+        a: { anim: { name: 'a' }, exit: [{ when: 'is_moving', to: 'a' }] },
+        ghost: { anim: { name: 'ghost' } },
+    } } } };
+    const r = T.validate(JSON.stringify(doc));
+    assert.ok(r.warnings.some((w) => w.includes('ghost') && w.includes('不可达')));
+});
+test('纸带 next 可达 → 不误报', () => {
+    const doc = { tracks: { b: { initial: 'a', states: {
+        a: { segments: [{ until: 0.1, anim: { name: 'a' }, next: 'b' }] },
+        b: { anim: { name: 'b' } },
+    } } } };
+    const r = T.validate(JSON.stringify(doc));
+    assert.ok(!r.warnings.some((w) => w.includes('不可达')));
+});
+test('停机态（循环 + 无转移）→ warning', () => {
+    const doc = { tracks: { b: { initial: 'a', states: {
+        a: { anim: { name: 'a' } },
+        b: { anim: { name: 'b' }, exit: [{ when: 'is_moving', to: 'a' }] },
+    } } } };
+    const r = T.validate(JSON.stringify(doc));
+    assert.ok(r.warnings.some((w) => w.includes('状态 a') && w.includes('无法自行转移')));
+});
+test('纸带停末帧（无 next）= 停机 warning；有 next = 不误报', () => {
+    const stuck = { tracks: { b: { initial: 'a', states: {
+        a: { anim: { name: 'a' }, exit: [{ when: 'swinging', to: 'a' }] },
+        s1: { segments: [{ until: 0.1, anim: { name: 'a' } }] },
+    } } } };
+    const r1 = T.validate(JSON.stringify(stuck));
+    assert.ok(r1.warnings.some((w) => w.includes('s1') && w.includes('无法自行转移')));
+    const okDoc = { tracks: { b: { initial: 'a', states: {
+        a: { anim: { name: 'a' }, exit: [{ when: 'swinging', to: 'a' }] },
+        s2: { segments: [{ until: 0.1, anim: { name: 'a' }, next: 'a' }] },
+    } } } };
+    const r2 = T.validate(JSON.stringify(okDoc));
+    assert.ok(!r2.warnings.some((w) => w.includes('s2') && w.includes('无法自行转移')));
+});
+test('终态带转移 → warning（引擎忽略终态转移）', () => {
+    const doc = { tracks: { b: { initial: 'a', states: {
+        a: { anim: { name: 'a' }, exit: [{ when: 'died', to: 'dead' }] },
+        dead: { terminal: true, anim: { name: 'a' }, exit: [{ when: 'is_moving', to: 'a' }] },
+    } } } };
+    const r = T.validate(JSON.stringify(doc));
+    assert.ok(r.warnings.some((w) => w.includes('dead') && w.includes('终态')));
+});
+test('zombie-4 真实机：仅 hit_reaction 不可达（forceState 专用入口，设计如此），无其他完备性警告', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const ROOT = path.resolve(__dirname, '..', '..', '..');
+    const json = fs.readFileSync(path.join(ROOT, 'contentpacks-source', 'modular-zombie-4', 'data', 'zombie4pack', 'state_machines', 'modular_zombie_4.json'), 'utf8');
+    const r = T.validate(json, { animNames: ['still', 'walking', 'running', 'attack', 'alert', 'hit_front', 'hit_back', 'aggressive'] });
+    assert.deepStrictEqual(r.errors, []);
+    const cw = r.warnings.filter((w) => /不可达|无法自行转移|终态/.test(w));
+    assert.strictEqual(cw.length, 1, JSON.stringify(cw));
+    assert.ok(cw[0].includes('hit_reaction'));
+});
+
 console.log('');
 if (failed > 0) {
     console.log(`=== 结果: ${passed} 通过, ${failed} 失败 ===`);

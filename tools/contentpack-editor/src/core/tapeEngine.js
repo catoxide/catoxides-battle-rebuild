@@ -548,6 +548,43 @@ function validate(jsonText, opts) {
                 warnUnknownFlags(ex.whenText, w + ' 转移', warnings);
             }
         }
+
+        // ===== 完备性检查（每轨）=====
+        // 1) 可达性：从 initial 出发 BFS（exit + 纸带 next）——到不了的状态 = 死配置
+        const reach = new Set([track.initial]);
+        const queue = [track.initial];
+        while (queue.length) {
+            const cur = queue.shift();
+            const st = track.states[cur];
+            for (const ex of st.exits) {
+                if (track.states[ex.to] && !reach.has(ex.to)) { reach.add(ex.to); queue.push(ex.to); }
+            }
+            for (const seg of st.segments) {
+                if (seg.next != null && track.states[seg.next] && !reach.has(seg.next)) {
+                    reach.add(seg.next); queue.push(seg.next);
+                }
+            }
+        }
+        for (const name of Object.keys(track.states)) {
+            if (!reach.has(name)) {
+                warnings.push(`轨 ${trackId}: 状态 ${name} 不可达（从 initial=${track.initial} 无任何转移路径）`);
+            }
+        }
+        // 2) 自推进能力（"停机"检查）：非终态 + 无转移 + 纸带不前进 = 进去就出不来，
+        //    只有外部 forceState（受击/死亡）能打断——多半是漏写转移
+        for (const st of Object.values(track.states)) {
+            if (st.terminal) continue;
+            const progresses = st.segments.length > 0 && st.segments[st.segments.length - 1].next != null;
+            if (st.exits.length === 0 && !progresses) {
+                warnings.push(`轨 ${trackId}: 状态 ${st.name} 无法自行转移（无 exit 且纸带不前进）——进入后永久停留，除非外部 forceState 介入`);
+            }
+        }
+        // 3) 终态纯度：终态的转移被引擎忽略（_tickTrack 终态分支提前返回）= 无效配置
+        for (const st of Object.values(track.states)) {
+            if (st.terminal && st.exits.length > 0) {
+                warnings.push(`轨 ${trackId}: 状态 ${st.name} 是终态，其 ${st.exits.length} 条转移会被忽略（引擎冻结终态）`);
+            }
+        }
     }
     return { def, errors, warnings };
 }
