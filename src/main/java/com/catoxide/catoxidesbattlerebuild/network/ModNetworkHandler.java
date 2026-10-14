@@ -20,10 +20,22 @@ public class ModNetworkHandler {
         // Server to client only packet
         registrar.playToClient(SyncBoneDataPacket.TYPE, SyncBoneDataPacket.STREAM_CODEC,
                 ModNetworkHandler::handleSyncBoneDataOnClient);
+        // 2026-10-14：TimeTape 状态机同步（多轨 (轨,状态,t)；客户端纯回放）
+        registrar.playToClient(SyncTapeStatePacket.TYPE, SyncTapeStatePacket.STREAM_CODEC,
+                ModNetworkHandler::handleSyncTapeStateOnClient);
         // M6：HitAttemptPacket / SyncDamageResultPacket / SyncBodyPartConfigPacket 已迁入
         // melee-combat-pack：由 MeleeCombatPack.register() 自注册（V1 先例，registrar("1")）
         // 任务相关 payload（QuestSyncPacket / QuestToggleStarPacket）M3 已迁入
         // quest-test-pack：由 QuestTestPack.register() 自行注册（V1 先例）
+    }
+
+    private static void handleSyncTapeStateOnClient(SyncTapeStatePacket packet, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            Entity entity = context.player().level().getEntity(packet.entityId());
+            if (entity instanceof AnimatedMob<?> mob) {
+                mob.applyTapeSync(packet.states(), packet.tags());
+            }
+        });
     }
 
     private static void handleSyncBoneDataOnClient(SyncBoneDataPacket packet, IPayloadContext context) {

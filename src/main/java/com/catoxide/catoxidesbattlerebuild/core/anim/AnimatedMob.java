@@ -4,10 +4,16 @@ import cn.solarmoon.spark_core.animation.IEntityAnimatable;
 import cn.solarmoon.spark_core.animation.anim.AnimController;
 import cn.solarmoon.spark_core.animation.anim.AnimInstance;
 import cn.solarmoon.spark_core.animation.anim.AnimInstanceBuilderKt;
+import cn.solarmoon.spark_core.animation.anim.origin.Loop;
 import cn.solarmoon.spark_core.animation.model.ModelController;
 import cn.solarmoon.spark_core.animation.model.ModelIndex;
 import cn.solarmoon.spark_core.event.BoneUpdateEvent;
+import com.catoxide.catoxidesbattlerebuild.core.anim.tape.TapeOwner;
+import com.catoxide.catoxidesbattlerebuild.core.anim.tape.TapeStateMachine;
 import com.catoxide.catoxidesbattlerebuild.core.combat.EntityBoneHealthConfig;
+import com.catoxide.catoxidesbattlerebuild.network.SyncTapeStatePacket;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.LivingEntity;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.BodyPartConfig;
 import com.catoxide.catoxidesbattlerebuild.server.bodypart.EntityBoneSystem;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
@@ -46,7 +52,7 @@ import java.util.Map;
  *   <li>零姿态恢复：自动检测无动画播放状态，调用 {@link #recoverFromZeroPose()}</li>
  * </ul>
  */
-public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMob implements IEntityAnimatable<T> {
+public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMob implements IEntityAnimatable<T>, TapeOwner {
 
     // Spark-Core 动画系统
     protected final AnimController animController;
@@ -362,6 +368,16 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
         if (this.swinging) {
             lastSwingTick = this.level().getGameTime();
         }
+        // 2026-10-14：TimeTape 多轨状态机（数据驱动；无数据 = 旧单轨兼容路径）
+        TapeStateMachine tm = tapeMachine();
+        if (tm != null) {
+            if (!this.level().isClientSide) {
+                tm.tick(this, this::playTapeAnim);
+                sendTapeSync(tm);
+            }
+            // 客户端动画由 SyncTapeStatePacket 驱动（applyTapeSync → playTapeAnim）
+            return;
+        }
         if (!this.level().isClientSide) {
             updateAnimationState();
             checkZeroPose();
@@ -369,6 +385,221 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
             syncClientAnimation();
             checkZeroPose();
         }
+    }
+
+    // ========== 2026-10-14：TimeTape 多轨状态机（设计见 design/STATE_MACHINE_DESIGN.md） ==========
+
+    /**
+     * 状态机数据资源（null = 旧单轨 determineAnimationState 路径）。
+     * <p>资源路径约定：{@code data/<ns>/state_machines/<name>.json}
+     */
+    protected ResourceLocation getStateMachineResource() {
+        return null;
+    }
+
+    private TapeStateMachine tapeMachine = null;
+    private boolean tapeMachineResolved = false;
+    private final java.util.Map<String, AnimInstance> lastTapeAnims = new java.util.HashMap<>();
+    private java.util.Map<String, String> lastSentTapeStates = java.util.Map.of();
+    private long lastTapeSyncTick = 0;
+
+    /** 懒加载状态机数据（双端；资源缺失/解析失败 = 回退旧路径，不阻塞实体） */
+    private TapeStateMachine tapeMachine() {
+        if (!tapeMachineResolved) {
+            tapeMachineResolved = true;
+            ResourceLocation rl = getStateMachineResource();
+            if (rl == null) {
+                return null;
+            }
+            try {
+                // 约定：裸名（无 /）→ data/<ns>/state_machines/<name>.json；含 / → data/<ns>/<path>.json
+                String subPath = rl.getPath().contains("/")
+                        ? "data/" + rl.getNamespace()
+                        : "data/" + rl.getNamespace() + "/state_machines";
+                net.minecraft.server.packs.resources.ResourceManager rm = this.level().isClientSide
+                        ? net.minecraft.client.Minecraft.getInstance().getResourceManager()
+                        : this.level().getServer().getResourceManager();
+                var res = rm.getResource(
+                        ResourceLocation.fromNamespaceAndPath(subPath, rl.getPath() + ".json"));
+                if (res.isPresent()) {
+                    try (var in = res.get().open()) {
+                        String json = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                        tapeMachine = TapeStateMachine.parse(json);
+                        LogManager.serverInfo("TimeTape", "状态机已加载 entity=%s 资源=%s 轨=%s",
+                                EntityType.getKey(this.getType()), rl, tapeMachine.trackIds());
+                    }
+                } else {
+                    LogManager.serverInfo("TimeTape", "状态机资源不存在（回退旧单轨路径）: %s", rl);
+                }
+            } catch (Exception e) {
+                LogManager.serverError("TimeTape", "状态机加载失败 %s（回退旧单轨路径）: %s", rl, e.getMessage());
+                tapeMachine = null;
+            }
+        }
+        return tapeMachine;
+    }
+
+    /** TimeTape 动画驱动：绑定变化 → Spark AnimInstance（group/blend；ONCE 动画不中途打断） */
+    private void playTapeAnim(String track, String state, TapeStateMachine.TapeAnimBinding b) {
+        try {
+            AnimInstance prev = lastTapeAnims.get(track);
+            // Spark 预设语义：上次动画为 ONCE（单次）时不主动停（让它播完）；否则先 exit 旧的
+            if (prev != null && prev.getOrigin().getLoop() != Loop.ONCE) {
+                prev.exit();
+            }
+            AnimInstance anim = AnimInstanceBuilderKt.animInstance(this, b.name(), true, ai -> {
+                ai.setGroup(b.group());
+                ai.setInTransitionTime(b.blendIn());
+                return null;
+            });
+            if (anim != null) {
+                lastTapeAnims.put(track, anim);
+                anim.independentEnter();
+            } else {
+                LogManager.serverError("TimeTape", "animInstance 为 null: 轨=%s 动画=%s", track, b.name());
+            }
+        } catch (Exception e) {
+            LogManager.serverError("TimeTape", "playTapeAnim 失败 轨=%s 动画=%s: %s", track, b.name(), e.getMessage());
+        }
+    }
+
+    /**
+     * 服务端 → 追踪玩家同步（节流：状态变化即发，否则 4 tick 一次；32m 范围）。
+     */
+    private void sendTapeSync(TapeStateMachine tm) {
+        java.util.Map<String, String> cur = tm.trackStates();
+        long now = this.level().getGameTime();
+        boolean changed = !lastSentTapeStates.equals(cur);
+        if (!changed && now - lastTapeSyncTick < 4) {
+            return;
+        }
+        lastSentTapeStates = cur;
+        lastTapeSyncTick = now;
+        var server = this.level().getServer();
+        if (server == null) return;
+        for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
+            if (sp.distanceToSqr(this) <= 1024.0) {
+                java.util.List<SyncTapeStatePacket.TrackState> items = new java.util.ArrayList<>();
+                for (TapeStateMachine.TrackSync s : tm.snapshot()) {
+                    items.add(new SyncTapeStatePacket.TrackState(s.track(), s.state(), s.t()));
+                }
+                sp.connection.send(new SyncTapeStatePacket(this.getId(), items, tm.tags()));
+            }
+        }
+    }
+
+    /** 客户端回放入口（S2C 包）：纯回放，不评条件；tag 镜像保证 alt 动画选择与服务端一致 */
+    public void applyTapeSync(java.util.List<SyncTapeStatePacket.TrackState> states,
+                              java.util.Map<String, String> tags) {
+        if (!this.level().isClientSide) return;
+        TapeStateMachine tm = tapeMachine();
+        if (tm == null) return;
+        tm.mirrorTags(tags);
+        for (SyncTapeStatePacket.TrackState s : states) {
+            tm.clientApply(s.track(), s.state(), s.t(), this::playTapeAnim);
+        }
+    }
+
+    // ========== TapeOwner 实现（引擎条件读 / 动作写） ==========
+    // 注：isSprinting()/isInWater() 直接沿用 LivingEntity 同名 public 方法（满足接口，无需重写）
+
+    @Override
+    public boolean isMoving() {
+        return this.moveControl.hasWanted() || !this.getNavigation().isDone();
+    }
+
+    @Override
+    public boolean hasTarget() {
+        LivingEntity t = this.getTarget();
+        return t != null && t.isAlive();
+    }
+
+    @Override
+    public boolean isOnGround() {
+        return this.onGround();
+    }
+
+    @Override
+    public boolean isOnClimbable() {
+        return this.onClimbable();
+    }
+
+    @Override
+    public boolean isDead() {
+        return this.isDeadOrDying();
+    }
+
+    @Override
+    public boolean isSwinging() {
+        return this.swinging;
+    }
+
+    @Override
+    public void playSound(String sound, float vol, float pitch) {
+        SoundEvent ev = SoundEvent.createVariableRangeEvent(ResourceLocation.parse(sound));
+        this.playSound(ev, vol, pitch);
+    }
+
+    @Override
+    public void applyDamage(float amount) {
+        LivingEntity t = this.getTarget();
+        if (t != null && t.isAlive()) {
+            this.doHurtTarget(t); // 1.21.1：近战攻击入口（伤害+挥动+击退，同 MeleeAttackGoal）
+        }
+    }
+
+    @Override
+    public void swing() {
+        this.swinging = true;
+        this.swingTime = 0;
+    }
+
+    @Override
+    public void spawnParticle(String id, float x, float y, float z, float vx, float vy, float vz) {
+        // 2026-10-14：粒子动作暂未接入（zombie 系无粒子需求）；接口保留，后续按
+        // ParticleType→ParticleOptions 补实现
+        LogManager.serverDebug("TimeTape", "spawn_particle 未接入（跳过）: %s", id);
+    }
+
+    // ========== TapeOwner 结束 ==========
+
+    // ========== 2026-10-14：TimeTape 受击处理（hit_reaction + 方向 tag） ==========
+
+    /** 上次受击触发 tick（高频受击节流：5 tick 后允许再触发，同 zombie-3 hitTime<=5 语义） */
+    private long lastTapeHitTick = 0;
+
+    @Override
+    public boolean hurt(net.minecraft.world.damagesource.DamageSource source, float amount) {
+        if (this.isDeadOrDying()) {
+            return false;
+        }
+        boolean hurt = super.hurt(source, amount);
+        // TimeTape 模式：受击 → hit_reaction（前跳）；方向 = 攻击者相对朝向角度
+        // （zombie-3 语义：攻击者在面前 |Δ|<=90° → hit_back，否则 hit_front——忠实复现）
+        if (hurt && !this.level().isClientSide) {
+            TapeStateMachine tm = tapeMachine();
+            if (tm != null && this.getHealth() > 0.0F) {
+                String cur = tm.trackStates().get("body");
+                long now = this.level().getGameTime();
+                if (now - lastTapeHitTick >= 5 && cur != null && !"die".equals(cur)) {
+                    net.minecraft.world.entity.Entity attacker = source.getEntity();
+                    String dir = "front";
+                    if (attacker != null) {
+                        double dx = attacker.getX() - this.getX();
+                        double dz = attacker.getZ() - this.getZ();
+                        float attackerAngle = (float) Math.toDegrees(Math.atan2(dz, dx));
+                        float angleDiff = attackerAngle - this.getYRot();
+                        while (angleDiff > 180) angleDiff -= 360;
+                        while (angleDiff <= -180) angleDiff += 360;
+                        dir = (angleDiff >= -90 && angleDiff <= 90) ? "back" : "front";
+                    }
+                    tm.tags().put("hit_dir", dir);
+                    tm.forceState(this, this::playTapeAnim, "body", "hit_reaction");
+                    lastTapeHitTick = now;
+                }
+            }
+        }
+        return hurt;
     }
 
     /**

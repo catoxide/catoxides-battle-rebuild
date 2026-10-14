@@ -1,0 +1,41 @@
+{
+  "contract_version": 1,
+  "content_type": "spark_animation_set",
+  "sets": [
+    {
+      "id": "modular_zombie_4",
+      "label": "Modular Zombie 4（TimeTape 数据驱动）",
+      "model": {
+        "ref_pack": "modular-zombie-3",
+        "path": "spark_models/entity/zombie3pack/modular_zombie_3.json",
+        "texture": "assets/zombie3pack/textures/entity/modular_zombie_3.png"
+      },
+      "animations": {
+        "ref_pack": "modular-zombie-3",
+        "dir": "spark_animations/entity/zombie3pack/modular_zombie_3/",
+        "required": [
+          { "name": "still", "loop": "true" },
+          { "name": "walking", "loop": "true" },
+          { "name": "running", "loop": "true" },
+          { "name": "attack", "loop": "hold_on_last_frame" },
+          { "name": "alert", "loop": "true" },
+          { "name": "hit_front", "loop": "hold_on_last_frame" },
+          { "name": "hit_back", "loop": "hold_on_last_frame" },
+          { "name": "aggressive", "loop": "true" }
+        ]
+      }
+    }
+  ],
+  "wiring": {
+    "referenced_by": "DataDrivenMob + AnimatedMob TimeTape 懒加载（主 mod 库函数；本包无生物 Java）",
+    "state_machine": {
+      "type": "timetape",
+      "path": "data/zombie4pack/state_machines/modular_zombie_4.json",
+      "note": "多轨 + 单向时间纸带状态机（core/anim/tape）；body 轨 8 态：still（无目标站定）/walking（无目标移动）/alert（索敌成功单次抬手 0.75s）/aggressive（有目标+站定的持续警戒姿态，即 alert 的 still）/running（有目标移动）/attack（0.30s 挥击 = 6tick 挥动时长，伤害与挥动同 tick 结算）/settle（0.10s 回落 = 2tick 保持窗口；attack+settle 共 0.40s 对齐 zombie-3 isAttackStateActive 窗口）/hit_reaction（0.5s 受击）。攻击由 goal 挥动驱动（swinging 条件 p5 前跳，任意非 hit 态可中断进入），受击由 AnimatedMob.hurt 通用 hook 驱动（hit_dir tag 选 hit_front/hit_back）。此语义修正 zombie-3 死代码 bug（setWindingUp 无调用点 → 站定警戒误播 alert 循环而非 aggressive）。"
+    }
+  },
+  "validation": {
+    "bones_must_exist_in_model": true,
+    "max_duration": 6
+  }
+}

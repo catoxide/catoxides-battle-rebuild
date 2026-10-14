@@ -162,6 +162,16 @@ public class DataDrivenMob extends AnimatedMob<DataDrivenMob> {
         return new ModelIndex(def().modelType(), def().modelId());
     }
 
+    /**
+     * 2026-10-14：TimeTape 多轨状态机（约定路径自动发现，零 Java）：
+     * {@code data/<ns>/state_machines/<entityId>.json} 存在 = 走多轨状态机，缺失 = 旧单轨。
+     * 这就是 modular-zombie-4 的"状态机由数据定义"入口。
+     */
+    @Override
+    protected ResourceLocation getStateMachineResource() {
+        return EntityType.getKey(this.getType());
+    }
+
     @Override
     public ResourceLocation getTextureLocation() {
         return def().texture();

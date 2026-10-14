@@ -1,0 +1,91 @@
+{
+  "format_version": "1.0.0",
+  "initial_tags": {},
+  "tracks": {
+    "body": {
+      "initial": "still",
+      "states": {
+        "still": {
+          "anim": { "group": 1, "name": "still", "loop": true, "blend_in": 0.05 },
+          "exit": [
+            { "when": "swinging", "to": "attack", "priority": 5 },
+            { "when": "has_target", "to": "alert", "priority": 2 },
+            { "when": "is_moving", "to": "walking" }
+          ]
+        },
+        "walking": {
+          "anim": { "group": 1, "name": "walking", "loop": true, "blend_in": 0.05 },
+          "exit": [
+            { "when": "swinging", "to": "attack", "priority": 5 },
+            { "when": "has_target", "to": "alert", "priority": 2 },
+            { "when": "not(is_moving)", "to": "still", "after": 2.0 }
+          ]
+        },
+        "alert": {
+          "segments": [
+            { "until": 0.75, "anim": { "group": 1, "name": "alert", "loop": false, "blend_in": 0.05 } }
+          ],
+          "exit": [
+            { "when": "swinging", "to": "attack", "priority": 5 },
+            { "when": "all(has_target, is_moving)", "to": "running", "priority": 2, "after": 0.75 },
+            { "when": "all(not(has_target), is_moving)", "to": "walking", "priority": 2, "after": 0.75 },
+            { "when": "not(any(has_target, is_moving))", "to": "still", "priority": 2, "after": 0.75 },
+            { "when": "has_target", "to": "aggressive", "priority": 1, "after": 0.75 }
+          ]
+        },
+        "aggressive": {
+          "anim": { "group": 1, "name": "aggressive", "loop": true, "blend_in": 0.05 },
+          "exit": [
+            { "when": "swinging", "to": "attack", "priority": 5 },
+            { "when": "all(not(has_target), is_moving)", "to": "walking", "priority": 2 },
+            { "when": "not(has_target)", "to": "still", "priority": 1 },
+            { "when": "is_moving", "to": "running" }
+          ]
+        },
+        "running": {
+          "anim": { "group": 1, "name": "running", "loop": true, "blend_in": 0.05 },
+          "exit": [
+            { "when": "swinging", "to": "attack", "priority": 5 },
+            { "when": "all(not(has_target), not(is_moving))", "to": "still", "priority": 2 },
+            { "when": "not(has_target)", "to": "walking", "priority": 1 },
+            { "when": "not(is_moving)", "to": "aggressive" }
+          ]
+        },
+        "attack": {
+          "segments": [
+            { "until": 0.30, "anim": { "group": 1, "name": "attack", "loop": false }, "next": "settle" }
+          ]
+        },
+        "settle": {
+          "segments": [
+            { "until": 0.10, "anim": { "group": 1, "name": "still" } }
+          ],
+          "exit": [
+            { "when": "all(has_target, is_moving)", "to": "running", "priority": 2, "after": 0.10 },
+            { "when": "all(not(has_target), is_moving)", "to": "walking", "priority": 2, "after": 0.10 },
+            { "when": "not(any(has_target, is_moving))", "to": "still", "priority": 2, "after": 0.10 },
+            { "when": "has_target", "to": "aggressive", "priority": 1, "after": 0.10 }
+          ]
+        },
+        "hit_reaction": {
+          "segments": [
+            {
+              "until": 0.5,
+              "anim": {
+                "group": 1,
+                "name": "hit_front",
+                "alt": { "tag": "hit_dir", "if": "back", "then": "hit_back" }
+              }
+            }
+          ],
+          "exit": [
+            { "when": "all(has_target, is_moving)", "to": "running", "priority": 2, "after": 0.5 },
+            { "when": "all(not(has_target), is_moving)", "to": "walking", "priority": 2, "after": 0.5 },
+            { "when": "not(any(has_target, is_moving))", "to": "still", "priority": 2, "after": 0.5 },
+            { "when": "has_target", "to": "aggressive", "priority": 1, "after": 0.5 }
+          ]
+        }
+      }
+    }
+  }
+}
