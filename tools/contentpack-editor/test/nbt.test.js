@@ -185,5 +185,22 @@ test('plainToTagged：异型 list 抛错', () => {
     assert.ok(threw, '异型 list 应抛错');
 });
 
+console.log('=== N. (REVIEW-L1) gzip 炸弹防护 ===');
+test('解压超 512MB 上限 → 拒绝（此前 256KB 零数据可膨胀到 256MB+，恶意 .nbt 可 OOM 主进程）', () => {
+    // 拼接 gzip 成员（zlib 的 inflate 透明地按一条流解析，Node 20/24 实测一致）：
+    // 9 成员 × 64MB 零 = 解压 576MB > 512MB 上限；压缩后总共仅 ~600KB。
+    // （旧版误用单个 1MB 零的 gzip——解压后只有 1MB，永远到不了上限，测试恒挂。）
+    const member = zlib.gzipSync(Buffer.alloc(64 * 1024 * 1024));
+    const bomb = Buffer.concat(Array.from({ length: 9 }, () => member));
+    assert.ok(bomb.length < 1024 * 1024, '前置：压缩后应很小（否则测的不是炸弹）');
+    let threw = false;
+    try { NBT.decode(bomb); } catch (e) { threw = /上限|炸弹/.test(e.message); }
+    assert.ok(threw, '超上限 gzip 应被拒绝');
+});
+test('正常 gzip NBT 不受影响', () => {
+    const buf = NBT.gzip({ a: NBT.int(1) });
+    assert.strictEqual(NBT.decode(buf).a, 1);
+});
+
 console.log('\nNBT 测试: ' + pass + ' 通过, ' + fail + ' 失败, ' + skip + ' 跳过');
 process.exit(fail ? 1 : 0);

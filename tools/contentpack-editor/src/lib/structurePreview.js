@@ -1517,18 +1517,21 @@ export function createStructurePreview(canvas, hooks = {}) {
         if (performance.now() - lastFrameTime > 500) requestAnimationFrame(loop);
     }
     // 看门狗：hidden 页面里 rAF 不触发、setInterval 仍会跑（节流到 ~1Hz 也够）
-    setInterval(() => {
+    // REVIEW-L2：定时器/监听器此前永不清理（dispose 漏处理）→ 每个预览实例泄漏一个 interval
+    let watchdogTimer = setInterval(() => {
         if (running && performance.now() - lastFrameTime > 1000) {
             renderOnce();
             requestAnimationFrame(loop);
         }
     }, 500);
+    let onVisibilityChange = null;
     if (typeof document !== 'undefined') {
-        document.addEventListener('visibilitychange', () => {
+        onVisibilityChange = () => {
             if (!document.hidden && running && performance.now() - lastFrameTime > 300) {
                 requestAnimationFrame(loop);
             }
-        });
+        };
+        document.addEventListener('visibilitychange', onVisibilityChange);
     }
     function stop() {
         running = false;
@@ -1549,6 +1552,12 @@ export function createStructurePreview(canvas, hooks = {}) {
     }
 
     function dispose() {
+        // REVIEW-L2：清理看门狗与 visibilitychange 监听（此前每个实例泄漏一个 interval）
+        if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
+        if (onVisibilityChange && typeof document !== 'undefined') {
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+            onVisibilityChange = null;
+        }
         stop();
         clearGroups();
         if (hoverTimer != null) { clearTimeout(hoverTimer); hoverTimer = null; } // P12

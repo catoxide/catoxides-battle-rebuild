@@ -166,7 +166,7 @@ window.EntityEditor = (function () {
         renderBasic(tab.entity);
         renderModel(tab.entity);
         renderParts();
-        loadTemplates(tab.entity);
+        renderAnimTab(tab);
         switchTab('basic');
     }
 
@@ -462,52 +462,85 @@ window.EntityEditor = (function () {
         window.showStatus(t('dyn.genPartsDone'), true);
     }
 
-    // ===== 页签 4：动画状态机 =====
-    async function loadTemplates(entity) {
-        const res = await window.api.getStateMachineTemplates();
-        if (!res.ok) { window.showError(t('dyn.loadTemplatesFail') + res.error); return; }
-        const templates = res.data || {};
-        const sel = document.getElementById('animTemplate');
-        sel.innerHTML = '';
-        for (const [id, t] of Object.entries(templates)) {
-            const opt = document.createElement('option');
-            opt.value = id;
-            opt.textContent = t.name + '（' + id + '）';
-            sel.appendChild(opt);
+    // ===== 页签 4：动画（W4.1 只读清单） =====
+    // 主窗口只负责"列出存在的动画"（契约盘点）+ 本实体状态映射（只读展示）；
+    // 映射编辑挪入 3D 模型编辑器（W4.2+ 入口）。契约数据与 contractView.js 同源（contract:read）。
+    async function renderAnimTab(tab) {
+        const e = tab.entity || {};
+        const box = document.getElementById('animExistingBox');
+        if (!box) return;
+        box.innerHTML = '<div class="note" style="padding:8px">加载中…</div>';
+        let animNames = null; // null = 无契约/读取失败（存在性未知，映射表显示 —）
+        const res = await window.api.readContract(tab.pack.dir);
+        if (!res.ok) {
+            const msg = res.error === 'no-contract'
+                ? t('contract.none')
+                : t('contract.error') + (res.error || (res.errors || []).join('；'));
+            box.innerHTML = `<div class="note" style="padding:8px">${esc(msg)}</div>`;
+        } else {
+            const report = res.data;
+            animNames = new Set();
+            let html = '';
+            for (const set of report.sets) {
+                for (const a of set.animations) animNames.add(a.name);
+                html += `<div style="margin:8px 0 2px;font-weight:600;font-size:12px">${esc(set.label)}
+                    <span class="note">（${esc(set.model.path)}）</span></div>`;
+                html += `<table class="anim-table"><thead><tr>
+                    <th>${t('anim.animName')}</th><th>${t('contract.colLoop')}</th>
+                    <th>${t('contract.colDur')}</th><th>${t('contract.colStatus')}</th>
+                </tr></thead><tbody>`;
+                for (const a of set.animations) {
+                    let status;
+                    if (!a.exists) status = `<span class="li-tag err">${t('contract.missing')}</span>`;
+                    else if (a.parseError) status = '<span class="li-tag err">JSON ✗</span>';
+                    else if (a.missingBundled.length) status = `<span class="li-tag err">${a.missingBundled.length} ✗</span>`;
+                    else status = '<span class="li-tag ok">✓</span>';
+                    const loop = a.loopRequired ? esc(a.loopRequired) : '—';
+                    html += `<tr>
+                        <td class="mono">${esc(a.name)}${a.bundle.length ? ` <span class="note">(${tf('contract.bundle', { n: a.bundle.length })})</span>` : ''}</td>
+                        <td>${loop}</td>
+                        <td>${a.duration != null ? esc(String(a.duration)) : '—'}</td>
+                        <td>${status}</td>
+                    </tr>`;
+                }
+                html += '</tbody></table>';
+            }
+            box.innerHTML = html;
         }
-        // 依据实体已有 animations 判断模板（无状态则默认 melee）
-        let chosen = 'melee';
-        const anims = entity.animations || {};
-        if (anims['3'] === 'shoot') chosen = 'ranged';
-        sel.value = chosen;
-        document.getElementById('templateDesc').textContent = templates[chosen] ? templates[chosen].description : '';
-        renderAnimTable(templates[chosen], entity);
+        renderAnimMapping(e, animNames);
     }
 
-    function renderAnimTable(template, entity) {
+    /** 状态映射（只读）：模板状态 × entity.animations × 存在性（animNames=null 时不判定存在性） */
+    function renderAnimMapping(entity, animNames) {
         const tbody = document.getElementById('animTableBody');
-        tbody.innerHTML = '';
+        if (!tbody) return;
+        const templates = window._animTemplates || {};
+        // 模板判定与原逻辑一致：状态 3 = shoot → ranged，否则 melee
+        let chosen = 'melee';
         const anims = (entity && entity.animations) || {};
-        for (const s of template.states) {
+        if (anims['3'] === 'shoot') chosen = 'ranged';
+        const tpl = templates[chosen] || templates.melee;
+        tbody.innerHTML = '';
+        if (!tpl) {
+            tbody.innerHTML = '<tr><td colspan="4" class="note" style="padding:8px">' + esc(t('anim.note')) + '</td></tr>';
+            return;
+        }
+        for (const s of tpl.states) {
+            const name = anims[s.key];
+            let existCell = '—';
+            if (name && animNames) {
+                existCell = animNames.has(name)
+                    ? '<span class="li-tag ok">✓</span>'
+                    : '<span class="li-tag err">✗</span>';
+            }
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="a-id">${s.id}</td>
                 <td>${esc(s.name)}</td>
-                <td><input class="anim-input" data-key="${s.key}" value="${esc(anims[s.key] != null ? anims[s.key] : s.anim)}"></td>`;
+                <td class="mono">${name != null ? esc(name) : '—'}</td>
+                <td>${existCell}</td>`;
             tbody.appendChild(tr);
         }
-    }
-
-    function applyTemplateAnims() {
-        const sel = document.getElementById('animTemplate');
-        const templates = window._animTemplates;
-        const t = templates ? templates[sel.value] : null;
-        if (!t) return;
-        document.querySelectorAll('.anim-input').forEach((input) => {
-            const state = t.states.find((s) => s.key === input.dataset.key);
-            if (state) input.value = state.anim;
-        });
-        window.showStatus(tf('dyn.templateApplied', { name: t.name }), true);
     }
 
     // ===== 收集表单 → 实体对象 =====
@@ -553,13 +586,8 @@ window.EntityEditor = (function () {
             behaviors.push({ type, ...cfg });
         });
         e.behaviors = behaviors.length ? behaviors : undefined;
-        // 动画
-        const anims = {};
-        document.querySelectorAll('.anim-input').forEach((input) => {
-            const v = input.value.trim();
-            if (v) anims[input.dataset.key] = v;
-        });
-        e.animations = Object.keys(anims).length ? anims : undefined;
+        // 动画（W4.1：主窗口只读——不从 DOM 收集，保留 entity 对象原有 animations；
+        // 编辑入口在 3D 模型编辑器 W4.2+）
         // 清理 undefined 键
         for (const k of Object.keys(e)) if (e[k] === undefined) delete e[k];
         return e;
@@ -610,6 +638,32 @@ window.EntityEditor = (function () {
     }
 
     // ===== 打包 =====
+    // 先把预检结果渲染出来（error/warn + 规则来源），再真正打包；
+    // 有 error 就中止 —— 构建成功 ≠ 能加载（见 design/CONTENTPACK_FORMAT.md §9.3）。
+    function renderFindings(data) {
+        const f = (data && data.findings) || [];
+        const errs = f.filter((x) => x.level === 'error');
+        const warns = f.filter((x) => x.level === 'warn');
+        const oks = f.filter((x) => x.level === 'ok');
+        const lines = [tf('dyn.preflightSummary', { e: errs.length, w: warns.length })];
+        for (const x of errs) lines.push(`[ERROR] ${x.code} ${x.msg}${x.src ? '  〔' + x.src + '〕' : ''}`);
+        for (const x of warns) lines.push(`[WARN ] ${x.code} ${x.msg}${x.src ? '  〔' + x.src + '〕' : ''}`);
+        for (const x of oks) lines.push(`[OK   ] ${x.msg}`);
+        return lines.join('\n');
+    }
+
+    async function preflightOnly() {
+        const tab = activeTab();
+        if (!tab) return;
+        const outEl = document.getElementById('buildOutput');
+        outEl.style.display = 'block';
+        const res = await window.api.preflightPack(tab.pack.dir);
+        if (!res.ok) { outEl.textContent = res.error; window.showStatus(t('dyn.preflightError'), false); return; }
+        outEl.textContent = renderFindings(res.data)
+            + '\n\n' + tf('dyn.preflightCmd', { cmd: res.data.gradleCommand || '' });
+        window.showStatus(res.data.ok ? t('dyn.preflightPass') : tf('dyn.preflightFailed', { n: res.data.errors.length }), res.data.ok);
+    }
+
     async function build() {
         const tab = activeTab();
         if (!tab) return;
@@ -622,26 +676,66 @@ window.EntityEditor = (function () {
                 if (!expRes.ok) { window.showError(t('common.exportFailed') + expRes.error); return; }
             }
         }
-        const outName = (tab.pack.name || 'pack') + '.jar';
         const outEl = document.getElementById('buildOutput');
         outEl.style.display = 'block';
-        outEl.textContent = t('dyn.buildRunning') + '\n';
-        const res = await window.api.buildPack({ packDir: tab.pack.dir, outJarName: outName });
-        if (res.ok) {
-            const data = res.data || {};
-            outEl.textContent = '=== Build OK ===\n' + (data.stdout || '');
-            window.showStatus(tf('dyn.buildDone', { name: outName }), true);
+
+        // ① 预检（只读）
+        const pre = await window.api.preflightPack(tab.pack.dir);
+        if (pre.ok) {
+            outEl.textContent = renderFindings(pre.data) + '\n\n';
+            if (!pre.data.ok) {
+                outEl.textContent += t('dyn.buildAborted');
+                window.showStatus(tf('dyn.preflightFailed', { n: pre.data.errors.length }), false);
+                return;
+            }
         } else {
-            outEl.textContent = '=== Build Failed ===\n' + res.error;
+            outEl.textContent = String(pre.error || '') + '\n\n';
+        }
+
+        // ② 打包（Gradle 优先，失败回退 build-pack.ps1）
+        outEl.textContent += t('dyn.buildRunning') + '\n';
+        const outName = (tab.pack.name || 'pack') + '.jar';
+        const res = await window.api.buildPack({ packDir: tab.pack.dir, outJarName: outName });
+        const data = res.data || {};
+        let text = (data.preflight ? renderFindings(data.preflight) + '\n\n' : '');
+        text += res.ok ? '=== Build OK ===\n' : '=== Build Failed ===\n';
+        if (data.mode) text += `[mode: ${data.mode}]\n`;
+        if (data.autoCreated && data.autoCreated.length) {
+            text += tf('dyn.autoScaffold', { files: data.autoCreated.join(', ') }) + '\n';
+        }
+        text += (data.stdout || '');
+        if (data.stderr) text += '\n[stderr]\n' + data.stderr;
+        if (data.verify && data.verify.length) text += '\n' + renderFindings({ findings: data.verify }) + '\n';
+        if (!res.ok) text += '\n' + res.error;
+        outEl.textContent = text;
+        if (res.ok) {
+            window.showStatus(tf('dyn.buildDone', { name: data.expectedJar || outName }), true);
+        } else {
             window.showStatus(t('dyn.buildFail'), false);
         }
     }
 
     // ===== 事件绑定 =====
     function bindEvents() {
+        // W4.2/W4.3：状态映射 / 部位配置编辑入口 → 3D 模型编辑器（推送实体上下文；面板直写正式包）
+        const openIn3D = () => {
+            const tab = activeTab();
+            const id = tab && tab.entity && tab.entity.id;
+            if (!tab || !id) { window.showError(t('common.idRequired')); return; }
+            window.api.openModelEditor({ pack: tab.pack.name, packDir: tab.pack.dir, entityId: id }).then((r) => {
+                if (r && !r.ok) { window.showError('3D 模型编辑器打开失败: ' + r.error); return; }
+                window.showStatus(tf('dyn.animEditIn3DOpened', { id }), true);
+            });
+        };
+        for (const btnId of ['animEditIn3D', 'partsEditIn3D']) {
+            const btn = document.getElementById(btnId);
+            if (btn) btn.addEventListener('click', openIn3D);
+        }
         document.getElementById('btnSave').addEventListener('click', save);
         document.getElementById('btnExport').addEventListener('click', exportStaged);
         document.getElementById('btnBuild').addEventListener('click', build);
+        const preBtn = document.getElementById('btnPreflight');
+        if (preBtn) preBtn.addEventListener('click', preflightOnly);
         document.getElementById('btnAddBehavior').addEventListener('click', () => {
             const box = document.getElementById('behaviorsBox');
             const row = document.createElement('div');
@@ -685,10 +779,16 @@ window.EntityEditor = (function () {
             if (!listRes.ok) { window.showError(t('dyn.readJarFail') + listRes.error); return; }
             const models = listRes.data || [];
             if (!models.length) { window.showError(t('dyn.jarNoModels')); return; }
-            const pick = prompt(tf('dyn.pickModelNum', { list: models.map((m, i) => `${i}: ${m}`).join('\n') }), '0');
+            // W3.6.1：Electron 不支持 prompt() → 页面内下拉模态框
+            const pick = await window.askChoice({
+                title: t('dyn.pickModelNum'),
+                label: '选择模型（' + models.length + ' 个）',
+                options: models,
+                value: models[0],
+            });
             if (pick === null) return;
-            const idx = parseInt(pick, 10);
-            if (isNaN(idx) || idx < 0 || idx >= models.length) { window.showError(t('dyn.invalidIndex')); return; }
+            const idx = models.indexOf(pick);
+            if (idx < 0) { window.showError(t('dyn.invalidIndex')); return; }
             const parseRes = await window.api.parseModelFromJar(res.data, models[idx]);
             if (!parseRes.ok) { window.showError(t('dyn.parseModelFail') + parseRes.error); return; }
             const model = parseRes.data;
@@ -720,12 +820,7 @@ window.EntityEditor = (function () {
             renderParts();
         });
 
-        document.getElementById('btnApplyTemplate').addEventListener('click', applyTemplateAnims);
-        document.getElementById('animTemplate').addEventListener('change', (ev) => {
-            const templates = window._animTemplates || {};
-            const t = templates[ev.target.value];
-            document.getElementById('templateDesc').textContent = t ? t.description : '';
-        });
+        // W4.1：动画页签改为只读清单（模板选择/应用按钮已移除，见 renderAnimTab）
 
         document.querySelectorAll('#editorTabs .tab').forEach((t) => {
             t.addEventListener('click', () => switchTab(t.dataset.tab));
@@ -736,7 +831,7 @@ window.EntityEditor = (function () {
         return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    // 模板缓存（供 applyTemplateAnims 使用）
+    // 模板缓存（供 renderAnimMapping 状态名展示使用）
     window._animTemplates = null;
     (async function cacheTemplates() {
         const res = await window.api.getStateMachineTemplates();

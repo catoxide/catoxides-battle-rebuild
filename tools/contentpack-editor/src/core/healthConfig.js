@@ -94,6 +94,11 @@ function validateHealthConfig(config) {
     return { valid: errors.length === 0, errors };
 }
 
+// REVIEW-S2：ns/id 字符集（与 entitySchema 的 id/namespace 规则一致）。
+// 此前仅真值判断 `if (!namespace)`，AI API 的 health.set/health.get 可传
+// ns='../../..' 直接写出/读出包目录之外的任意 .json。
+const HEALTH_NAME_RE = /^[a-z0-9_.-]+$/;
+
 /**
  * 部位配置文件路径（包内）
  * @param {string} packDir
@@ -101,7 +106,18 @@ function validateHealthConfig(config) {
  * @param {string} entityId
  */
 function healthConfigFilePath(packDir, namespace, entityId) {
-    return path.join(packDir, 'assets', namespace, 'health_config', `${entityId}.json`);
+    if (!namespace || !HEALTH_NAME_RE.test(String(namespace))) {
+        throw new Error(`namespace 非法（仅允许小写字母/数字/_/./-）: ${namespace}`);
+    }
+    if (!entityId || !HEALTH_NAME_RE.test(String(entityId))) {
+        throw new Error(`实体 id 非法（仅允许小写字母/数字/_/./-）: ${entityId}`);
+    }
+    const file = path.join(packDir, 'assets', namespace, 'health_config', `${entityId}.json`);
+    // 纵深防御：join 后边界校验（字符集已挡住分隔符，此处防未来改动）
+    if (!file.startsWith(path.resolve(packDir) + path.sep)) {
+        throw new Error('部位配置路径越界');
+    }
+    return file;
 }
 
 /**

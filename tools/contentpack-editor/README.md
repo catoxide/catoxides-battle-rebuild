@@ -1,7 +1,12 @@
 # ContentPack Editor — 使用手册
 
-> Catoxide's Battle Rebuild 的 ContentPack 可视化编辑器（实体模块 v0.1）。
+> Catoxide's Battle Rebuild 的 ContentPack 可视化编辑器（实体模块 v0.2）。
 > 面向**不会写 Java 的内容创作者**：可视化编辑实体 → 生成 JSON → 一键打包，全程不碰代码。
+>
+> **v0.2 起，它是内容包「生成器」**：新建包会一次产出 **MANIFEST 全属性 + `build.gradle`（Gradle 子项目骨架）
+> + 入口类骨架**，并在打包前跑一次**预检**（把「构建成功但加载不了」的坑拦在构建之前）。
+> 打包走 `gradlew :packs:&lt;目录&gt;:contentpackJar`，失败自动回退 `build-pack.ps1`。
+> 详见 [§3c 包骨架与预检](#3c-包骨架与预检v02-新增)。
 
 ---
 
@@ -88,9 +93,58 @@ npm start
 - `assets/<ns>/health_config/<id>.json` — 部位配置（主 mod `EntityBoneHealthConfig` 读取）
 
 ### 第 5 步：打包
-点 **打包** → 调用 `contentpacks-source/build-pack.ps1` → 产出 `contentpacks/<包名>.jar`
+点 **打包** 按钮 → 依次做四件事：
+
+1. **补齐骨架**：若包目录少了 `build.gradle`（老包），自动补上（`settings.gradle` 的自动发现只认有它的目录）；
+2. **预检**：有 `error` 直接中止，不做「构建成功但加载不了」的无用功；
+3. **构建**：`gradlew :packs:<目录名>:contentpackJar` → 产物 `contentpacks/<Module-Name>.jar`
+   （Gradle 不可用时自动回退 `contentpacks-source/build-pack.ps1`）；
+4. **产物校验**：读产物 jar 的 MANIFEST（必须是 `Module-Type: contentpack`、`Module-Name` 一致）、
+   检查 `entities/*.json` 是否真的进了包，并扫描 `contentpacks/`、`run/*/contentpacks/` 下
+   **同 Module-Name 的重复 jar**（重复会导致「加载哪个取决于扫描顺序」）。
+
 - 纯数据包（无 Java 代码）也能打包 ✅
 - 产物自动同步到 `run/client/contentpacks/`（游戏运行目录）
+  ⚠️ 该同步是 `Copy` 不是 `Sync`：**改名/弃用的旧 jar 必须手工删**（预检会替你查出来）
+
+---
+
+## 3c. 包骨架与预检（v0.2 新增）
+
+### 新建包时产出什么
+
+点左栏 **+ 新建**，填完表单后落盘的文件（`contentpacks-source/<Module-Name>/`）：
+
+| 文件 | 内容 | 为什么 |
+|---|---|---|
+| `MANIFEST.MF` | **全属性**：Module-Name/Version/Requires/Type/Entry/Dependencies/Dependencies-Optional/Lib-Requires/Mod-Requires/Mod-Optional | 规范 §2；属性按规范顺序排列 |
+| `build.gradle` | 5 行 Gradle 子项目样板（`apply from: '../contentpack.gradle'` + 可选 `dependencies {}`） | 让包**天生就是 Gradle 包**，自动发现无需改 `settings.gradle` |
+| `java/<入口类>.java` | 入口类骨架（实现 `ContentPack`），**含 entities 的数据驱动注册代码** | 加载器**不会**自动注册 `entities/*.json`；没有这段代码，JSON 就是死数据 |
+| `entities/` | 目录（实体由编辑器写入） | — |
+
+表单字段：
+
+- **Module-Entry**：有实体/代码时必填；留空 = 纯数据包（**合法**用法，此时不要留实体）
+- **额外编译依赖**：整条 Groovy 语句，`;` 分隔，例如
+  `compileOnly "dev.ryanhcode.sable:sable-neoforge-1.21.1:2.0.3"` 或 `compileOnly rootProject.files('libs/spark-core.jar')`
+  —— **必须 compileOnly**（包的类加载闭包只有「父环境前缀 + 自己 jar + `_libs`」，写 `implementation` 运行期必然 `NoClassDefFoundError`）
+- **Module-Lib-Requires**：声明后需存在 `contentpacks-source/_libs/<库名>/*.jar`，否则 Gradle 构建告警且编译失败
+
+### 预检拦什么（点「预检」按钮只读检查，不写文件）
+
+| 类别 | 例子 |
+|---|---|
+| MANIFEST | Module-Name 为空/含非法字符、Module-Type 不是 `contentpack`、包依赖写了版本区间（包间禁止）、依赖自己、硬+软重复声明 |
+| 入口类 | 不是合法全限定类名；落在 `com.catoxide.catoxidesbattlerebuild.*`（parent-first 前缀 ⇒ 父加载器看不到包内类） |
+| 实体 JSON | 缺 `id`、id 含大写/空格、id 重复（同名文件互相覆盖）、数值字段是 `null`（编辑器留空 → JSON 变 null → 解析器抛异常）、`animations` 键不是整数、namespace/model/texture/sounds 不是合法 ResourceLocation |
+| 图形一致性 | 有 `entities/` 但无 Module-Entry（JSON 是死数据）、声明了 Module-Entry 但没有对应源码、缺 `build.gradle`、`entities/<x>.json` 文件名与 `id` 不一致 |
+| 产物 | 同 Module-Name 的重复 jar（旧文件名残留）——这条是真实事故来源 |
+
+每条都标注了它在 core 里的**权威来源**（如 `MobDefinitionParser.java:41`、`ChildFirstClassLoader.java:55`），
+因为规则不是编辑器的意见，而是加载器的真实行为。
+
+> 规则与骨架的单一真源是 `src/core/packScaffold.js`（纯函数）。
+> `contentpacks-source/editor/index.html`（零安装网页版）直接 `&lt;script src&gt;` 复用它，不存在第二份规则。
 
 ---
 
@@ -138,7 +192,8 @@ npm start
 | 结构蓝图（源格式） | `structures/<structureId>/blueprint.json` | 编辑器「导出原版数据」的输入 |
 | 结构模板 | `data/<ns>/structure/<piece>.nbt` | 原版结构模板加载器 |
 | 模板池 / 结构 / 结构集合 | `data/<ns>/worldgen/...` | 原版 worldgen 注册表（jigsaw 引擎） |
-| 打包产物 | `contentpacks/<包名>.jar` | `ContentPackLoader` |
+| 打包产物 | `contentpacks/<Module-Name>.jar` | `ContentPackLoader` |
+| 包声明 + 构建骨架 | `MANIFEST.MF`、`build.gradle`、`java/<入口类>.java` | 前者被 `ContentPackManifest` 解析；后两者供 `gradlew :packs:<目录>:contentpackJar` 构建 |
 
 ---
 
@@ -147,7 +202,11 @@ npm start
 | 问题 | 解决 |
 |------|------|
 | 双击 start.bat 闪退 | 依赖未装完/网络问题，看命令行输出；或手动 `npm install` |
-| 打包报"jar 命令找不到" | 需要 JDK 在 PATH 上（项目本身需要 JDK） |
+| 打包报"jar 命令找不到" | 回退路径 `build-pack.ps1` 需要 JDK 在 PATH 上；首选路径（Gradle）不需要 |
+| 打包报 `Could not find dev.ryanhcode.sable:...` | 第三方 Maven 仓库必须写在**包项目**里（共享的 `contentpacks-source/contentpack.gradle` 已含），见 `design/GRADLE_MULTIPROJECT.md` §4.3 |
+| 预检报「有实体但没填 Module-Entry」 | 填上 Module-Entry（编辑器会生成入口类；它会注册 `entities/*.json`）。只写 JSON 而没有注册代码，包在游戏里等于空的 |
+| 预检报「同 Module-Name 的重复 jar」 | 产物按 Module-Name 命名，改名/弃用后的旧 jar 必须删（`contentpacks/` 与 `run/*/contentpacks/` 都要看） |
+| 一个包构建失败会影响别的包吗 | 不会。包级故障隔离：失败包与其硬依赖者被取消加载，游戏照常启动（`design/CONTENTPACK_FORMAT.md` §12） |
 | 部位配置页签没有骨骼树 | 先在"模型与资源"页签解析模型 |
 | 游戏里实体白块/无动画 | 检查 model.id、贴图路径、动画名是否与 spark_animations 文件一致 |
 | 改了实体不生效 | 重新打包 jar（游戏加载的是 jar，不是源 JSON） |
@@ -176,6 +235,9 @@ tools/contentpack-editor/
 │   ├── styles.css         # 深色主题
 │   ├── app.js             # 全局状态 + 启动
 │   ├── core/              # 纯逻辑库（可独立测试）
+│   │   ├── packScaffold.js      # ★ 包骨架单一真源：MANIFEST 全属性/规范化 + build.gradle + 入口类骨架 + 预检规则（纯函数）
+│   │   ├── packPreflight.js     # ★ 预检（fs 侧）：扫包目录 + 重复 Module-Name 扫描 + scaffoldFiles
+│   │   ├── jarReader.js         # ★ 极简 zip 读取器（读产物 MANIFEST/条目，用于打包后校验）
 │   │   ├── structureSchema.js   # 建筑结构契约（原版对齐）+ 校验
 │   │   ├── nbt.js               # 小端 gzip NBT 读写（type-first 条目，LE/BE 可选）
 │   │   ├── vanillaExport.js     # blueprint → 原版 4 类 jigsaw 数据文件（1.21.1 路径）
@@ -189,5 +251,6 @@ tools/contentpack-editor/
 │   │   └── structurePreview.js  # 建筑结构 3D 预览（轨道相机/平移/拼合生长/图层/显隐）
 │   └── views/             # 视图组件（packList/entityList/entityEditor/structureList/structureEditor）
 ├── .scratch/              # 临时脚本（gitignore，不进版本库）
-└── test/                  # 测试（npm test = nbt/core/structure/growth/diagnostics/voxel/regionImport 共 138 断言）
+└── test/                  # 测试（npm test = 11 个文件 / 301 个断言，0 失败）
+                           #   其中 packScaffold.test.js(30) + packPreflight.test.js(20) 覆盖包骨架与预检
 ```

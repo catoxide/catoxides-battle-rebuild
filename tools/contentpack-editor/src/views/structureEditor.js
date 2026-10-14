@@ -224,9 +224,10 @@ window.StructureEditor = (function () {
                     </div>
                 </div>
                 <div class="grid2" style="margin-top:10px">
-                    <div><label>${t('structure.sizeW')}</label><input class="pc-s0" type="number" min="1" value="${w}"></div>
-                    <div><label>${t('structure.sizeH')}</label><input class="pc-s1" type="number" min="1" value="${h}"></div>
-                    <div><label>${t('structure.sizeD')}</label><input class="pc-s2" type="number" min="1" value="${d}"></div>
+                    <!-- REVIEW-M1：max=512 与 validateBlueprint 的上限一致（无上限时 1e5 级数值会拖死展开循环） -->
+                    <div><label>${t('structure.sizeW')}</label><input class="pc-s0" type="number" min="1" max="512" value="${w}"></div>
+                    <div><label>${t('structure.sizeH')}</label><input class="pc-s1" type="number" min="1" max="512" value="${h}"></div>
+                    <div><label>${t('structure.sizeD')}</label><input class="pc-s2" type="number" min="1" max="512" value="${d}"></div>
                 </div>
                 <div class="subhead">${t('structure.boxFills')}</div>
                 <table class="mini-table"><thead><tr>
@@ -888,13 +889,47 @@ window.StructureEditor = (function () {
         const outName = (tab.packName || 'pack') + '.jar';
         const outEl = document.getElementById('structOutput');
         outEl.style.display = 'block';
-        outEl.textContent = t('dyn.buildRunning') + '\n';
+
+        // ① 预检（只读）：有 error 直接中止，不做「构建成功但加载不了」的无用功
+        const pre = await window.api.preflightPack(tab.packDir);
+        const renderFindings = (data) => {
+            const f = (data && data.findings) || [];
+            const errs = f.filter((x) => x.level === 'error');
+            const warns = f.filter((x) => x.level === 'warn');
+            const oks = f.filter((x) => x.level === 'ok');
+            const lines = [tf('dyn.preflightSummary', { e: errs.length, w: warns.length })];
+            for (const x of errs) lines.push(`[ERROR] ${x.code} ${x.msg}${x.src ? '  〔' + x.src + '〕' : ''}`);
+            for (const x of warns) lines.push(`[WARN ] ${x.code} ${x.msg}${x.src ? '  〔' + x.src + '〕' : ''}`);
+            for (const x of oks) lines.push(`[OK   ] ${x.msg}`);
+            return lines.join('\n');
+        };
+        if (pre.ok) {
+            outEl.textContent = renderFindings(pre.data) + '\n\n';
+            if (!pre.data.ok) {
+                outEl.textContent += t('dyn.buildAborted');
+                showStatus(tf('dyn.preflightFailed', { n: pre.data.errors.length }), false);
+                return;
+            }
+        }
+
+        // ② 打包（Gradle 优先，失败回退 build-pack.ps1）
+        outEl.textContent += t('dyn.buildRunning') + '\n';
         const res = await window.api.buildPack({ packDir: tab.packDir, outJarName: outName });
+        const data = res.data || {};
+        let text = (data.preflight ? renderFindings(data.preflight) + '\n\n' : '');
+        text += res.ok ? '=== Build OK ===\n' : '=== Build Failed ===\n';
+        if (data.mode) text += `[mode: ${data.mode}]\n`;
+        if (data.autoCreated && data.autoCreated.length) {
+            text += tf('dyn.autoScaffold', { files: data.autoCreated.join(', ') }) + '\n';
+        }
+        text += (data.stdout || '');
+        if (data.stderr) text += '\n[stderr]\n' + data.stderr;
+        if (data.verify && data.verify.length) text += '\n' + renderFindings({ findings: data.verify }) + '\n';
+        if (!res.ok) text += '\n' + res.error;
+        outEl.textContent = text;
         if (res.ok) {
-            outEl.textContent = '=== Build OK ===\n' + ((res.data && res.data.stdout) || '');
-            showStatus(tf('dyn.buildDone', { name: outName }), true);
+            showStatus(tf('dyn.buildDone', { name: data.expectedJar || outName }), true);
         } else {
-            outEl.textContent = '=== Build Failed ===\n' + res.error;
             showStatus(t('dyn.buildFail'), false);
         }
     }

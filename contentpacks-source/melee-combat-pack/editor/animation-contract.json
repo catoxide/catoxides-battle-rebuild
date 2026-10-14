@@ -1,0 +1,120 @@
+{
+  "contract_version": 1,
+  "content_type": "spark_animation_set",
+  "sets": [
+    {
+      "id": "sword",
+      "label": "剑（物品叠加层）",
+      "model": {
+        "path": "spark_models/item/catoxidesbattlerebuild/sword.json",
+        "texture": "assets/catoxidesbattlerebuild/textures/item/sword.png"
+      },
+      "animations": {
+        "dir": "spark_animations/item/catoxidesbattlerebuild/sword/",
+        "required": [
+          {
+            "name": "still",
+            "loop": "true"
+          },
+          {
+            "name": "attack",
+            "loop": "once"
+          },
+          {
+            "name": "checkview",
+            "loop": "once"
+          },
+          {
+            "name": "in",
+            "loop": "hold_on_last_frame"
+          },
+          {
+            "name": "out",
+            "loop": "once"
+          },
+          {
+            "name": "3rd_still",
+            "loop": "true"
+          },
+          {
+            "name": "3rd_attack",
+            "loop": "once"
+          },
+          {
+            "name": "3rd_checkview",
+            "loop": "once"
+          }
+        ]
+      }
+    },
+    {
+      "id": "player_wrist",
+      "label": "腕部叠加层（玩家腕部 + 剑）",
+      "model": {
+        "path": "spark_models/entity/catoxidesbattlerebuild/player_wrist.json",
+        "texture": "assets/catoxidesbattlerebuild/textures/entity/player_wrist.png"
+      },
+      "animations": {
+        "dir": "spark_animations/entity/catoxidesbattlerebuild/player_wrist/",
+        "required": [
+          {
+            "name": "3rd_still",
+            "loop": "true"
+          },
+          {
+            "name": "3rd_attack",
+            "loop": "once"
+          },
+          {
+            "name": "base_state",
+            "bundle": [
+              "state.land.idle",
+              "state.land.move",
+              "state.land.move_back",
+              "state.land.sprint",
+              "state.crouch.idle",
+              "state.crouch.move",
+              "state.crouch.move_back",
+              "state.fly.idle",
+              "state.fly.move",
+              "state.fly.sprint",
+              "state.swim.idle",
+              "state.swim.move",
+              "state.sit",
+              "state.fall_fly",
+              "state.sleep",
+              "state.fall",
+              "state.jump_land",
+              "state.jump",
+              "state.climb.idle",
+              "state.climb.move"
+            ]
+          },
+          {
+            "name": "state.fall",
+            "loop": "true"
+          },
+          {
+            "name": "state.jump"
+          },
+          {
+            "name": "state.land.idle",
+            "loop": "true"
+          },
+          {
+            "name": "state.land.move",
+            "loop": "true"
+          }
+        ]
+      }
+    }
+  ],
+  "wiring": {
+    "referenced_by": "CombatSystem / SwordAttackHandler / SwordPlayerModelHandler / WristSkinComposer（本包 java/）",
+    "state_machine": null
+  },
+  "validation": {
+    "bones_must_exist_in_model": true,
+    "max_duration": 6
+  }
+}

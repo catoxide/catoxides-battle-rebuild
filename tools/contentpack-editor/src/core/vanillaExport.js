@@ -56,13 +56,20 @@ function parseBlockId(blockStr) {
 /** 展开 boxFills + fillBlocks → 位置 → 方块字符串 映射 */
 function expandFills(piece) {
     const map = new Map(); // "x,y,z" → blockStr
+    // REVIEW-M1 纵深防御：按 size 钳制循环边界（校验层已限 ≤512，此处防直接调用/旧数据）
+    const [W, H, D] = (piece.size && piece.size.length === 3) ? piece.size : [1, 1, 1];
+    const clamp = (lo, hi, max) => [Math.max(0, Math.min(lo, hi)), Math.min(max - 1, Math.max(lo, hi))];
     for (const bf of piece.boxFills || []) {
-        for (let x = bf.from[0]; x <= bf.to[0]; x++)
-            for (let y = bf.from[1]; y <= bf.to[1]; y++)
-                for (let z = bf.from[2]; z <= bf.to[2]; z++)
+        const [x0, x1] = clamp(bf.from[0], bf.to[0], W);
+        const [y0, y1] = clamp(bf.from[1], bf.to[1], H);
+        const [z0, z1] = clamp(bf.from[2], bf.to[2], D);
+        for (let x = x0; x <= x1; x++)
+            for (let y = y0; y <= y1; y++)
+                for (let z = z0; z <= z1; z++)
                     map.set(x + ',' + y + ',' + z, bf.block);
     }
     for (const fb of piece.fillBlocks || []) {
+        if (fb.x < 0 || fb.y < 0 || fb.z < 0 || fb.x >= W || fb.y >= H || fb.z >= D) continue;
         map.set(fb.x + ',' + fb.y + ',' + fb.z, fb.block);
     }
     return map;

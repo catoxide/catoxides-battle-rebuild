@@ -151,6 +151,15 @@ function parseRegionNbt(input) {
             }));
         }
         const jigsawByPos = new Map();
+        // REVIEW-M8：此前每个 jigsaw 对 blocksRaw 线性 find → O(blocks×jigsaws)。
+        // 实测 20万×200 ≈ 270ms；128³ 模板 ×2000 jigsaws 外推 ≈ 28s 主线程卡死。
+        // 预建 pos→state 哈希表（同位置取首个 state，与原 find 语义一致）。
+        const stateByPos = new Map();
+        for (const bb of blocksRaw) {
+            if (!Array.isArray(bb) || bb.length !== 4) continue;
+            const k = bb[1] + ',' + bb[2] + ',' + bb[3];
+            if (!stateByPos.has(k)) stateByPos.set(k, bb[0]);
+        }
         if (Array.isArray(root.nbtData)) {
             for (const e of root.nbtData) {
                 if (e.id && e.id !== 'minecraft:jigsaw') continue;
@@ -158,7 +167,7 @@ function parseRegionNbt(input) {
                 // orientation 藏在 palette 属性里
                 let ori = '';
                 if (palette) {
-                    const st = (blocksRaw.find((bb) => bb.length === 4 && bb[1] === pos[0] && bb[2] === pos[1] && bb[3] === pos[2]) || [])[0];
+                    const st = stateByPos.get(pos[0] + ',' + pos[1] + ',' + pos[2]);
                     const pe = palette[st];
                     if (pe && pe.props && pe.props.orientation) ori = pe.props.orientation;
                 }

@@ -258,5 +258,41 @@ console.log('=== 8. P16 jigsaw 虚影 1:1 候选 ===');
     ok('mulberry32 值域 [0,1)', inRange);
 }
 
+console.log('=== 9. (REVIEW-M6) 旋转片段的碰撞检查按旋转后足迹（d×w）===');
+{
+    // 设计：start[4,2,2] →(east)→ mid[4,2,2] 以 r=1 落在 [4,0,1]（实际足迹 x4-5 × z1-4；
+    // 旧代码按 w×d 认为是 x4-7 × z1-2）→(south)→ end[2,2,2] 落在 [4,0,3]：
+    //   与 mid 的【旋转后】足迹真实重叠（z3-4 ∩ z1-4），但旧 w×d 检查判为不重叠 → 漏检。
+    const jig = (x, z, name, pool, target, orientation) => ({
+        x, y: 0, z, name, pool, target, joint: 'rollable', orientation,
+        finalState: 'minecraft:air', selectionPriority: 10, placementPriority: 10,
+    });
+    const bp = {
+        formatVersion: 1, structureId: 'rot_test', namespace: 't',
+        structure: { step: 'surface_structures', terrainAdaptation: 'beard_thin', startPool: 'p0', maxDistanceFromCenter: 80, biomes: [], projectToSurface: true, maxSurfaceLevel: 0 },
+        pieces: [
+            { name: 'start', size: [4, 2, 2], boxFills: [], fillBlocks: [], jigsaws: [jig(3, 1, 'e', 'p1', 'w', 'east_up')] },
+            { name: 'mid', size: [4, 2, 2], boxFills: [], fillBlocks: [], jigsaws: [jig(0, 1, 'w', 'p1', 'e', 'south_up'), jig(1, 1, 'e2', 'p2', 'w2', 'south_up')] },
+            { name: 'end', size: [2, 2, 2], boxFills: [], fillBlocks: [], jigsaws: [jig(0, 1, 'w2', 'p2', 'e2', 'south_up')] },
+        ],
+        templatePools: [
+            { name: 'p0', elements: [{ template: 'start', weight: 1, projection: 'rigid' }] },
+            { name: 'p1', elements: [{ template: 'mid', weight: 1, projection: 'rigid' }] },
+            { name: 'p2', elements: [{ template: 'end', weight: 1, projection: 'rigid' }] },
+        ],
+        structureSet: { spacing: 32, separation: 12, salt: 1, frequency: 1 },
+    };
+    // rng 消费顺序：[p0 抽模板, p1 抽模板, mid 旋转, mid 同分, p2 抽模板, end 旋转, end 同分]
+    // （旧版漏计 p1 抽 → end 旋转错拿 0.3 → r=1 → south_up 转成 west_up 无匹配，假死端"无匹配目标"）
+    // mid 旋转 0.3 → r=floor(0.3*4)=1；end 旋转 0.7 → r=floor(0.7*4)=2
+    const seq = [0.3, 0.3, 0.3, 0.3, 0.3, 0.7, 0.3];
+    let ri = 0;
+    const rngSeq = () => (ri < seq.length ? seq[ri++] : 0.5);
+    const g = G.growStructure(bp, { rng: rngSeq, maxPieces: 10 });
+    ok('mid 以 r=1 落在 [4,0,1]', g.placements.length >= 2 && g.placements[1].pieceName === 'mid' && g.placements[1].rotation === 1 && JSON.stringify(g.placements[1].offset) === '[4,0,1]', JSON.stringify(g.placements.map((p) => [p.pieceName, p.offset, p.rotation])));
+    ok('end 与旋转后足迹重叠 → 被拒（旧 w×d 检查会漏检放行）', g.placements.length === 2, 'placements=' + g.placements.length + ' deadEnds=' + JSON.stringify(g.deadEnds));
+    ok('死端记录 = 位置重叠', g.deadEnds.some((d) => d.reason === '位置重叠'), JSON.stringify(g.deadEnds));
+}
+
 console.log('\n生长模拟测试: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

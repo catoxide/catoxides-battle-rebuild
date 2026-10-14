@@ -21,7 +21,9 @@ window.PackList = (function () {
                 <div class="li-title"></div>
                 <div class="li-sub"></div>`;
             item.querySelector('.li-title').textContent = pack.name;
-            item.querySelector('.li-sub').textContent = 'v' + pack.version + (pack.manifest['Module-Dependencies'] ? ' · dep:' + pack.manifest['Module-Dependencies'] : '');
+            item.querySelector('.li-sub').textContent = 'v' + pack.version
+                + (pack.manifest['Module-Dependencies'] ? ' · dep:' + pack.manifest['Module-Dependencies'] : '')
+                + (pack.hasBuildGradle ? '' : ' · ' + t('pack.notGradle'));
             item.addEventListener('click', () => select(pack, item));
             listEl.appendChild(item);
         }
@@ -42,18 +44,30 @@ window.PackList = (function () {
     async function createPack() {
         const name = document.getElementById('npName').value.trim();
         if (!name) { window.showError(t('dyn.packNameRequired')); return; }
+        const val = (id) => document.getElementById(id).value.trim();
         const data = {
             name,
-            version: document.getElementById('npVersion').value.trim() || '0.1.0',
-            requires: document.getElementById('npRequires').value.trim() || 'catoxidesbattlerebuild>=0.2.0',
-            deps: document.getElementById('npDeps').value.trim(),
-            modRequires: document.getElementById('npModReq').value.trim(),
+            version: val('npVersion') || '0.1.0',
+            requires: val('npRequires') || 'catoxidesbattlerebuild>=0.2.0',
+            entry: val('npEntry'),
+            deps: val('npDeps'),
+            depsOptional: val('npDepsOpt'),
+            libRequires: val('npLibReq'),
+            modRequires: val('npModReq'),
+            modOptional: val('npModOpt'),
+            extraDeps: val('npExtraDeps'),
         };
         const res = await window.api.createPack(data);
         if (!res.ok) { window.showError(t('dyn.createPackFail') + res.error); return; }
-        window.showStatus(tf('dyn.packCreated', { name }), true);
+        const d = res.data || {};
+        window.showStatus(tf('dyn.packCreatedFiles', {
+            name,
+            files: (d.written || []).join(' / '),
+            cmd: d.gradleCommand || '',
+        }) + (d.outsideLibrary ? '（建在「新建包目录」—— 与包库不同目录，列表已合并显示）' : ''), true);
         toggleNewPackForm(false);
-        ['npName', 'npVersion', 'npRequires', 'npDeps', 'npModReq'].forEach((id) => {
+        ['npName', 'npVersion', 'npRequires', 'npEntry', 'npDeps', 'npDepsOpt',
+            'npLibReq', 'npModReq', 'npModOpt', 'npExtraDeps'].forEach((id) => {
             document.getElementById(id).value = '';
         });
         await loadPacks();

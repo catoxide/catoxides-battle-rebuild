@@ -40,11 +40,14 @@ function expandPiece(piece) {
         if (isAir(bid)) return;
         map.set(x + ',' + y + ',' + z, bid);
     };
+    // REVIEW-M1 纵深防御：boxFills 循环边界按 size 钳制（防无校验调用时
+    // 1e5³ 级 from/to 拖死主线程 —— 校验层已限 size ≤512）
+    const clamp = (lo, hi, max) => [Math.max(0, Math.min(lo, hi)), Math.min(Math.max(max - 1, 0), Math.max(lo, hi))];
     for (const bf of piece.boxFills || []) {
         if (isAir(bf.block)) continue;
-        const fx = Math.min(bf.from[0], bf.to[0]), tx = Math.max(bf.from[0], bf.to[0]);
-        const fy = Math.min(bf.from[1], bf.to[1]), ty = Math.max(bf.from[1], bf.to[1]);
-        const fz = Math.min(bf.from[2], bf.to[2]), tz = Math.max(bf.from[2], bf.to[2]);
+        const [fx, tx] = clamp(Math.min(bf.from[0], bf.to[0]), Math.max(bf.from[0], bf.to[0]), w);
+        const [fy, ty] = clamp(Math.min(bf.from[1], bf.to[1]), Math.max(bf.from[1], bf.to[1]), h);
+        const [fz, tz] = clamp(Math.min(bf.from[2], bf.to[2]), Math.max(bf.from[2], bf.to[2]), d);
         for (let x = fx; x <= tx; x++) for (let y = fy; y <= ty; y++) for (let z = fz; z <= tz; z++) {
             set(x, y, z, bf.block);
         }

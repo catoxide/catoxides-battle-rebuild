@@ -371,5 +371,118 @@ console.log('=== 7. blockIcon：槽位缓存栏图标（物品纹理优先 → �
     fs.rmSync(root, { recursive: true, force: true });
 }
 
+console.log('=== 9. (REVIEW-M2) readZipEntry 中央目录步进（多条目 jar 第 2/3 条目必须可命中）===');
+{
+    const zlib = require('zlib');
+    const crcTable = (() => {
+        const t = new Int32Array(256);
+        for (let n = 0; n < 256; n++) {
+            let c = n;
+            for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+            t[n] = c;
+        }
+        return t;
+    })();
+    const crc32 = (buf) => {
+        let c = 0xFFFFFFFF;
+        for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+        return (c ^ 0xFFFFFFFF) >>> 0;
+    };
+    // 最小 zip 构造器：本地头 + 中央目录 + EOCD（stored/deflate 混合）
+    function buildZip(entries) {
+        const locals = [], central = [];
+        let offset = 0;
+        for (const e of entries) {
+            const nameBuf = Buffer.from(e.name, 'utf8');
+            const raw = e.method === 8 ? zlib.deflateRawSync(e.data) : e.data;
+            const crc = crc32(e.data);
+            const lh = Buffer.alloc(30);
+            lh.writeUInt32LE(0x04034b50, 0);
+            lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0, 6); lh.writeUInt16LE(e.method, 8);
+            lh.writeUInt32LE(0, 10);
+            lh.writeUInt32LE(crc, 14);
+            lh.writeUInt32LE(raw.length, 18);
+            lh.writeUInt32LE(e.data.length, 22);
+            lh.writeUInt16LE(nameBuf.length, 26);
+            lh.writeUInt16LE(0, 28);
+            locals.push(Buffer.concat([lh, nameBuf, raw]));
+            const ch = Buffer.alloc(46);
+            ch.writeUInt32LE(0x02014b50, 0);
+            ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(0, 8); ch.writeUInt16LE(e.method, 10);
+            ch.writeUInt32LE(0, 12); ch.writeUInt32LE(0, 14);
+            ch.writeUInt32LE(crc, 16);
+            ch.writeUInt32LE(raw.length, 20);
+            ch.writeUInt32LE(e.data.length, 24);
+            ch.writeUInt16LE(nameBuf.length, 28);
+            ch.writeUInt16LE(0, 30); ch.writeUInt16LE(0, 32);
+            ch.writeUInt16LE(0, 34); ch.writeUInt16LE(0, 36); ch.writeUInt32LE(0, 38);
+            ch.writeUInt32LE(offset, 42);
+            central.push(Buffer.concat([ch, nameBuf]));
+            offset += 30 + nameBuf.length + raw.length;
+        }
+        const cenBuf = Buffer.concat(central);
+        const eocd = Buffer.alloc(22);
+        eocd.writeUInt32LE(0x06054b50, 0);
+        eocd.writeUInt16LE(0, 4); eocd.writeUInt16LE(0, 6);
+        eocd.writeUInt16LE(entries.length, 8); eocd.writeUInt16LE(entries.length, 10);
+        eocd.writeUInt32LE(cenBuf.length, 12);
+        eocd.writeUInt32LE(offset, 16);
+        eocd.writeUInt16LE(0, 20);
+        return Buffer.concat([...locals, cenBuf, eocd]);
+    }
+    // stored 条目带 padding：压缩大小 ≠ 未压缩大小（旧 bug 的切片误用未压缩大小会出错）
+    const jar = buildZip([
+        { name: 'a/first.json', data: Buffer.from('{"first":true}'), method: 8 },
+        { name: 'b/second.json', data: Buffer.from('{"second":true,"pad":"' + 'x'.repeat(200) + '"}'), method: 0 },
+        { name: 'c/third.json', data: Buffer.from('{"third":true}'), method: 8 },
+    ]);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zipx-'));
+    const jarPath = path.join(dir, 't.jar');
+    fs.writeFileSync(jarPath, jar);
+    const first = M.readZipEntry(jarPath, 'a/first.json');
+    const second = M.readZipEntry(jarPath, 'b/second.json');
+    const third = M.readZipEntry(jarPath, 'c/third.json');
+    ok('第 1 条目（deflate）可读', first && first.toString().includes('"first":true'));
+    ok('第 2 条目（stored+padding）可读（此前恒 null）', second && second.toString().includes('"second":true'), second && second.toString().slice(0, 40));
+    ok('第 3 条目（deflate）可读', third && third.toString().includes('"third":true'));
+    ok('不存在条目 → null', M.readZipEntry(jarPath, 'nope.json') === null);
+    fs.rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('=== 10. (REVIEW-S3) 资源路径越界防护（恶意 blockId / 纹理 ID / findAsset rel）===');
+{
+    const root = mkRoot();
+    // root 的同级"包外"目录，里面放可被越界读到的内容
+    const evil = path.join(path.dirname(root), 'evil');
+    fs.mkdirSync(path.join(evil, 'blockstates'), { recursive: true });
+    fs.mkdirSync(path.join(evil, 'textures'), { recursive: true });
+    fs.writeFileSync(path.join(evil, 'blockstates', 'door.json'),
+        JSON.stringify({ variants: { model: 'minecraft:block/stone' } }));
+    const png1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+    fs.writeFileSync(path.join(evil, 'textures', 'evil.png'), png1x1);
+    // ① blockFaces：'x:../../evil/blockstates/door'（review 复现的 PoC）
+    // 模块契约："无贴图" = {} 或全 null（MISSING 缓存 → {}）；用 == null 兼容两种表示
+    const noTex = (r) => r && r.top == null && r.side == null && r.bottom == null
+        && !String(JSON.stringify(r)).includes('data:image');
+    const r1 = M.blockFaces(root, 'x:../../evil/blockstates/door');
+    ok('blockFaces 越界 blockId → 空（不读包外 blockstate）', noTex(r1), JSON.stringify(r1));
+    // ② blockstate 合法但 variant.model 指向越界 model
+    writeBs(root, 'minecraft', 'evil_chain', { variants: { model: 'minecraft:../../evil/block/evil' } });
+    const r2 = M.blockFaces(root, 'minecraft:evil_chain');
+    ok('blockFaces 越界 model 路径 → 空', noTex(r2), JSON.stringify(r2));
+    // ③ findAsset 直接传越界 rel
+    ok('findAsset ../ 越界 → null', M._internals.findAsset(root, '../../evil/textures/evil.png') === null);
+    ok('findAsset . 段 → null', M._internals.findAsset(root, 'assets/./minecraft/textures/evil.png') === null);
+    // ④ texturePath 越界
+    ok('texturePath 越界 → null', M.texturePath(root, 'minecraft:../../evil/textures/evil') === null);
+    // ⑤ 正常路径不受影响（包内文件可读）
+    const inner = path.join(root, 'assets', 'minecraft', 'textures');
+    fs.mkdirSync(inner, { recursive: true });
+    fs.writeFileSync(path.join(inner, 'ok.png'), png1x1);
+    ok('texturePath 合法路径正常', M.texturePath(root, 'minecraft:ok') === path.join(inner, 'ok.png'));
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(evil, { recursive: true, force: true });
+}
+
 console.log('\nmcAssets 测试: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

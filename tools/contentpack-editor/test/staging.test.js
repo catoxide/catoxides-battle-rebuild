@@ -95,6 +95,31 @@ test('8. removeStagedEntity 单个实体清理', () => {
     assert.ok(!items.some((i) => i.id === 'tmp1'), '实体及其部位草稿都应被清理');
 });
 
+test('9. (REVIEW-S1) removeStagedHealthConfig 只删 health 草稿，实体草稿必须保留', () => {
+    Staging.stageEntity(PACK_NAME, Object.assign(EntitySchema.createDefaultEntity(), { id: 's1_mob' }));
+    Staging.stageHealthConfig(PACK_NAME, 'ns_a', 's1_mob', { parts: [] });
+    Staging.removeStagedHealthConfig(PACK_NAME, 'ns_a', 's1_mob');
+    assert.strictEqual(Staging.readStagedHealthConfig(PACK_NAME, 'ns_a', 's1_mob'), null, 'health 草稿应删除');
+    assert.ok(Staging.readStagedEntity(PACK_NAME, 's1_mob'), '实体草稿必须保留（S1：保存路径丢数据回归）');
+    Staging.removeStagedEntity(PACK_NAME, 's1_mob');
+});
+
+test('10. (REVIEW-S1) namespace 不一致时按 id 全 ns 兜底清理', () => {
+    Staging.stageEntity(PACK_NAME, Object.assign(EntitySchema.createDefaultEntity(), { id: 's1b_mob' }));
+    Staging.stageHealthConfig(PACK_NAME, 'ns_real', 's1b_mob', { parts: [] });
+    Staging.removeStagedHealthConfig(PACK_NAME, 'ns_wrong', 's1b_mob');
+    assert.strictEqual(Staging.readStagedHealthConfig(PACK_NAME, 'ns_real', 's1b_mob'), null, '应被兜底清理');
+    assert.ok(Staging.readStagedEntity(PACK_NAME, 's1b_mob'), '实体草稿必须保留');
+    Staging.removeStagedEntity(PACK_NAME, 's1b_mob');
+});
+
+test('11. (REVIEW-L6) structureId ".." 不再逃逸 structures/ 目录（草稿保持可见）', () => {
+    Staging.stageStructure('s6-pack', { structureId: '..', namespace: '' });
+    const items = Staging.listStaged('s6-pack');
+    assert.ok(items.some((i) => i.kind === 'structure'), '.. 草稿应可见（此前写入包暂存根、列表不可见）');
+    Staging.discardStaged('s6-pack');
+});
+
 // 清理
 fs.rmSync(tmpRoot, { recursive: true, force: true });
 

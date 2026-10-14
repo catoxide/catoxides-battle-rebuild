@@ -5,3 +5,4 @@ Module-Requires: catoxidesbattlerebuild>=0.2.0
 Module-Lib-Requires: spark
 Module-Type: contentpack
 Module-Entry: example.contentpack.meleecombat.MeleeCombatPack
+Module-Editor-Schema: editor/animation-contract.json

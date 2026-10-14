@@ -128,9 +128,18 @@ function validateBlueprint(bp) {
     // 标识
     if (!bp.structureId || !/^[a-z0-9_.-]+$/.test(bp.structureId)) {
         errors.push('structureId 必填，且只能含小写字母/数字/._-');
+    } else if (bp.structureId === '.' || bp.structureId === '..') {
+        // REVIEW-L6：'..' 作为目录段会拼出越界路径（staging 的 structures/.. = 包暂存根，
+        // 草稿写入后 listStaged 不可见 → 静默丢失；writeStructure 同理）
+        errors.push('structureId 不能是 . 或 ..');
     }
-    if (bp.namespace !== undefined && bp.namespace !== '' && !/^[a-z0-9_.-]+$/.test(bp.namespace)) {
-        errors.push('namespace 只能含小写字母/数字/._-');
+    if (bp.namespace !== undefined && bp.namespace !== '') {
+        if (!/^[a-z0-9_.-]+$/.test(bp.namespace)) {
+            errors.push('namespace 只能含小写字母/数字/._-');
+        } else if (bp.namespace === '.' || bp.namespace === '..') {
+            // REVIEW-L6：namespace 参与 data/<ns>/… 导出路径，'..' 会逃逸包目录
+            errors.push('namespace 不能是 . 或 ..');
+        }
     }
 
     // structure
@@ -162,8 +171,15 @@ function validateBlueprint(bp) {
         }
         pieceNames.add(p.name || ('#' + i));
         const size = p.size || [0, 0, 0];
-        if (!size.length === 3 || size.some((n) => !Number.isInteger(n) || n <= 0)) {
+        // REVIEW-M1：原式 `!size.length === 3` 恒为 false（先取反再比较）——长度校验是死代码，
+        // size:[5] 能通过校验 → boxFills/jigsaws 的 y/z 边界检查对 undefined 恒不成立，
+        // 且 buildTemplateNbt 会写出 size=[5,0,0] 的损坏模板 NBT
+        if (size.length !== 3 || size.some((n) => !Number.isInteger(n) || n <= 0)) {
             errors.push(tag + ': size 应为三个正整数 [宽, 高, 深]');
+        } else if (size.some((n) => n > 512)) {
+            // REVIEW-M1：size 上限（原版结构模板远小于 512³；无上限时
+            // expandFills/expandPiece 的三重循环可被 1e5³ 级数值拖死主进程/渲染端）
+            errors.push(tag + ': size 单维不能超过 512（当前 ' + size.join('x') + '）');
         }
         // boxFills 在尺寸内
         (p.boxFills || []).forEach((bf, j) => {
@@ -318,6 +334,22 @@ function listStructures(packDir) {
 }
 
 /**
+ * relFile（'structures/x/blueprint.json'）→ 安全绝对路径；越界返回 null
+ * REVIEW-L5：此前 readStructure/deleteStructure 直接 path.join(packDir, relFile)，
+ * relFile 含 '..' 可越界读/删任意文件（与 modelEditor:* 族的 resolveRepoFile 对齐）
+ */
+function resolveStructureFile(packDir, relFile) {
+    const path = require('path');
+    if (typeof relFile !== 'string' || !relFile) return null;
+    const norm = relFile.replace(/\\/g, '/');
+    if (!norm.startsWith('structures/')) return null;
+    if (norm.split('/').some((s) => s === '..' || s === '.' || s === '')) return null;
+    const p = path.join(packDir, ...norm.split('/'));
+    if (!p.startsWith(path.resolve(packDir) + path.sep)) return null;
+    return p;
+}
+
+/**
  * 读取蓝图
  * @param {string} packDir
  * @param {string} relFile 相对包目录的 blueprint.json 路径（如 structures/x/blueprint.json）
@@ -325,8 +357,8 @@ function listStructures(packDir) {
  */
 function readStructure(packDir, relFile) {
     const fs = require('fs');
-    const path = require('path');
-    const p = path.join(packDir, relFile);
+    const p = resolveStructureFile(packDir, relFile);
+    if (!p) throw new Error('非法蓝图路径: ' + relFile);
     return JSON.parse(fs.readFileSync(p, 'utf-8'));
 }
 
@@ -337,7 +369,8 @@ function readStructure(packDir, relFile) {
 function deleteStructure(packDir, relFile) {
     const fs = require('fs');
     const path = require('path');
-    const p = path.join(packDir, relFile);
+    const p = resolveStructureFile(packDir, relFile);
+    if (!p) return { deleted: false };
     if (!fs.existsSync(p)) return { deleted: false };
     // 删除文件及其所在目录（若目录只剩 blueprint.json）
     fs.unlinkSync(p);
@@ -355,6 +388,10 @@ function deleteStructure(packDir, relFile) {
 function writeStructure(packDir, blueprint) {
     const fs = require('fs');
     const path = require('path');
+    // REVIEW-L6 纵深防御：structureId 作为目录段（校验层已拒绝 '.'/'..'，此处防直接调用）
+    if (!blueprint || !blueprint.structureId || blueprint.structureId === '.' || blueprint.structureId === '..') {
+        throw new Error('非法 structureId');
+    }
     const dir = path.join(packDir, 'structures', blueprint.structureId);
     fs.mkdirSync(dir, { recursive: true });
     const p = path.join(dir, 'blueprint.json');

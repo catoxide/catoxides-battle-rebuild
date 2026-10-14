@@ -11,7 +11,16 @@
 <header class="app-header">
   <h1 data-i18n="app.title">ContentPack Editor</h1>
   <span class="sub" id="headerPaths"></span>
+  <!-- W6.1 包路径设置：包库目录 / 新建包目录（覆盖默认 <项目根>/contentpacks-source） -->
+  <span id="packPathTools" style="display:flex; gap:4px; align-items:center">
+    <button class="btn ghost small" id="btnPickPacksRoot" title="包库目录（内容包列表来源）—— 点击选择目录">📦 包库</button>
+    <button class="btn ghost small" id="btnPickNewPackDir" title="新建包目录（新建内容包落在此）—— 点击选择目录">➕ 新建包</button>
+    <button class="btn ghost small" id="btnResetPackPaths" title="复位包路径为默认（<项目根>/contentpacks-source）" style="display:none">↺ 默认</button>
+  </span>
   <div style="margin-left:auto; display:flex; gap:4px; align-items:center">
+    <button class="btn ghost small" id="btnDebugToggle" title="调试模式（W5.5）">🔍 调试</button>
+    <button class="btn ghost small" id="btnGpuToggle" title="渲染模式（W5.3）">⚡ 硬件加速</button>
+    <button class="btn ghost small" id="btnOpenModelEditor" title="打开 3D 模型编辑器（W2）">🧊 模型编辑器</button>
     <span class="sub" data-i18n="app.lang">语言</span>
     <select id="langSelect" style="width:auto; margin:0">
       <option value="zh">中文</option>
@@ -19,6 +28,12 @@
     </select>
   </div>
 </header>
+
+<!-- W5.3 GPU 崩溃自愈横幅（主窗口启动时若检测到"崩溃后自动降级"标记则显示） -->
+<div id="gpuBanner" class="hidden">
+  <span id="gpuBannerText"></span>
+  <button class="btn ghost small" id="btnGpuBannerClose" style="margin-left:auto">知道了</button>
+</div>
 
 <div class="app-body">
   <!-- 左栏收起后的展开按钮（固定定位） -->
@@ -37,8 +52,13 @@
       <input id="npName" data-i18n-ph="pack.namePh" placeholder="包名 (Module-Name)">
       <input id="npVersion" data-i18n-ph="pack.versionPh" placeholder="版本 (默认 0.1.0)">
       <input id="npRequires" data-i18n-ph="pack.requiresPh" placeholder="Module-Requires">
+      <input id="npEntry" data-i18n-ph="pack.entryPh" placeholder="Module-Entry（有实体/代码时必填）">
       <input id="npDeps" data-i18n-ph="pack.depsPh" placeholder="Module-Dependencies (逗号分隔)">
+      <input id="npDepsOpt" data-i18n-ph="pack.depsOptPh" placeholder="Module-Dependencies-Optional (逗号分隔)">
+      <input id="npLibReq" data-i18n-ph="pack.libReqPh" placeholder="Module-Lib-Requires (需 _libs/&lt;名&gt;/*.jar)">
       <input id="npModReq" data-i18n-ph="pack.modReqPh" placeholder="Module-Mod-Requires (逗号分隔)">
+      <input id="npModOpt" data-i18n-ph="pack.modOptPh" placeholder="Module-Mod-Optional (逗号分隔)">
+      <input id="npExtraDeps" data-i18n-ph="pack.extraDepsPh" placeholder="额外编译依赖（整条语句，; 分隔）">
       <div class="row">
         <button class="btn small" id="npConfirm" data-i18n="pack.create">创建</button>
         <button class="btn ghost small" id="npCancel" data-i18n="pack.cancel">取消</button>
@@ -55,6 +75,7 @@
       <select id="contentTypeSelect" title="内容类型" style="width:auto; margin:0; max-width:130px">
         <option value="entity" data-i18n="entity.title">实体</option>
         <option value="structure" data-i18n="structure.title">建筑结构</option>
+        <option value="contract" data-i18n="contract.title">动画契约</option>
       </select>
       <span id="packNameLabel" class="muted"></span>
       <button class="btn ghost small" id="btnNewEntity" disabled data-i18n="entity.new">+ 新建</button>
@@ -77,6 +98,7 @@
         <span class="editor-title" id="editorTitle"></span>
         <span class="editor-badge" id="editorBadge"></span>
         <div class="editor-actions">
+          <button class="btn ghost" id="btnPreflight" data-i18n="editor.preflight">预检</button>
           <button class="btn ghost" id="btnExport" data-i18n="editor.export">导出</button>
           <button class="btn" id="btnSave" data-i18n="editor.saveDraft">保存草稿</button>
           <button class="btn accent" id="btnBuild" data-i18n="editor.build">打包</button>
@@ -165,6 +187,7 @@
         <div class="row">
           <button class="btn ghost small" id="btnGenParts" data-i18n="parts.genDefault">生成默认部位（按模型骨骼分组）</button>
           <button class="btn ghost small" id="btnAddPart" data-i18n="parts.addPart">+ 添加部位</button>
+          <button class="btn ghost small" id="partsEditIn3D" data-i18n="editor.editIn3D" title="在 3D 模型编辑器中编辑部位配置（直写正式包）">✏️ 3D 模型编辑器中编辑</button>
           <span class="note" id="partsNote"></span>
         </div>
         <div class="parts-layout">
@@ -176,22 +199,21 @@
         </div>
       </div>
 
-      <!-- 页签 4：动画状态机 -->
+      <!-- 页签 4：动画（W4.1 只读清单：存在的动画 + 本实体状态映射；编辑 → 3D 模型编辑器 W4.2+） -->
       <div class="tab-page" id="tab-anim">
         <div class="card">
-          <h2 data-i18n="anim.template">状态机模板</h2>
-          <div class="row">
-            <select id="animTemplate" style="max-width:260px"></select>
-            <button class="btn ghost small" id="btnApplyTemplate" data-i18n="anim.applyTemplate">应用模板动画名</button>
-          </div>
-          <p class="note" id="templateDesc"></p>
+          <h2 data-i18n="anim.existing">存在的动画（契约盘点）</h2>
+          <p class="note" data-i18n="anim.existingNote">清单来源：包的编辑器契约（editor/animation-contract.json）。✓ = 动画文件存在且可解析；✗ = 缺失。</p>
+          <div id="animExistingBox"></div>
         </div>
         <div class="card">
-          <h2>状态 → 动画名</h2>
-          <p class="note" data-i18n="anim.note">状态判定由主 mod 写死（determineAnimationState），你只需为每个状态填动画名。
-             动画名对应 spark_animations/entity/&lt;ns&gt;/&lt;name&gt;/&lt;动画名&gt;.json 的文件名。</p>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <h2 data-i18n="anim.mapping">本实体状态映射（只读）</h2>
+            <button class="btn ghost small" id="animEditIn3D" data-i18n="editor.editIn3D" title="在 3D 模型编辑器中编辑本实体的状态→动画映射（直写正式包）">✏️ 3D 模型编辑器中编辑</button>
+          </div>
+          <p class="note" data-i18n="anim.mappingNote">状态判定由主 mod 写死（determineAnimationState）；映射编辑请到 3D 模型编辑器（W4.2 起提供入口）。✗ = 对应动画文件尚不存在。</p>
           <table class="anim-table">
-            <thead><tr><th data-i18n="anim.state">状态</th><th data-i18n="anim.meaning">含义</th><th data-i18n="anim.animName">动画名</th></tr></thead>
+            <thead><tr><th data-i18n="anim.state">状态</th><th data-i18n="anim.meaning">含义</th><th data-i18n="anim.animName">动画名</th><th data-i18n="anim.exists">存在</th></tr></thead>
             <tbody id="animTableBody"></tbody>
           </table>
         </div>
@@ -326,9 +348,41 @@
       <div class="status" id="structStatus"></div>
       <pre class="out" id="structOutput"></pre>
     </div>
+
+    <!-- 动画契约（编辑器契约）：包声明 Module-Editor-Schema，编辑器只读盘点 + 校验 -->
+    <div id="contractEditorContent" class="hidden">
+      <div class="editor-header">
+        <span class="editor-title" id="contractTitle"></span>
+        <span class="editor-badge" id="contractBadge"></span>
+        <div class="editor-actions">
+          <button class="btn ghost" id="btnContractRefresh" data-i18n="editor.refresh">刷新</button>
+          <button class="btn accent" id="btnContractBuild" data-i18n="editor.build">打包</button>
+        </div>
+      </div>
+      <div id="contractBody"></div>
+      <div class="status" id="contractStatus"></div>
+      <pre class="out" id="contractOutput"></pre>
+    </div>
+
+    <!-- TimeTape 状态机可视化编辑器（W2 图形节点 + W3 实时仿真） -->
+    <div id="tapeEditorContent" class="hidden">
+      <div class="editor-header">
+        <span class="editor-title" id="tapeTitle"></span>
+        <span class="editor-badge ok" id="tapeBadge"></span>
+        <div class="editor-actions">
+          <button class="btn ghost" id="tapeBtnUndo">↺ 撤销</button>
+          <button class="btn accent" id="tapeBtnSave" data-i18n="editor.saveDraft">保存</button>
+        </div>
+      </div>
+      <div id="tapeMount"></div>
+    </div>
   </main>
 </div>
 
+<!-- W3.6 渲染端错误捕获：未捕获 JS / 未处理 Promise → 主进程日志（外部文件：本页 CSP 屏蔽内联脚本） -->
+<script src="lib/errorCapture.js"></script>
+<!-- W3.6.1 页面内模态框（替代 prompt；Electron 不支持 prompt()） -->
+<script src="lib/askModal.js"></script>
 <script src="i18n.js"></script>
 <script src="views/packList.js"></script>
 <script src="views/entityList.js"></script>
@@ -338,6 +392,10 @@
 <script src="core/structureDiagnostics.js"></script>
 <script src="views/structureList.js"></script>
 <script src="views/structureEditor.js"></script>
+<script src="views/contractView.js"></script>
+<script src="core/tapeEngine.js"></script>
+<script src="core/tapeDoc.js"></script>
+<script src="views/tapeEditor.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

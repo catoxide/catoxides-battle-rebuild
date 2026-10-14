@@ -172,6 +172,28 @@ function readCompoundBody(rd) {
     return obj;
 }
 
+// REVIEW-L1：gzip 炸弹防护。实测 256KB 零数据 → 256MB（~1029:1），
+// 恶意 .nbt（圈地导入对话框）可 OOM 主进程。输入上限 + 解压硬上限。
+// maxOutputLength 实测（cpe-nodeprobe2，Electron 33.4.11 / Node 20.18.3）：超限抛
+//   RangeError code=ERR_BUFFER_TOO_LARGE，msg="Cannot create a Buffer larger than N bytes"；
+//   系统 Node 24 同码。损坏数据（截断等）走 Z_DATA_ERROR 等其它码，不在此误吞。
+const GZIP_MAX_INPUT = 64 * 1024 * 1024;
+const GZIP_MAX_OUTPUT = 512 * 1024 * 1024;
+
+function gunzipLimited(buf) {
+    if (buf.length > GZIP_MAX_INPUT) {
+        throw new Error(`NBT: 压缩数据过大（${buf.length} > ${GZIP_MAX_INPUT} 字节）`);
+    }
+    try {
+        return zlib.gunzipSync(buf, { maxOutputLength: GZIP_MAX_OUTPUT });
+    } catch (e) {
+        if (e && (e.code === 'ERR_BUFFER_TOO_LARGE' || /too large/i.test(String(e.message || '')))) {
+            throw new Error('NBT: 解压后超出上限（512MB），疑似 gzip 炸弹');
+        }
+        throw e;
+    }
+}
+
 /**
  * 解码 NBT。输入 Buffer，自动识别 gzip 魔数。
  * @param {Buffer} input
@@ -180,7 +202,7 @@ function readCompoundBody(rd) {
  */
 function decode(input, endianness = 'LE') {
     let buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
-    if (buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b) buf = zlib.gunzipSync(buf);
+    if (buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b) buf = gunzipLimited(buf);
     const le = endianness !== 'BE';
     const rd = makeReader(buf, le);
     const rootType = rd.u8();

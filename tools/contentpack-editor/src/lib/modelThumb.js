@@ -64,31 +64,49 @@ export function drawModelThumb(canvas, model) {
         return matCache[boneName];
     }
 
+    // 骨骼 → cube 层级（10/09 重写：修复子骨 pivot 双重偏移——"僵尸头往上飞"）
+    //
+    // Bedrock 语义（与模型编辑器视口/游戏内渲染一致，zombie_3 现网核验）：
+    //   骨骼 pivot 与 cube origin 都在模型根空间（父骨无旋转时 = 父骨局部空间）。
+    // 旧实现把子骨 group 以"原始 pivot"直接挂到父骨 group 下，而父骨 group 的原点在
+    // 父骨 pivot 上 → 子骨 pivot 被二次偏移父骨 pivot。zombie_3：body pivot(0,12,0)，
+    // head pivot(0,24,0) → head 被渲染到 y36–44（正确 y24–32），headwear 再叠一层 +36。
+    // 修复：子骨 group 位置 = 子骨 pivot − 父骨 pivot（根空间 → 父骨局部空间）；
+    // 沿链累加 = 伸缩求和，每根骨骼世界位置 = 自己的 pivot（无旋转时）。
     const groups = {};
     for (const bone of model.bones) {
         const g = new THREE.Group();
-        // 骨骼 pivot 作为局部原点
         const p = bone.pivot || [0, 0, 0];
-        g.position.set(p[0], p[1], p[2]);
+        g.name = bone.name;
+        g.userData.pivot = p;
         groups[bone.name] = g;
-        // cubes
+        // cubes（origin 在根空间，group 原点在骨 pivot → 偏移 = origin − pivot）
         for (const cube of bone.cubes || []) {
-            const o = cube.origin || [0, 0, 0];
-            const s = cube.size || [1, 1, 1];
+            const inf = cube.inflate || 0;
+            const o = [
+                (cube.origin || [0, 0, 0])[0] - inf,
+                (cube.origin || [0, 0, 0])[1] - inf,
+                (cube.origin || [0, 0, 0])[2] - inf,
+            ];
+            const s0 = (cube.size || [1, 1, 1])[0], s1 = (cube.size || [1, 1, 1])[1], s2 = (cube.size || [1, 1, 1])[2];
+            const s = [s0 + 2 * inf, s1 + 2 * inf, s2 + 2 * inf];
+            if (!s0 || !s1 || !s2) continue; // 零尺寸 cube（占位）跳过
             const geo = new THREE.BoxGeometry(s[0], s[1], s[2]);
             const mesh = new THREE.Mesh(geo, materialFor(bone.name));
-            // cube 原点相对骨骼 pivot
             mesh.position.set(o[0] - p[0], o[1] - p[1], o[2] - p[2]);
             g.add(mesh);
         }
     }
-    // 组装层级：按 parent 挂载
     for (const bone of model.bones) {
         const g = groups[bone.name];
         if (!g) continue;
+        const p = g.userData.pivot;
         if (bone.parent && groups[bone.parent]) {
+            const pp = groups[bone.parent].userData.pivot;
+            g.position.set(p[0] - pp[0], p[1] - pp[1], p[2] - pp[2]);
             groups[bone.parent].add(g);
         } else {
+            g.position.set(p[0], p[1], p[2]);
             root.add(g);
         }
     }
@@ -164,15 +182,15 @@ function computeBoundingBox(model) {
     const min = new THREE.Vector3(Infinity, Infinity, Infinity);
     const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
     for (const bone of model.bones) {
-        const p = bone.pivot || [0, 0, 0];
         for (const cube of bone.cubes || []) {
+            // origin/size 均在模型根空间（Bedrock 语义，与层级构建一致）；inflate 展开几何
+            const inf = cube.inflate || 0;
             const o = cube.origin || [0, 0, 0];
             const s = cube.size || [1, 1, 1];
-            // cube 顶点相对骨骼 pivot（世界近似：累加 pivot）
-            for (const dx of [0, s[0]]) for (const dy of [0, s[1]]) for (const dz of [0, s[2]]) {
-                const x = p[0] + (o[0] - p[0]) + dx;
-                const y = p[1] + (o[1] - p[1]) + dy;
-                const z = p[2] + (o[2] - p[2]) + dz;
+            for (const dx of [0, s[0] + 2 * inf]) for (const dy of [0, s[1] + 2 * inf]) for (const dz of [0, s[2] + 2 * inf]) {
+                const x = o[0] - inf + dx;
+                const y = o[1] - inf + dy;
+                const z = o[2] - inf + dz;
                 min.x = Math.min(min.x, x); min.y = Math.min(min.y, y); min.z = Math.min(min.z, z);
                 max.x = Math.max(max.x, x); max.y = Math.max(max.y, y); max.z = Math.max(max.z, z);
             }

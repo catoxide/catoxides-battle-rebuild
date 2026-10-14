@@ -80,19 +80,46 @@ function isReady(root) {
     return !!(root && fs.existsSync(path.join(root, 'assets', 'minecraft', 'textures', 'block')));
 }
 
+// ===== REVIEW-S3：资源路径越界防护 =====
+// 数据驱动的 blockId/纹理 ID 可能来自恶意内容包（圈地 NBT 的 palette Name、
+// 包内 blockstate/model JSON 的 variant.model / textures 字段）。
+// 统一规则：正斜杠分段，拒绝空段 / '.' / '..' / 反斜杠 / 绝对路径。
+
+/** rel（'assets/ns/…/x.png' 正斜杠形）是否安全（无越界段） */
+function isSafeRel(rel) {
+    if (typeof rel !== 'string' || !rel) return false;
+    if (rel.includes('\\') || rel.startsWith('/')) return false;
+    return rel.split('/').every((s) => s !== '' && s !== '.' && s !== '..');
+}
+
+/** 资源 ID 路径段（可含 '/' 子目录，如 'block/stone_bricks'）是否安全 */
+function isSafeIdPath(id) {
+    if (typeof id !== 'string' || !id) return false;
+    if (id.includes('\\') || id.startsWith('/')) return false;
+    return id.split('/').every((s) => s !== '' && s !== '.' && s !== '..');
+}
+
+/** 单一命名空间/方块名（不允许 '/' 子目录）是否安全 */
+function isSafeSimpleName(name) {
+    return typeof name === 'string' && name.length > 0
+        && !name.includes('/') && !name.includes('\\') && name !== '.' && name !== '..';
+}
+
 /** 纹理 ID（minecraft:block/xxx）→ 绝对文件路径（不存在返回 null） */
 function texturePath(root, texId) {
     if (!texId) return null;
     let id = texId;
     if (id.startsWith('minecraft:')) id = id.slice('minecraft:'.length);
     else if (id.includes(':')) id = id.slice(id.indexOf(':') + 1); // 自定义命名空间 → 无本地文件
+    if (!isSafeIdPath(id)) return null; // REVIEW-S3：.. 段零防护 → 越界读任意 .png
     const rel = path.join('assets', 'minecraft', 'textures', id + '.png');
     const p = path.join(root, rel);
+    if (!p.startsWith(root + path.sep)) return null;
     if (fs.existsSync(p)) return p;
     // 常见回退：block/ 子目录
     const name = id.split('/').pop();
     const fb = path.join(root, 'assets', 'minecraft', 'textures', 'block', name + '.png');
-    if (fs.existsSync(fb)) return fb;
+    if (fb.startsWith(root + path.sep) && fs.existsSync(fb)) return fb;
     return null;
 }
 
@@ -138,6 +165,13 @@ function blockFaces(root, blockId) {
         return jsonCache.get(key);
     };
 
+    // REVIEW-S3：方块名/命名空间必须是单一安全段（对照 blockState L305 的同款拦截，
+    // 此前 blockFaces 缺失 → 'x:../../evil/blockstates/door' 可越界读 blockstate JSON）
+    if (!isSafeSimpleName(id.split(':')[0]) || !isSafeSimpleName(id.split(':').pop())) {
+        facesCache.set(id, MISSING);
+        return {};
+    }
+
     // 1) blockstate → 首选 axis=y（竖直原木类），否则第一个 variant
     const bsFile = path.join(root, 'assets', 'minecraft', 'blockstates', id.split(':').pop() + '.json');
     let modelId = null;
@@ -160,6 +194,12 @@ function blockFaces(root, blockId) {
 
     const ns = id.split(':')[0] || 'minecraft';
     const modelName = modelId.startsWith(ns + ':') ? modelId.slice(ns.length + 1) : modelId;
+    // REVIEW-S3：modelId 来自（可能恶意的）blockstate JSON 的 variant.model ——
+    // modelName 允许 '/' 子目录（如 block/stone_bricks），但拒绝 '..' 段与非法 ns
+    if (!isSafeIdPath(modelName) || !isSafeSimpleName(ns)) {
+        facesCache.set(id, MISSING);
+        return {};
+    }
     const modelFile = path.join(root, 'assets', ns, 'models', modelName + '.json');
     let tex = {};
     if (fs.existsSync(modelFile)) {
@@ -211,6 +251,11 @@ function blockIcon(assetRoot, blockId, opts = {}) {
     const colon = id.indexOf(':');
     const ns = id.slice(0, colon), name = id.slice(colon + 1);
     const res = { icon: null, from: null };
+    // REVIEW-S3：blockId 可能来自恶意蓝图/圈地 NBT → ns/name 必须是单一安全段
+    if (!isSafeSimpleName(ns) || !isSafeSimpleName(name)) {
+        iconCache.set(id, res);
+        return res;
+    }
     // ① 物品纹理：vanilla 资源根 → 正在编辑的内容包（若提供）
     const itemCands = [path.join(assetRoot, 'assets', ns, 'items', name + '.png')];
     if (opts && opts.packDir) itemCands.push(path.join(opts.packDir, 'assets', ns, 'items', name + '.png'));
@@ -332,10 +377,11 @@ function readZipEntry(jarPath, entryName) {
     for (let n = 0; n < count; n++) {
         if (off + 46 > buf.length || buf.readUInt32LE(off) !== 0x02014b50) return null;
         const method = buf.readUInt16LE(off + 10);
-        const clen = buf.readUInt32LE(off + 20);
-        const csize = buf.readUInt32LE(off + 24);
+        const compSize = buf.readUInt32LE(off + 20); // 压缩大小
+        // off+24 = 未压缩大小（只读参考；切片/边界必须用压缩大小）
         const nlen = buf.readUInt16LE(off + 28);
         const elen = buf.readUInt16LE(off + 30);
+        const commentLen = buf.readUInt16LE(off + 32);
         const loff = buf.readUInt32LE(off + 42);
         const name = buf.toString('utf8', off + 46, off + 46 + nlen);
         if (name === entryName) {
@@ -343,12 +389,17 @@ function readZipEntry(jarPath, entryName) {
             const lnlen = buf.readUInt16LE(loff + 26);
             const lelen = buf.readUInt16LE(loff + 28);
             const start = loff + 30 + lnlen + lelen;
-            if (start + csize > buf.length) return null;
-            const raw = buf.slice(start, start + csize);
+            // REVIEW-M2：边界检查与切片都用【压缩大小】（此前误用未压缩大小，
+            // stored 条目会切错；deflate 条目靠 inflate 忽略尾字节侥幸正确）
+            if (start + compSize > buf.length) return null;
+            const raw = buf.slice(start, start + compSize);
             try { return method === 8 ? zlib.inflateRawSync(raw) : Buffer.from(raw); }
             catch { return null; }
         }
-        off += 46 + nlen + elen + clen;
+        // REVIEW-M2：中央目录步进 = 46 + 文件名长 + 额外域长 + 【注释长】
+        // （此前误加 off+20 的 uint32 压缩大小 → 第二条目起恒定位错，
+        //   每个 jar 只有第一个条目可命中，mod jar 查找链整体失效）
+        off += 46 + nlen + elen + commentLen;
     }
     return null;
 }
@@ -368,6 +419,9 @@ function tryReadJson(p) {
  *   磁盘文件 → {abs}；jar 内 → {buf}；source ∈ vanilla|pack|datapack|mod:<jar名>
  */
 function findAsset(projectRoot, rel, opts = {}) {
+    // REVIEW-S3：rel 由各调用方（含恶意包 JSON 驱动的 modelRel/纹理 ID）拼出，
+    // 统一在此拒绝 '..' / '.' / 空段 / 反斜杠 / 绝对路径（resolveRepoFile 同款规则）
+    if (!isSafeRel(rel)) return null;
     const parts = rel.split('/');
     // 1) vanilla 数据集
     const root = resolveRoot(projectRoot);

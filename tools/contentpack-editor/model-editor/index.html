@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<!-- REVIEW-L3：与主窗口同款 CSP（此前两个子窗口无 CSP，纵深防御缺失） -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>3D 模型编辑器</title>
+<link rel="stylesheet" href="../src/styles.css">
+<style>
+  /* W3 编辑器局部样式（模块自包含，不动共享 styles.css） */
+  .ed-treerow:hover { background: rgba(255,255,255,.07); border-radius: 3px; }
+  .ed-insp-row { display: flex; gap: 4px; align-items: center; margin: 3px 0; }
+  .ed-insp-rowlabel { width: 118px; flex: none; color: #9ca3af; font-size: 12px; }
+  .ed-insp-num { width: 58px; flex: none; }
+  .ed-insp-text { width: 100%; }
+  .ed-insp-label { margin: 10px 0 4px; color: #7dd3fc; font-size: 12px; font-weight: 600; }
+  .ed-insp-perface { margin-top: 2px; }
+  .ed-toolbtns { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border-top: 1px solid rgba(255,255,255,.08); }
+  .ed-modebtn.active { outline: 2px solid #38bdf8; outline-offset: -2px; }
+  /* W3.1 一键保存面板 */
+  .ed-savepanel { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.55); }
+  .ed-savepanel[hidden] { display: none; }
+  .ed-savepanel-card { width: 560px; max-width: 92vw; max-height: 80vh; display: flex; flex-direction: column; background: #16181f; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; padding: 12px 14px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+  .ed-savepanel-title { font-weight: 600; margin-bottom: 4px; }
+  .ed-packrow { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .ed-packrow:hover { background: rgba(56,189,248,.12); }
+  .ed-packrow.current { outline: 1px solid rgba(250,204,21,.5); }
+  .ed-packrow .pk-name { font-weight: 600; min-width: 130px; }
+  .ed-packrow .pk-badge { color: #facc15; font-size: 11px; }
+  .ed-packrow .pk-target { color: #9ca3af; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* W3.6 状态栏错误色 */
+  .ed-statusbar .note.err { color: #f87171; font-weight: 600; }
+  /* W4.2 实体状态映射面板 */
+  .ed-srow { display: flex; gap: 6px; align-items: center; padding: 3px 0; }
+  .ed-snum { width: 16px; flex: none; color: #7dd3fc; font-weight: 600; text-align: center; }
+  .ed-slabel { width: 72px; flex: none; color: #9ca3af; font-size: 11px; }
+  .ed-sanim { flex: 1; min-width: 0; background: #0f1117; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; color: #e2e8f0; font-size: 12px; padding: 2px 6px; font-family: Consolas, monospace; }
+  .ed-sbadge { width: 14px; flex: none; text-align: center; font-size: 11px; }
+  .ed-sbadge.ok { color: #4ade80; }
+  .ed-sbadge.miss { color: #f87171; }
+  .ed-sbadge.warn { color: #facc15; }
+  .ed-sbadge.none { color: #4b5563; }
+  /* W4.3 部位配置面板 */
+  .ed-part { border: 1px solid rgba(255,255,255,.12); border-radius: 4px; margin: 5px 0; padding: 5px 6px; }
+  .ed-part-head { display: flex; gap: 4px; align-items: center; margin-bottom: 3px; }
+  .ed-part-name { flex: 1; min-width: 0; background: #0f1117; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; color: #e2e8f0; font-size: 12px; padding: 2px 5px; font-weight: 600; }
+  .ed-part-num { width: 46px; flex: none; background: #0f1117; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; color: #e2e8f0; font-size: 11px; padding: 2px 3px; }
+  .ed-part-fatal { display: flex; gap: 2px; align-items: center; font-size: 10px; color: #9ca3af; flex: none; }
+  .ed-part-del { flex: none; color: #f87171; background: none; border: none; cursor: pointer; font-size: 12px; }
+  .ed-unit { display: flex; gap: 4px; align-items: center; margin: 3px 0 3px 8px; }
+  .ed-unit-bone { flex: 1; min-width: 0; color: #cbd5e1; font-size: 11px; font-family: Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ed-unit-del { flex: none; color: #9ca3af; background: none; border: none; cursor: pointer; font-size: 11px; }
+  .ed-unit-del:hover { color: #f87171; }
+  .ed-part-addbone { margin: 2px 0 2px 8px; }
+  .ed-part-addbone select { background: #0f1117; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; color: #94a3b8; font-size: 11px; padding: 2px 4px; max-width: 150px; }
+  /* W3.5 资源仓库面板（与保存面板同风格） */
+  .ed-repopanel-card { width: 640px; max-width: 92vw; max-height: 80vh; display: flex; flex-direction: column; background: #16181f; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; padding: 12px 14px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+  .ed-repo-tabs { display: flex; gap: 6px; margin: 8px 0; }
+  .ed-repo-tab { padding: 4px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; background: rgba(255,255,255,.06); }
+  .ed-repo-tab.active { background: rgba(56,189,248,.2); outline: 1px solid #38bdf8; }
+  .ed-repo-search { width: 100%; box-sizing: border-box; padding: 5px 8px; margin-bottom: 6px; background: #0f1117; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; color: #e2e8f0; font-size: 12px; }
+  .ed-repo-list { flex: 1; overflow: auto; max-height: 420px; margin: 0 -8px; }
+  .ed-reporow { display: flex; gap: 8px; align-items: center; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .ed-reporow:hover { background: rgba(56,189,248,.12); }
+  .ed-reporow .rp-name { font-weight: 600; min-width: 150px; }
+  .ed-reporow .rp-src { color: #facc15; font-size: 11px; min-width: 120px; }
+  .ed-reporow .rp-path { color: #9ca3af; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ed-repo-hint { font-size: 11px; margin-top: 8px; }
+  /* W4.5 右侧面板：拖拽调宽 + 无面板级滚动条 + hidden 修复（.ed-toolgroup 的 display:flex 会覆盖 hidden 属性 → 空面板常驻） */
+  .ed-toolgroup[hidden] { display: none; }
+  #meRightDivider { width: 5px; flex: none; cursor: col-resize; border-left: 1px solid rgba(255,255,255,.08); }
+  #meRightDivider:hover, #meRightDivider.active { background: rgba(56,189,248,.35); }
+  /* W5.6 左栏拖拽（镜像右栏）+ 中央 3D/UV 分屏分隔条 + 视图模式切换组 */
+  #meLeftDivider { width: 5px; flex: none; cursor: col-resize; border-right: 1px solid rgba(255,255,255,.08); }
+  #meLeftDivider:hover, #meLeftDivider.active { background: rgba(56,189,248,.35); }
+  #meCenterDivider { height: 5px; flex: none; cursor: row-resize; border-top: 1px solid rgba(255,255,255,.08); }
+  #meCenterDivider:hover, #meCenterDivider.active { background: rgba(56,189,248,.35); }
+  .ed-vmodes { display: inline-flex; gap: 3px; padding: 2px; background: rgba(255,255,255,.05); border-radius: 6px; }
+  .ed-vmodes .btn { margin: 0; }
+  .ed-vmodes .btn.active { background: rgba(56,189,248,.22); outline: 1px solid #38bdf8; }
+  #meBtnAnim.active { background: rgba(56,189,248,.22); outline: 1px solid #38bdf8; }
+  #meUvCanvasWrap { scrollbar-width: thin; }
+  /* W5.6：UV 常驻区布局。display/flex 必须在样式表而非行内：
+     ① 行内 display:flex 会覆盖 [hidden]（W4.5 同款坑）→ 3D 模式下 UV 区无法隐藏；
+     ② setViewMode 用 style.flex='' 清除内联覆盖时，回退的是样式表值而非默认 0 1 auto
+        ——flex 放行内会被清成"内容高度"（uv 模式 UV 区塌成 281px 的根因） */
+  #meUvView { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; flex: 1 1 0; min-height: 150px; }
+  #meUvView[hidden] { display: none; }
+  /* 3D 视口容器：flex 同样走样式表（three canvas 是内容尺寸元素，basis 必须 0 否则分屏被挤成 canvas 独大） */
+  #meCanvasWrap { flex: 1 1 0; min-height: 0; }
+  #mePartsGroup .ed-toolbtns { margin-top: auto; }
+  /* W4.6 资源仓库：模型行单击 = 打开为主模型；行内 🔗 = 附加预览（旧行为） */
+  .ed-reporow .rp-attach { flex: none; margin-left: 6px; background: none; border: 1px solid rgba(255,255,255,.14); color: #94a3b8; border-radius: 4px; font-size: 11px; padding: 1px 6px; cursor: pointer; }
+  .ed-reporow .rp-attach:hover { color: #7dd3fc; border-color: rgba(56,189,248,.5); }
+  /* W7 动画时间线 */
+  #meTimeline { display: flex; flex-direction: column; overflow: hidden; background: #0d1017; }
+  #meTimeline[hidden] { display: none; }
+  .tl-toolbar { display: flex; align-items: center; gap: 6px; flex: none; padding: 5px 8px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .tl-toolbar .ed-spacer { flex: 1; }
+  .tl-title { font-size: 12px; font-weight: 600; }
+  /* 2026-10-14：🧲 接口（locator）行 */
+  .ed-locrow { display: flex; align-items: center; gap: 6px; padding: 2px 8px; cursor: pointer; color: #cbd5e1; }
+  .ed-locrow:hover { background: rgba(167,139,250,.12); }
+  .ed-locrow.sel { background: rgba(250,204,21,.16); color: #fde68a; }
+  .ed-locrow .loc-dot { color: #a78bfa; font-size: 11px; flex: none; }
+  .ed-locrow.sel .loc-dot { color: #facc15; }
+  .ed-locrow .loc-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ed-locrow .loc-bone { color: #64748b; }
+  /* 2026-10-14：时间 = 可输入框（键入秒数回车 = 播放头跳转） */
+  .tl-time { font-family: Consolas, monospace; font-size: 11px; width: 96px; text-align: right; color: #7dd3fc; background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 1px 4px; }
+  .tl-time:hover { border-color: rgba(255,255,255,.14); }
+  .tl-time:focus { border-color: #38bdf8; outline: none; background: #0f1117; }
+  .tl-opt { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: #94a3b8; }
+  .tl-opt select { background: #0f1117; color: #e2e8f0; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; font-size: 11px; max-width: 90px; }
+  .tl-zoomval { font-family: Consolas, monospace; font-size: 10px; color: #94a3b8; min-width: 52px; text-align: center; }
+  .tl-body { display: flex; flex: 1 1 0; min-height: 0; }
+  .tl-list { width: 190px; flex: none; overflow: auto; border-right: 1px solid rgba(255,255,255,.08); font-size: 12px; }
+  .tl-filehead { display: flex; align-items: center; gap: 4px; padding: 3px 8px 1px; font-size: 10px; color: #64748b; background: rgba(255,255,255,.03); }
+  .tl-filehead.dirty { color: #facc15; }
+  .tl-filehead.deleted { color: #f87171; }
+  .tl-animrow { display: flex; align-items: center; gap: 6px; padding: 2px 8px 2px 16px; cursor: pointer; color: #cbd5e1; }
+  .tl-animrow:hover { background: rgba(56,189,248,.1); }
+  .tl-animrow.cur { background: rgba(56,189,248,.22); color: #e0f2fe; }
+  .tl-animrow.shadow { opacity: 0.45; cursor: default; }
+  .tl-animrow.shadow .tl-animname { text-decoration: line-through; }
+  .tl-animname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-del { flex: none; background: none; border: none; color: #64748b; cursor: pointer; font-size: 11px; opacity: 0; }
+  .tl-animrow:hover .tl-del { opacity: 1; }
+  .tl-del:hover { color: #f87171; }
+  .tl-right { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  /* 2026-10-14：标尺 + 轨道 = 同一滚动容器（.tl-scrollcontent）+ 共享 110px 标签列 →
+     刻度与车道时间轴恒对齐（横向滚动同步）；播放头 = 全高线 .tl-playhead-line */
+  .tl-tracks { flex: 1 1 0; overflow: auto; }
+  .tl-scrollcontent { position: relative; min-width: 100%; }
+  .tl-ruler { display: flex; align-items: stretch; flex: none; height: 22px; border-bottom: 1px solid rgba(255,255,255,.1); background: #0b0d12; }
+  .tl-rulerarea { position: relative; flex: none; cursor: ew-resize; }
+  .tl-tick { position: absolute; bottom: 0; width: 1px; height: 6px; background: rgba(255,255,255,.25); }
+  .tl-tick.major { height: 11px; background: rgba(255,255,255,.5); }
+  .tl-tick span { position: absolute; left: 2px; bottom: 8px; font-size: 9px; color: #94a3b8; font-family: Consolas, monospace; }
+  .tl-playhead-line { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #f43f5e; pointer-events: none; }
+  .tl-row { display: flex; align-items: stretch; height: 26px; border-bottom: 1px solid rgba(255,255,255,.05); }
+  .tl-rowlabel { width: 110px; flex: none; position: sticky; left: 0; z-index: 2; display: flex; align-items: center; gap: 4px; padding: 0 6px; font-size: 11px; color: #94a3b8; background: #0d1017; border-right: 1px solid rgba(255,255,255,.08); overflow: hidden; white-space: nowrap; cursor: pointer; }
+  .tl-rulerspacer { color: #64748b; background: #0b0d12; cursor: default; font-size: 10px; }
+  .tl-lane { position: relative; flex: none; background-image: linear-gradient(to right, rgba(255,255,255,.05) 1px, transparent 1px); }
+  .tl-kf { position: absolute; top: 5px; width: 16px; height: 16px; margin-left: -8px; transform: rotate(45deg); border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 700; color: #0b0d12; z-index: 1; }
+  .tl-kf > * { }
+  .tl-kf::after { content: attr(data-l, ''); }
+  .tl-kf span { transform: rotate(-45deg); }
+  .tl-kf-r { background: #f87171; }
+  .tl-kf-p { background: #4ade80; }
+  .tl-kf-s { background: #60a5fa; }
+  .tl-kf-n { background: #facc15; width: 14px; height: 14px; margin-left: -7px; font-size: 9px; }
+  .tl-kf.sel { outline: 2px solid #fff; z-index: 3; }
+  .tl-keyedit { flex: none; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-top: 1px solid rgba(255,255,255,.1); font-size: 11px; flex-wrap: wrap; }
+  .tl-keyedit[hidden] { display: none; }
+  .tl-keyedit label { display: inline-flex; align-items: center; gap: 3px; color: #94a3b8; }
+  .tl-keyedit input, .tl-keyedit select { background: #0f1117; color: #e2e8f0; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; font-size: 11px; width: 64px; }
+  .tl-keyedit select { width: auto; }
+  .tl-ke-name { color: #7dd3fc; font-family: Consolas, monospace; }
+</style>
+</head>
+<body class="ed-body">
+  <!-- 模型编辑器子窗口（W3：gizmo + 大纲 + 属性 + undo；W3.5 资源联动 / W4 时间轴 / W5 契约落盘） -->
+  <header class="ed-topbar">
+    <span class="ed-logo">🧊 3D 模型编辑器</span>
+    <button class="btn small" id="meBtnNew" title="新建模型（identifier + 贴图尺寸 + 模板；保存时另存为）">✨ 新建</button>
+    <button class="btn ghost small" id="meBtnRepo" title="浏览仓库资源（模型 = 单击打开为主模型 / 🔗 附加预览；贴图 = 单击应用到当前模型）">📦 资源</button>
+    <button class="btn small" id="meBtnOpen" title="spark 模型 .json 或 Blockbench .bbmodel（自动识别）">📂 打开模型</button>
+    <!-- W5.6 视图模式（UV 常驻非浮窗：3D / 3D+UV 分屏 / UV 2D；分屏分隔条可拖）· W7 + 动画（姿态编辑 + 底部时间线） -->
+    <span class="ed-vmodes" id="meViewModes" title="视图模式：3D / 3D+UV 分屏 / UV 2D / 🎬 动画（姿态编辑 + 时间线）">
+      <button class="btn small" id="meMode3d" data-mode="3d" title="仅 3D 视口（建模）">3D</button>
+      <button class="btn small" id="meModeSplit" data-mode="split" title="3D 上 + UV 下（分隔条可拖高度）">分屏</button>
+      <button class="btn small" id="meModeUv" data-mode="uv" title="仅 UV/贴图 2D">UV</button>
+      <button class="btn small" id="meModeAnim" data-mode="anim" title="动画：auto-key 姿态编辑 + 底部时间线（左栏骨骼/cube 可选 · 右栏配置照旧 · 隐藏建模专用按钮）">🎬 动画</button>
+    </span>
+    <input type="file" id="meModelFile" accept=".json,.bbmodel" hidden>
+    <button class="btn ghost small" id="meBtnTex">🎨 贴图</button>
+    <input type="file" id="meTexFile" accept=".png,.webp" hidden>
+    <button class="btn small" id="meBtnSave" title="导出并写回源文件（规范化形式；.bbmodel 源 = Blockbench v5 格式）">💾 保存</button>
+    <button class="btn ghost small" id="meBtnSaveAs" title="一键选择内容包保存（当前包高亮；可换包/换名）">⬇ 另存为</button>
+    <button class="btn ghost small" id="meBtnBbExport" title="导出为 Blockbench .bbmodel（v5 原生格式，可直接在 Blockbench 打开编辑）">⬇ bbmodel</button>
+    <span class="ed-spacer"></span>
+    <button class="btn ghost small" id="meBtnUndo" title="Ctrl+Z">↶</button>
+    <button class="btn ghost small" id="meBtnRedo" title="Ctrl+Y">↷</button>
+    <span class="note" id="meModelName"></span>
+  </header>
+  <div class="ed-main">
+    <aside class="ed-tools" id="meLeftPanel" style="width:240px;flex:none;overflow:hidden">
+      <div class="ed-toolgroup" style="flex:1;display:flex;flex-direction:column">
+        <div class="ed-group-title">大纲</div>
+        <div id="meOutliner" style="overflow:auto;flex:1;font-size:12px"></div>
+        <!-- W7：动画分页隐藏此组（建模专属） -->
+        <div class="ed-toolbtns" id="meModelBtns">
+          <button class="btn ghost small" id="meBtnAddBone" title="在选中骨骼下（无选中=根）加骨骼">+ 骨骼</button>
+          <button class="btn ghost small" id="meBtnAddCube" title="给选中骨骼加 cube">+ cube</button>
+          <button class="btn ghost small" id="meBtnDup" title="复制选中骨骼（整棵子树）">⧉ 复制</button>
+          <button class="btn ghost small" id="meBtnDel" title="Delete 删除选中（骨骼连同子树重挂）">🗑 删除</button>
+          <span class="note" style="width:100%;font-size:10px">双击骨骼 = 重命名</span>
+        </div>
+      </div>
+      <!-- 2026-10-14：🧲 接口/插入模型（动画页专属分栏：原模型预留接口 = locator/虚拟骨，
+           新模型零偏移吸附；播放 = 与主模型同名状态同步） -->
+      <div class="ed-toolgroup" id="meInsertPanel" hidden style="border-top:1px solid rgba(255,255,255,.08)">
+        <div class="ed-group-title" title="接口 = 模型里的 locator（虚拟骨）；属性面板骨骼页可增删改">🧲 接口（插入点）</div>
+        <div id="meLocList" style="overflow:auto;max-height:150px;font-size:12px"></div>
+        <div class="note" id="meInsertedInfo" style="font-size:10px;padding:2px 8px"></div>
+        <div class="ed-toolbtns">
+          <button class="btn ghost small" id="meBtnInsert" title="选一个仓库模型插入到当前接口（零偏移吸附）">＋ 插入模型</button>
+          <button class="btn ghost small" id="meBtnInsertRemove" title="移除插入的模型" hidden>✕ 移除</button>
+        </div>
+      </div>
+    </aside>
+    <div id="meLeftDivider" title="拖拽调整左侧面板宽度"></div>
+    <!-- W5.6 中央视图区：3D 视口 / UV 常驻 / 上下分屏（3D 上 · UV 下 · 分隔条可拖） -->
+    <div id="meCenterWrap" style="flex:1;min-width:0;min-height:0;display:flex;flex-direction:column">
+      <!-- W5.6：flex:1 1 0 走样式表 #meCanvasWrap（three canvas 是内容尺寸元素，basis auto 会把分屏挤成 canvas 独大） -->
+      <div class="ed-canvaswrap" id="meCanvasWrap" style="position:relative">
+      </div>
+      <div id="meCenterDivider" hidden title="拖拽调整 3D/UV 分屏高度"></div>
+      <!-- W5.6 UV 常驻区（替代 W4.7 浮窗）：贴图 + 每面 UV 矩形（选中 cube 黄色高亮 + 右侧明细 = 该 cube 每面贴图位置）+ 像素编辑工具条 + 缩放 -->
+      <div id="meUvView" hidden>
+        <div style="display:flex;align-items:center;gap:8px;flex:none">
+          <span style="font-size:12px;font-weight:600;flex:none">🧵 UV/贴图</span>
+          <span class="note" id="meUvInfo" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+          <span class="ed-spacer"></span>
+          <button class="btn ghost small" id="meUvZoomOut" title="缩小（Ctrl+滚轮）">−</button>
+          <button class="btn ghost small" id="meUvZoomIn" title="放大（Ctrl+滚轮）">＋</button>
+          <button class="btn ghost small" id="meUvZoomFit" title="适应窗口">⤢ 适应</button>
+        </div>
+        <div style="display:flex;gap:10px;flex:1;min-height:0">
+          <!-- W5.6：margin:auto 居中（替代 align/justify center —— 画布超出时 overflow 容器才能正常滚动到左上角） -->
+          <div id="meUvCanvasWrap" style="flex:1;min-height:0;background:#0b0d12;border:1px solid rgba(255,255,255,.12);border-radius:6px;overflow:auto;display:flex">
+            <canvas id="meUvCanvas" style="image-rendering:pixelated;flex:none;margin:auto"></canvas>
+          </div>
+          <div id="meUvDetail" style="width:240px;flex:none;overflow:auto;font-size:11px"></div>
+        </div>
+        <!-- W5.1 像素编辑工具条（左=主色 / 右=副色 · X 互换 · B/E/F/I 工具） -->
+        <div class="ed-toolbtns" style="gap:5px;align-items:center">
+          <button class="btn ghost small ed-modebtn" id="meUvToolBrush" title="B 画笔：左键=主色 / 右键=副色">🖌 画笔</button>
+          <button class="btn ghost small ed-modebtn" id="meUvToolEraser" title="E 橡皮（alpha=0）">🧽 橡皮</button>
+          <button class="btn ghost small ed-modebtn" id="meUvToolFill" title="F 填充（精确匹配连通区）">🪣 填充</button>
+          <button class="btn ghost small ed-modebtn" id="meUvToolPick" title="I 吸管（取样为主色；右键=副色）">💉 吸管</button>
+          <button class="btn ghost small ed-modebtn" id="meUvSize1" title="1px 笔刷">1px</button>
+          <button class="btn ghost small ed-modebtn" id="meUvSize2" title="2px 笔刷">2px</button>
+          <button class="btn ghost small ed-modebtn" id="meUvSize4" title="4px 笔刷">4px</button>
+          <button class="btn ghost small ed-modebtn" id="meUvRects" title="显示/隐藏 UV 面矩形（红东/黄西/蓝顶/绿底/紫南/粉北）">▦ UV</button>
+          <span style="display:flex;align-items:center;gap:2px;margin:0 4px;position:relative">
+            <span id="meUvSwBg" title="副色（右键涂）—— 点击打开选色器" style="width:20px;height:20px;border-radius:3px;border:1px solid rgba(255,255,255,.35);cursor:pointer;position:absolute;left:14px;top:-8px;z-index:1"></span>
+            <span id="meUvSwFg" title="主色（左键涂）—— 点击打开选色器" style="width:20px;height:20px;border-radius:3px;border:1px solid rgba(255,255,255,.55);cursor:pointer;position:relative;z-index:2"></span>
+            <button class="btn ghost small" id="meUvSwSwap" title="X：互换主/副色" style="padding:1px 5px;margin-left:16px">⇄</button>
+          </span>
+          <span class="note" id="meUvHex" style="font-family:Consolas,monospace;font-size:11px;min-width:74px"></span>
+          <span class="note" id="meUvCursor" style="font-size:10px;min-width:52px"></span>
+          <button class="btn ghost small" id="meUvUndo" title="Ctrl+Z（贴图撤销）">↶</button>
+          <button class="btn ghost small" id="meUvRedo" title="Ctrl+Y（贴图重做）">↷</button>
+          <span class="note" style="flex:1;font-size:11px">左键=主色 · 右键=副色 · X 互换 · 点 UV 区 = 3D 选中 · Ctrl+滚轮 = 缩放</span>
+          <button class="btn small" id="meUvSaveTex" title="保存 PNG（覆写已应用贴图；无已应用贴图 = 对话框选路径；存进内容包 = 自动写契约）">💾 保存贴图</button>
+        </div>
+      </div>
+      <!-- W7 动画时间线（🎬 顶栏开关；动画族列表 + 传输条 + 标尺 + 骨骼×R/P/S 轨道 + ⚡过点脚本 + 🔗帧搬运 + 🏃移动模拟） -->
+      <!-- 2026-10-13 修复：flex:0 0 auto 时高度=内容高，而 tl-list/tl-right 是 overflow:auto
+           滚动容器（内容高度贡献塌 0）→ 时间线只剩 51px 工具栏、族列表/标尺/轨道全不可见。
+           改为固定占比 42%（canvas 保留 58%），tl-body 的 flex:1 填充剩余高度。 -->
+      <div id="meTimeline" hidden style="flex:0 0 42%;border-top:1px solid rgba(255,255,255,.14)"></div>
+    </div>
+    <div id="meRightDivider" title="拖拽调整右侧面板宽度"></div>
+    <!-- W5.6：默认 320px = 属性面板向量行（118+3×58+间距≈304px + 内边距）无横向滚动条的最小宽 -->
+    <aside class="ed-tools" id="meRightPanel" style="width:320px;flex:none;overflow:hidden">
+      <!-- W4.2 实体状态映射（主窗口动画页签「3D 中编辑」推送实体上下文后显示；保存 = 直写正式包） -->
+      <div class="ed-toolgroup" id="meStateGroup" hidden style="flex:0 0 auto">
+        <div class="ed-group-title">状态映射 <span class="note" id="meStateEntity"></span></div>
+        <div id="meStateMap" style="padding:0 8px;font-size:12px"></div>
+        <div class="ed-toolbtns">
+          <button class="btn small" id="meStateSave" title="写回正式包 entities/&lt;id&gt;.json（游戏生效需重建 jar）">💾 保存映射</button>
+          <button class="btn ghost small" id="meStateClose" title="关闭面板（不改动数据）">✕</button>
+        </div>
+      </div>
+      <!-- W4.3 实体部位配置（bodypart 血量/致死/传导/骨骼单元；保存 = 直写正式包 assets/<ns>/health_config/<id>.json） -->
+      <div class="ed-toolgroup" id="mePartsGroup" hidden style="flex:1 1 0;min-height:110px">
+        <div class="ed-group-title">部位配置 <span class="note" id="mePartsEntity"></span></div>
+        <div id="mePartsBody" style="overflow:auto;flex:1;min-height:40px;padding:0 8px;font-size:11px"></div>
+        <div class="ed-toolbtns">
+          <button class="btn ghost small" id="mePartsGen" title="生成 head/body/arm/leg 四个默认部位并按骨骼名自动分组">⚙ 生成默认</button>
+          <button class="btn ghost small" id="mePartsAdd" title="添加空部位">+ 部位</button>
+          <button class="btn small" id="mePartsSave" title="直写正式包 assets/&lt;ns&gt;/health_config/&lt;id&gt;.json（游戏生效需重建 jar）">💾 保存部位</button>
+          <button class="btn ghost small" id="mePartsClose" title="关闭面板（不改动数据）">✕</button>
+        </div>
+      </div>
+      <div class="ed-toolgroup" style="flex:1 1 0;min-height:100px;display:flex;flex-direction:column">
+        <div class="ed-group-title">属性</div>
+        <div id="meInspector" style="overflow:auto;flex:1;font-size:12px"></div>
+      </div>
+    </aside>
+  </div>
+  <footer class="ed-statusbar">
+    <span class="note" id="meStatus">未加载模型 —— 「✨ 新建」或「打开模型」选择 spark 模型 JSON（须在 contentpacks-source 内）</span>
+    <span class="note ed-spacer"></span>
+    <button class="btn ghost small" id="meBtnLog" title="打开日志目录（W3.6 崩溃/错误定位）">📜 日志</button>
+    <!-- W5.1：右下角鼠标功能提示（pieceEditor 同款：随当前工具动态变化） -->
+    <span class="note" id="meMouseHint" style="max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+  </footer>
+  <!-- W3.1 一键保存面板：点选内容包 → 约定路径落盘（+动画目录/缺省契约脚手架） -->
+  <div id="meSavePanel" class="ed-savepanel" hidden>
+    <div class="ed-savepanel-card">
+      <div class="ed-savepanel-title">💾 保存 <span id="meSavePanelName"></span></div>
+      <div class="note" style="margin:0 0 6px;font-size:11px">点选内容包，按约定路径落盘 <code>spark_models/entity/&lt;ns&gt;/&lt;name&gt;.json</code>（自动建动画目录与缺省契约）</div>
+      <div id="meSavePackList" style="flex:1;overflow:auto;max-height:280px;margin:0 -8px"></div>
+      <div class="ed-toolbtns" style="border-top:1px solid rgba(255,255,255,.08)">
+        <button class="btn ghost small" id="meSaveManual" style="flex:1">…或手动选择文件路径</button>
+        <button class="btn ghost small" id="meSaveCancel">取消</button>
+      </div>
+    </div>
+  </div>
+  <!-- W3.6.1 新建模型面板（Electron 不支持 prompt()，原三连 prompt 已替换） -->
+  <div id="meNewPanel" class="ed-savepanel" hidden>
+    <div class="ed-savepanel-card">
+      <div class="ed-savepanel-title">✨ 新建模型</div>
+      <label style="display:block;margin:8px 0 4px;color:#94a3b8;font-size:12px">模型标识（ns:name，如 zombie3pack:new_zombie；不写 ns = "new"）</label>
+      <input class="ed-repo-search" id="meNewIdent" type="text" placeholder="zombie3pack:new_zombie">
+      <label style="display:block;margin:8px 0 4px;color:#94a3b8;font-size:12px">贴图尺寸（宽×高，留空 = 64×64）</label>
+      <input class="ed-repo-search" id="meNewSize" type="text" placeholder="64×64（留空默认）">
+      <label style="display:block;margin:8px 0 4px;color:#94a3b8;font-size:12px">模板</label>
+      <select class="ed-repo-search" id="meNewTpl">
+        <option value="1">标准人形（zombie 7 骨 + hitbox locators）</option>
+        <option value="0">空白</option>
+      </select>
+      <div class="ed-toolbtns" style="border-top:1px solid rgba(255,255,255,.08)">
+        <button class="btn small" id="meNewCreate" style="flex:1">创建</button>
+        <button class="btn ghost small" id="meNewCancel">取消</button>
+      </div>
+    </div>
+  </div>
+  <!-- W3.5 资源仓库选择器：跨包浏览 spark 模型 / 贴图 -->
+  <div id="meRepoPanel" class="ed-savepanel" hidden>
+    <div class="ed-repopanel-card">
+      <div class="ed-savepanel-title">📦 资源仓库</div>
+      <div class="ed-repo-tabs">
+        <div class="ed-repo-tab active" id="meRepoTabModels">模型</div>
+        <div class="ed-repo-tab" id="meRepoTabTextures">贴图</div>
+      </div>
+      <input class="ed-repo-search" id="meRepoSearch" type="text" placeholder="过滤（名称 / 包 / 路径）…">
+      <div class="ed-repo-list" id="meRepoList"></div>
+      <div class="ed-repo-hint note" id="meRepoHint"></div>
+      <div class="ed-toolbtns" style="border-top:1px solid rgba(255,255,255,.08)">
+        <button class="btn ghost small" id="meRepoCancel" style="flex:1">关闭</button>
+      </div>
+    </div>
+  </div>
+  <!-- W5.6：原 W4.7 UV 浮窗已移除 —— UV 改常驻 meCenterWrap 底部（meUvView），见视图模式组 -->
+  <!-- W3.6 渲染端错误捕获：未捕获 JS / 未处理 Promise → 主进程日志 + 状态栏红字 -->
+  <script src="../src/lib/errorCapture.js"></script>
+  <!-- W3.6.1 页面内模态框（替代 prompt） -->
+  <script src="../src/lib/askModal.js"></script>
+  <script src="core/model.js"></script>
+  <script src="core/animation.js"></script>
+  <script src="core/tick.js"></script>
+  <script src="core/undo.js"></script>
+  <script src="core/evaluate.js"></script>
+  <script src="core/keyframeOps.js"></script>
+  <script src="core/chaining.js"></script>
+  <script src="core/sparkCodec.js"></script>
+  <script src="core/sparkScaffold.js"></script>
+  <script src="core/bedrockUV.js"></script>
+  <script src="core/bbmodel.js"></script>
+  <script src="ui/outliner.js"></script>
+  <script src="ui/inspector.js"></script>
+  <!-- W5.1 像素编辑器（零依赖自研；选色器交互参考 vanilla-colorful/Photopea） -->
+  <script src="ui/colorPicker.js"></script>
+  <script src="ui/pixelEditor.js"></script>
+  <script src="ui/timeline.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

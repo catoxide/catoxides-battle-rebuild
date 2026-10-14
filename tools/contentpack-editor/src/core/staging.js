@@ -26,7 +26,10 @@ function packStagingDir(packName) {
 }
 
 function sanitize(name) {
-    return String(name || 'unnamed').replace(/[\\/:*?"<>|]/g, '_');
+    let s = String(name || 'unnamed').replace(/[\\/:*?"<>|]/g, '_');
+    // REVIEW-L6：'.' / '..' 会拼出越界目录（structures/.. = staging 包根），中和掉
+    if (s === '.' || s === '..' || s === '') s = '_';
+    return s;
 }
 
 /**
@@ -244,6 +247,31 @@ function removeStagedEntity(packName, entityId) {
 }
 
 /**
+ * 删除单个 (namespace, entityId) 的暂存部位配置（REVIEW-S1：health:delete 专用）。
+ * 只删 health 草稿，【不碰】entities/<id>.json 实体草稿——
+ * 此前 health:delete 借用 removeStagedEntity 的连带删除，导致"无部位配置的实体
+ * 保存草稿"时被误删刚写入的实体草稿（最常见保存路径静默丢数据）。
+ * @param {string} packName
+ * @param {string} namespace
+ * @param {string} entityId
+ */
+function removeStagedHealthConfig(packName, namespace, entityId) {
+    if (!namespace || !entityId) return false;
+    const f = path.join(packStagingDir(packName), 'assets', namespace, 'health_config', entityId + '.json');
+    if (fs.existsSync(f)) fs.unlinkSync(f);
+    // 兜底：namespace 猜错（如删除路径与保存路径的 ns 转换不一致）时，按 id 全 ns 清理
+    const assetsDir = path.join(packStagingDir(packName), 'assets');
+    if (fs.existsSync(assetsDir)) {
+        for (const ns of fs.readdirSync(assetsDir, { withFileTypes: true })) {
+            if (!ns.isDirectory() || ns.name === namespace) continue;
+            const f2 = path.join(assetsDir, ns.name, 'health_config', entityId + '.json');
+            if (fs.existsSync(f2)) fs.unlinkSync(f2);
+        }
+    }
+    return true;
+}
+
+/**
  * 删除单个结构的暂存（结构删除时联动）
  * @param {string} packName
  * @param {string} structureId
@@ -269,5 +297,6 @@ module.exports = {
     exportStaged,
     discardStaged,
     removeStagedEntity,
+    removeStagedHealthConfig,
     removeStagedStructure,
 };

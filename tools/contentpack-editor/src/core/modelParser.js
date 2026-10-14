@@ -33,6 +33,7 @@ function parseModel(jsonText) {
             size: c.size || [0, 0, 0],
             pivot: c.pivot || [0, 0, 0],
             uv: c.uv || [0, 0],
+            inflate: c.inflate || 0,
         })),
         locators: b.locators || {},
     }));
@@ -92,13 +93,20 @@ function parseModelFile(filePath) {
  * @param {string} jarPath
  * @returns {Promise<string[]>} jar 内路径列表（如 spark_models/entity/ns/name.json）
  */
+// REVIEW-L7：jar 条目路径校验（防 'spark_models/../../evil.json' 越界条目过过滤）
+function isSafeJarEntry(l) {
+    if (typeof l !== 'string' || !l) return false;
+    if (l.includes('\\')) return false;
+    return l.split('/').every((s) => s !== '' && s !== '.' && s !== '..');
+}
+
 async function listModelsInJar(jarPath) {
     const { execFileSync } = require('child_process');
     const stdout = execFileSync('jar', ['tf', jarPath], { encoding: 'utf-8' });
     return stdout
         .split(/\r?\n/)
         .map((l) => l.trim())
-        .filter((l) => l.startsWith('spark_models/') && l.endsWith('.json'));
+        .filter((l) => l.startsWith('spark_models/') && l.endsWith('.json') && isSafeJarEntry(l));
 }
 
 /**
@@ -110,10 +118,22 @@ async function listModelsInJar(jarPath) {
 async function parseModelFromJar(jarPath, modelPathInJar) {
     const { execFileSync } = require('child_process');
     const os = require('os');
+    // REVIEW-L7：jar 内路径必须是 spark_models/ 下的安全相对路径
+    //（'spark_models/../../evil.json' 能否落盘取决于 JDK jar 工具版本行为，
+    //  统一在此拒绝 + 解后校验落点兜底）
+    const norm = String(modelPathInJar || '').replace(/\\/g, '/');
+    if (!norm.startsWith('spark_models/') || !isSafeJarEntry(norm) || !norm.endsWith('.json')) {
+        throw new Error('非法的 jar 内模型路径: ' + modelPathInJar);
+    }
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpe-model-'));
-    const tmpFile = path.join(tmpDir, path.basename(modelPathInJar));
+    const tmpFile = path.join(tmpDir, path.basename(norm));
     try {
-        execFileSync('jar', ['xf', jarPath, modelPathInJar], { cwd: tmpDir, stdio: 'pipe' });
+        execFileSync('jar', ['xf', jarPath, norm], { cwd: tmpDir, stdio: 'pipe' });
+        // 解后校验：落点必须仍在 tmpDir 内
+        if (!path.resolve(tmpFile).startsWith(path.resolve(tmpDir) + path.sep)) {
+            throw new Error('jar 提取落点越界: ' + modelPathInJar);
+        }
+        if (!fs.existsSync(tmpFile)) throw new Error('jar 中提取失败: ' + modelPathInJar);
         const jsonText = fs.readFileSync(tmpFile, 'utf-8');
         const result = parseModel(jsonText);
         result.filePath = modelPathInJar;

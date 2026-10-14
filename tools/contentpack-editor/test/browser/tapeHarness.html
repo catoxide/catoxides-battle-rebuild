@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<!-- tapeHarness.html — TimeTape 编辑器渲染冒烟测试（无 Electron：stub window.api） -->
+<!-- 用法：playwright-cli open file://.../tapeHarness.html 然后 eval "window.__tapeSmoke" -->
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>tape harness</title>
+<link rel="stylesheet" href="../../src/styles.css">
+<style>
+  /* 让中栏可见（正常 app 是 flex 三栏；这里独立跑） */
+  body { display: block; height: auto; overflow: auto; }
+  #tapeEditorContent { height: 720px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+  <!-- 与 src/index.html 相同的框架骨架 -->
+  <div id="tapeEditorContent" class="hidden">
+    <div class="editor-header">
+      <span class="editor-title" id="tapeTitle"></span>
+      <span class="editor-badge ok" id="tapeBadge"></span>
+      <div class="editor-actions">
+        <button class="btn ghost" id="tapeBtnUndo">↺ 撤销</button>
+        <button class="btn accent" id="tapeBtnSave">保存</button>
+      </div>
+    </div>
+    <div id="tapeMount"></div>
+  </div>
+
+<script>
+  // ===== stubs（必须在 i18n/views 之前）=====
+  window.__errors = [];
+  window.addEventListener('error', (e) => window.__errors.push('error: ' + e.message));
+  window.addEventListener('unhandledrejection', (e) => window.__errors.push('reject: ' + (e.reason && e.reason.message || e.reason)));
+
+  const SMOKE_DOC = {
+    format_version: '1.0.0',
+    initial_tags: { mood: 'calm' },
+    tracks: {
+      body: {
+        initial: 'still',
+        states: {
+          still: {
+            anim: { group: 1, name: 'still', loop: true, blend_in: 0.05 },
+            exit: [{ when: 'is_moving', to: 'walking' }],
+          },
+          walking: {
+            anim: { group: 1, name: 'walking', loop: true, alt: { tag: 'hit_dir', if: 'back', then: 'hit_back' } },
+            exit: [
+              { when: 'all(has_target, not(is_moving))', to: 'aggressive', priority: 3 },
+              { when: 'swinging', to: 'attack', priority: 5, after: 0.1 },
+            ],
+          },
+          aggressive: {
+            anim: { group: 1, name: 'aggressive', loop: true },
+            exit: [{ when: 'not(has_target)', to: 'walking' }],
+          },
+          attack: {
+            on_enter: [{ do: 'swing' }],
+            segments: [
+              { until: 0.15, anim: { group: 1, name: 'attack', loop: false }, next: 'settle', milestones: [{ at: 0.1, do: 'apply_damage', amount: 4 }] },
+            ],
+          },
+          settle: {
+            segments: [{ until: 0.4, anim: { group: 1, name: 'still' } }],
+            exit: [{ when: 'not(swinging)', to: 'walking', before: 10 }],
+          },
+          dead: { terminal: true, anim: { group: 1, name: 'still', loop: false } },
+        },
+      },
+      weapon: {
+        initial: 'idle',
+        states: {
+          idle: { anim: { group: 1, name: 'still', loop: true } },
+        },
+      },
+    },
+  };
+
+  let saveCount = 0;
+  window.api = {
+    tapeReadFile: async ({ rel }) => {
+      if (rel === 'editor/tape_layout.json') return { ok: false, error: 'no layout' };
+      if (rel === 'sm.json') return { ok: true, data: { content: JSON.stringify(SMOKE_DOC, null, 2), path: 'stub:sm.json' } };
+      return { ok: false, error: 'unknown rel: ' + rel };
+    },
+    tapeSaveFile: async () => { saveCount++; return { ok: true, data: {} }; },
+    tapeReadLayout: async () => ({ ok: false, error: 'no layout' }),
+    tapeSaveLayout: async () => ({ ok: true }),
+  };
+  window.AppState = { activeFrame: 'tape', pack: { dir: 'stub', name: 'stub' } };
+  window.showError = (m) => window.__errors.push('showError: ' + m);
+  window.showStatus = () => {};
+  window.applyEditorVisibility = function () {
+    const t = document.getElementById('tapeEditorContent');
+    if (t) t.classList.toggle('hidden', window.AppState.activeFrame !== 'tape');
+  };
+</script>
+<script src="../../src/lib/askModal.js"></script>
+<script src="../../src/i18n.js"></script>
+<script src="../../src/core/tapeEngine.js"></script>
+<script src="../../src/core/tapeDoc.js"></script>
+<script src="../../src/views/tapeEditor.js"></script>
+<script>
+  // ===== 驱动（等 DOMContentLoaded，与真实 app 时序一致）=====
+  window.addEventListener('DOMContentLoaded', () => { runSmoke(); });
+  function runSmoke() {
+  (async () => {
+    const steps = [];
+    const ok = (name, cond, extra) => steps.push({ name, ok: !!cond, extra: extra || '' });
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    try {
+      await window.TapeEditor.open({ packName: 'stub', relPath: 'sm.json', animNames: ['still', 'walking', 'attack', 'hit_back', 'aggressive'], title: 'smoke' });
+      await sleep(30);
+      ok('open: 框架可见', !document.getElementById('tapeEditorContent').classList.contains('hidden'));
+      ok('open: 工具栏有 2 个轨 tab', document.querySelectorAll('#tapeToolbar .tab').length === 2);
+      ok('画布: 6 个 body 节点', document.querySelectorAll('.tape-node').length === 6,
+        'actual=' + document.querySelectorAll('.tape-node').length);
+      ok('画布: 5 条边', document.querySelectorAll('.tape-edge').length === 5,
+        'actual=' + document.querySelectorAll('.tape-edge').length);
+      ok('画布: 初始节点带 initial 类', !!document.querySelector('.tape-node.initial'));
+      ok('画布: 终态节点带 terminal 类', !!document.querySelector('.tape-node.terminal'));
+      ok('徽标: ✓ 或 数字', document.getElementById('tapeBadge').textContent.length > 0);
+
+      // 选中状态节点（pointerdown+up 无位移 = 点击）
+      const g0 = document.querySelector('.tape-node[data-state="walking"]');
+      const r = g0.getBoundingClientRect();
+      const cx = r.left + 20, cy = r.top + 12;
+      g0.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: cx, clientY: cy, button: 0, pointerId: 1 }));
+      g0.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: cx, clientY: cy, button: 0, pointerId: 1 }));
+      await sleep(20);
+      // 注意：renderAll 会重建 svg，旧 g 已脱离文档——重新查询
+      const g1 = document.querySelector('.tape-node[data-state="walking"]');
+      ok('选中: 节点带 sel 类', g1 && g1.classList.contains('sel'));
+      const inspText = document.getElementById('tapeInspector').textContent;
+      const inspInputs = [...document.querySelectorAll('#tapeInspector input')].map((i) => i.value);
+      ok('检查器: 显示 walking 的转移表', /转移|Exits/.test(inspText) && inspInputs.includes('all(has_target, not(is_moving))'));
+
+      // 加一条转移
+      const addBtn = [...document.querySelectorAll('#tapeInspector button')].find((b) => /转移|transition/i.test(b.textContent));
+      addBtn.click();
+      await sleep(20);
+      ok('加转移: 边数 +1', document.querySelectorAll('.tape-edge').length === 6,
+        'actual=' + document.querySelectorAll('.tape-edge').length);
+
+      // 轨切换
+      const weaponTab = [...document.querySelectorAll('#tapeToolbar .tab')].find((b) => b.textContent === 'weapon');
+      weaponTab.click();
+      await sleep(20);
+      ok('轨切换: weapon 只有 1 节点', document.querySelectorAll('.tape-node').length === 1);
+      const bodyTab = [...document.querySelectorAll('#tapeToolbar .tab')].find((b) => b.textContent === 'body');
+      bodyTab.click();
+      await sleep(20);
+
+      // 仿真：勾 is_moving → 单步 → still→walking
+      const movingChk = [...document.querySelectorAll('#tapeSim input[type="checkbox"]')][0];
+      movingChk.checked = true;
+      movingChk.dispatchEvent(new Event('change', { bubbles: true }));
+      const stepBtn = [...document.querySelectorAll('#tapeSim button')].find((b) => b.textContent.includes('⏭'));
+      stepBtn.click();
+      await sleep(20);
+      const status1 = document.getElementById('tapeSimStatus').textContent;
+      ok('仿真: 单步后 body=walking', status1.includes('body: walking'), status1);
+      const log1 = document.getElementById('tapeSimLog').textContent;
+      ok('仿真: 日志记录转移', log1.includes('still→walking'), log1);
+      ok('仿真: 当前节点高亮', !!document.querySelector('.tape-node.sim-current[data-state="walking"]'));
+
+      // 播放几 tick（1x = 50ms/tick）→ aggressive（all(has_target, not(is_moving))… has_target=false 不会转）
+      // 先勾 has_target 再去掉 is_moving → 应转 aggressive
+      const hasTargetChk = [...document.querySelectorAll('#tapeSim input[type="checkbox"]')][2];
+      hasTargetChk.checked = true;
+      hasTargetChk.dispatchEvent(new Event('change', { bubbles: true }));
+      movingChk.checked = false;
+      movingChk.dispatchEvent(new Event('change', { bubbles: true }));
+      stepBtn.click();
+      await sleep(20);
+      const status2 = document.getElementById('tapeSimStatus').textContent;
+      ok('仿真: 条件前跳 aggressive', status2.includes('body: aggressive'), status2);
+
+      // 强制跳转 dead（terminal）（select[0]=speed, select[1]=force）
+      const forceSel = document.querySelectorAll('#tapeSim select')[1];
+      forceSel.value = 'dead';
+      forceSel.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(20);
+      const status3 = document.getElementById('tapeSimStatus').textContent;
+      ok('仿真: force → dead', status3.includes('body: dead'), status3);
+
+      // 撤销（回到 force 之前的文档？——force 不改文档，撤销的是“加转移”）
+      document.getElementById('tapeBtnUndo').click();
+      await sleep(20);
+      ok('撤销: 边数回 5', document.querySelectorAll('.tape-edge').length === 5,
+        'actual=' + document.querySelectorAll('.tape-edge').length);
+
+      // 保存（应成功，无错误）
+      document.getElementById('tapeBtnSave').click();
+      await sleep(40);
+      ok('保存: 调了 tapeSaveFile', saveCount >= 1, 'saveCount=' + saveCount);
+
+    } catch (e) {
+      ok('驱动异常', false, e.stack || String(e));
+    }
+    window.__tapeSmoke = { ok: steps.every((s) => s.ok) && window.__errors.length === 0, steps, errors: window.__errors };
+    document.title = window.__tapeSmoke.ok ? 'SMOKE OK' : 'SMOKE FAIL';
+  })();
+  }
+</script>
+</body>
+</html>

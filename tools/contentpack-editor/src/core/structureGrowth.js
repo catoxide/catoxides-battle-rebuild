@@ -140,16 +140,21 @@ function growStructure(bp, opts = {}) {
     const placements = [];
     const deadEnds = [];
 
+    // REVIEW-M6：旋转 90°/270°（r&1）后片段足迹是 d×w（对照 voxel.rotPos：
+    // r=1 → [d-1-z, x]，x 跨度变 d、z 跨度变 w）。此前重叠检查恒按 w×d 扫，
+    // 非方阵片段旋转放置时漏检重叠（生长决策失真，最终 voxel 级诊断才能抓到）。
+    const footprint = (size, rotation) => ((rotation & 1) ? [size[2], size[0]] : [size[0], size[2]]);
+
     function addPlacement(pieceName, offset, rotation, via) {
         // 包围盒重叠检查（简单碰撞）
         const pc = byName.get(pieceName);
-        const [w, h, d] = pc.size;
+        const [fw, fd] = footprint(pc.size, rotation);
         for (const q of placements) {
             const qc = byName.get(q.pieceName);
-            const [qw, qh, qd] = qc.size;
-            if (offset[0] < q.offset[0] + qw && q.offset[0] < offset[0] + w &&
-                offset[1] < q.offset[1] + qh && q.offset[1] < offset[1] + h &&
-                offset[2] < q.offset[2] + qd && q.offset[2] < offset[2] + d) {
+            const [qw, qd] = footprint(qc.size, q.rotation);
+            if (offset[0] < q.offset[0] + qw && q.offset[0] < offset[0] + fw &&
+                offset[1] < q.offset[1] + qc.size[1] && q.offset[1] < offset[1] + pc.size[1] &&
+                offset[2] < q.offset[2] + qd && q.offset[2] < offset[2] + fd) {
                 return null;
             }
         }

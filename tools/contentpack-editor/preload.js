@@ -1,19 +1,36 @@
 // preload.js - 渲染进程桥接
 // 暴露 window.api，所有 IPC 调用返回 { ok, data|error }
 // 通道名与 main.js 中 ipcMain.handle 一一对应
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const api = {
     // 路径信息
     getPaths: () => ipcRenderer.invoke('app:getPaths'),
     setProjectRoot: (rootDir) => ipcRenderer.invoke('app:setProjectRoot', rootDir),
     pickProjectRoot: () => ipcRenderer.invoke('app:pickProjectRoot'),
+    // W6.1 包路径设置（包库 / 新建包目录；null = 复位默认）
+    getPackPaths: () => ipcRenderer.invoke('settings:getPackPaths'),
+    setPackPaths: (payload) => ipcRenderer.invoke('settings:setPackPaths', payload),
+    pickPackDir: (which) => ipcRenderer.invoke('app:pickPackDir', which),
 
     // 包管理
     listPacks: () => ipcRenderer.invoke('pack:list'),
     createPack: (data) => ipcRenderer.invoke('pack:create', data),
     readManifest: (packDir) => ipcRenderer.invoke('pack:readManifest', packDir),
     saveManifest: (packDir, manifest) => ipcRenderer.invoke('pack:saveManifest', packDir, manifest),
+    // 预检与骨架（Gradle 子项目 / 入口类 / 重复 Module-Name）
+    preflightPack: (packDir) => ipcRenderer.invoke('pack:preflight', packDir),
+    ensureScaffold: (packDir, opts) => ipcRenderer.invoke('pack:ensureScaffold', packDir, opts),
+
+    // 编辑器契约（Module-Editor-Schema）：只读盘点 + 校验
+    readContract: (packDir) => ipcRenderer.invoke('contract:read', packDir),
+
+    // TimeTape 状态机编辑器（W2）：包内 .json 读/写（p = {pack, rel[, content]}）
+    tapeReadFile: (p) => ipcRenderer.invoke('tape:readFile', p),
+    tapeSaveFile: (p) => ipcRenderer.invoke('tape:saveFile', p),
+    // 画布布局 sidecar（编辑器状态目录，不进包）
+    tapeReadLayout: (p) => ipcRenderer.invoke('tape:readLayout', p),
+    tapeSaveLayout: (p) => ipcRenderer.invoke('tape:saveLayout', p),
 
     // 实体
     listEntities: (packDir) => ipcRenderer.invoke('entity:list', packDir),
@@ -73,6 +90,52 @@ const api = {
 
     // 打包
     buildPack: (data) => ipcRenderer.invoke('pack:build', data),
+
+    // 3D 模型编辑器窗口（W2 子窗口；W3 gizmo/大纲/属性；W3.1 新建/另存为；W3.5 资源联动 / W4.2 实体状态映射 / W5 契约接入）
+    // W4.2：ctx = {pack, packDir, entityId}（可选；主窗口"3D 中编辑"传入 → 模型编辑器状态映射面板）
+    openModelEditor: (ctx) => ipcRenderer.invoke('modelEditor:open', ctx),
+    getModelEditorPendingContext: () => ipcRenderer.invoke('modelEditor:getPendingContext'),
+    onModelEditorEntityContext: (cb) => ipcRenderer.on('modelEditor:entityContext', (e, ctx) => cb(ctx)),
+    // W4.2：状态映射直写正式包（模型编辑器不走主窗口暂存区）
+    saveEntityDirect: (packDir, entityJson) => ipcRenderer.invoke('modelEditor:saveEntityDirect', packDir, entityJson),
+    // W4.3：部位配置直写正式包 assets/<ns>/health_config/<id>.json
+    saveHealthDirect: (packDir, namespace, entityId, config) => ipcRenderer.invoke('modelEditor:saveHealthDirect', packDir, namespace, entityId, config),
+    getModelFilePath: (file) => webUtils.getPathForFile(file),
+    saveModelFile: (payload) => ipcRenderer.invoke('modelEditor:saveModel', payload),
+    saveModelAs: (payload) => ipcRenderer.invoke('modelEditor:saveModelAs', payload),
+    listModelPacks: () => ipcRenderer.invoke('modelEditor:listPacks'),
+
+    // W3.5 资源联动：仓库资源选择器（模型/贴图浏览 + 读取；pack/rel 坐标，主进程重建路径）
+    listModels: () => ipcRenderer.invoke('modelEditor:listModels'),
+    listRepoTextures: () => ipcRenderer.invoke('modelEditor:listTextures'),
+    readRepoModel: (p) => ipcRenderer.invoke('modelEditor:readModel', p),
+    readRepoTexture: (p) => ipcRenderer.invoke('modelEditor:readTexture', p),
+    readModelByPath: (p) => ipcRenderer.invoke('modelEditor:readModelByPath', p), // W5.2 崩溃恢复
+    // 注意：主窗口已有 readContract（contract:read，契约视图）—— 键名冲突会静默覆盖（W3.6.1 事故同款），
+    // 模型编辑器侧用 readPackContract/writePackContract
+    readPackContract: (p) => ipcRenderer.invoke('modelEditor:readContract', p),
+    writePackContract: (p) => ipcRenderer.invoke('modelEditor:writeContract', p),
+    // W5.1 像素编辑：保存贴图（覆写已应用 / 对话框自选路径）
+    writeRepoTexture: (p) => ipcRenderer.invoke('modelEditor:writeTexture', p),
+    saveTextureDialog: (p) => ipcRenderer.invoke('modelEditor:saveTextureDialog', p),
+
+    // W7 动画文档：p = {pack, rel}（rel = 包内模型相对路径 spark_models/**.json）
+    loadAnimDoc: (p) => ipcRenderer.invoke('modelEditor:loadAnimDoc', p),
+    writeAnimFile: (p) => ipcRenderer.invoke('modelEditor:writeAnimFile', p), // + {file, content}
+    deleteAnimFile: (p) => ipcRenderer.invoke('modelEditor:deleteAnimFile', p), // + {file}
+
+    // W3.6 日志与崩溃定位
+    log: (level, scope, msg) => ipcRenderer.send('app:log', { level, scope, msg }),
+    getLogInfo: () => ipcRenderer.invoke('app:getLogInfo'),
+    openLogDir: () => ipcRenderer.invoke('app:openLogDir'),
+
+    // W5.3 渲染模式（软件渲染自愈）
+    getSettings: () => ipcRenderer.invoke('settings:get'),
+    setSoftwareRendering: (on) => ipcRenderer.invoke('settings:setSoftwareRendering', on),
+    consumeFallbackNotice: () => ipcRenderer.invoke('settings:consumeFallbackNotice'),
+    relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
+    // W5.5 调试模式（chromium.log + DevTools 自动打开 + 崩溃转储）
+    setDebugMode: (on) => ipcRenderer.invoke('settings:setDebugMode', on),
 
     // 核心模板/默认值
     getStateMachineTemplates: () => ipcRenderer.invoke('core:getStateMachineTemplates'),

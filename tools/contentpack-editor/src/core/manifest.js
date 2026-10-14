@@ -6,22 +6,33 @@ const path = require('path');
 
 /**
  * 解析 MANIFEST.MF 文本为对象
- * 支持标准格式 "Key: value"（保留冒号后的空格，统一 trim）
+ * 支持标准格式 "Key: value"（保留冒号后的空格，统一 trim）。
+ * REVIEW-L8：支持 72 字节折行的续行 —— 以单个空格开头的行是上一属性值的延续
+ * （规范 JAR Manifest：行长限 72 字节，续行行首空格不计入值）。
+ * 此前不处理 → 长属性值（>70 字符，如超长 Module-Editor-Schema/Module-Requires）被误拆成新键。
  * @param {string} content
  * @returns {Object<string,string>}
  */
 function parseManifest(content) {
     const result = {};
-    const lines = content.split(/\r?\n/);
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        const idx = trimmed.indexOf(':');
-        if (idx === -1) continue;
-        const key = trimmed.slice(0, idx).trim();
-        const value = trimmed.slice(idx + 1).trim();
-        if (key) result[key] = value;
+    let pending = null; // [key, value]（等待可能的续行）
+    const commit = () => { if (pending) { result[pending[0]] = pending[1]; pending = null; } };
+    for (const rawLine of String(content == null ? '' : content).split(/\r?\n/)) {
+        // 续行判定必须在 trim 之前（行首单空格 = 续行标记）
+        if (rawLine.startsWith(' ') || rawLine.startsWith('\t')) {
+            if (pending) pending[1] += rawLine.slice(1);
+            continue;
+        }
+        const line = rawLine.trim();
+        if (!line || line.startsWith('#')) { commit(); continue; }
+        const idx = line.indexOf(':');
+        if (idx === -1) { commit(); continue; }
+        const key = line.slice(0, idx).trim();
+        if (!key) { commit(); continue; }
+        commit();
+        pending = [key, line.slice(idx + 1).trim()];
     }
+    commit();
     return result;
 }
 
@@ -84,6 +95,8 @@ function scanPacks(sourceDir) {
                 name: manifest['Module-Name'] || entry.name,
                 version: manifest['Module-Version'] || '0.0.0',
                 manifest,
+                // 是否是可被 settings.gradle 自动发现并 contentpackJar 构建的 Gradle 包
+                hasBuildGradle: fs.existsSync(path.join(packDir, 'build.gradle')),
             });
         } catch {
             // 跳过损坏的包

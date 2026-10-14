@@ -3,17 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ContentPack 编辑器</title>
+<title>ContentPack 生成器（网页版）</title>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<!--
+  规则与骨架的【单一真源】：直接复用 Electron 编辑器的核心模块（纯函数、无 DOM、无 fs）。
+  因此这里的 build.gradle 样板、MANIFEST 属性表、入口类骨架、预检规则永远与
+  tools/contentpack-editor 一致，不存在「两份规则各自漂移」的问题。
+-->
+<script src="../../tools/contentpack-editor/src/core/packScaffold.js"></script>
 <style>
-  :root { --bg:#1e1e2e; --card:#313244; --fg:#cdd6f4; --acc:#89b4fa; --ok:#a6e3a1; --err:#f38ba8; }
+  :root { --bg:#1e1e2e; --card:#313244; --fg:#cdd6f4; --acc:#89b4fa; --ok:#a6e3a1; --err:#f38ba8; --warn:#f9e2af; }
   * { box-sizing:border-box; margin:0; padding:0; }
   body { background:var(--bg); color:var(--fg); font-family:"Segoe UI",system-ui,sans-serif; padding:20px; }
   h1 { color:var(--acc); margin-bottom:6px; }
-  .sub { opacity:.7; margin-bottom:20px; font-size:13px; }
+  .sub { opacity:.7; margin-bottom:20px; font-size:13px; line-height:1.7; }
   .card { background:var(--card); border-radius:10px; padding:16px; margin-bottom:16px; }
   .card h2 { font-size:15px; color:var(--acc); margin-bottom:12px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px; }
   label { display:block; font-size:12px; opacity:.8; margin-bottom:3px; }
   input, textarea, select { width:100%; background:#45475a; border:1px solid #585b70; color:var(--fg);
     border-radius:6px; padding:6px 8px; font-size:13px; font-family:inherit; }
@@ -32,207 +38,395 @@
   .row { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
   .row .btn { padding:4px 10px; font-size:12px; }
   .out { background:#11111b; border-radius:8px; padding:12px; margin-top:12px; font-family:Consolas,monospace;
-    font-size:12px; white-space:pre-wrap; max-height:300px; overflow:auto; display:none; }
+    font-size:12px; white-space:pre-wrap; max-height:340px; overflow:auto; display:none; }
   .status { margin-top:10px; font-size:13px; }
-  .ok { color:var(--ok); } .err { color:var(--err); }
-  .note { font-size:12px; opacity:.7; margin-top:8px; line-height:1.6; }
+  .ok { color:var(--ok); } .err { color:var(--err); } .warn { color:var(--warn); }
+  .note { font-size:12px; opacity:.75; margin-top:8px; line-height:1.8; }
   code { background:#45475a; padding:1px 5px; border-radius:4px; font-size:12px; }
 </style>
 </head>
 <body>
-<h1>ContentPack 编辑器</h1>
-<div class="sub">生成内容包（MANIFEST + entities JSON）— 纯网页工具，配合 <code>contentpacks-source/build-pack.ps1</code> 打包。</div>
+<h1>ContentPack 生成器（网页版）</h1>
+<div class="sub">
+  产出<strong>可直接构建</strong>的内容包：<code>MANIFEST.MF</code>（全属性）+ <code>build.gradle</code>（Gradle 子项目骨架）
+  + 入口类骨架 + <code>entities/*.json</code>。<br>
+  下载的 zip 顶层目录就是包名，<strong>解压到 <code>contentpacks-source/</code> 即可</strong>（无需改 settings.gradle，自动发现）。<br>
+  完整可视化编辑（模型 / 部位 / 结构）请用 <code>tools/contentpack-editor</code>（Electron 版），本页是零安装的最小生成器。
+</div>
 
 <div class="card">
-  <h2>包设置</h2>
+  <h2>包设置（MANIFEST）</h2>
   <div class="grid">
-    <div><label>Module-Name（必填）</label><input id="pkgName" value="my-pack"></div>
+    <div><label>Module-Name（必填，依赖图键 + jar 名）</label><input id="pkgName" value="my-pack"></div>
     <div><label>Module-Version</label><input id="pkgVersion" value="1.0.0"></div>
     <div><label>Module-Requires</label><input id="pkgRequires" value="catoxidesbattlerebuild>=0.2.0"></div>
-    <div><label>Module-Dependencies（逗号分隔）</label><input id="pkgDeps" placeholder="mission-core, gun-framework"></div>
+    <div><label>Module-Entry（有实体/代码时必填）</label><input id="pkgEntry" placeholder="example.contentpack.my.MyPack"></div>
+    <div><label>Module-Dependencies（硬依赖，逗号分隔）</label><input id="pkgDeps" placeholder="mission-core, gun-framework"></div>
+    <div><label>Module-Dependencies-Optional（软依赖）</label><input id="pkgDepsOpt"></div>
+    <div><label>Module-Lib-Requires（需 _libs/&lt;名&gt;/*.jar）</label><input id="pkgLibReq"></div>
     <div><label>Module-Mod-Requires（逗号分隔）</label><input id="pkgModReq" placeholder="sable>=2.0.3"></div>
-    <div><label>Module-Entry（有代码时）</label><input id="pkgEntry" placeholder="example.contentpack.my.MyPack"></div>
+    <div><label>Module-Mod-Optional</label><input id="pkgModOpt"></div>
+    <div><label>包内 id（骨架 getId()，缺省由包名推导）</label><input id="pkgId"></div>
+    <div><label>显示名（骨架 getDisplayName()）</label><input id="pkgDisplay"></div>
+    <div><label>额外编译依赖（整条语句，; 分隔）</label><input id="pkgExtraDeps" placeholder='compileOnly "dev.ryanhcode.sable:sable-neoforge-1.21.1:2.0.3"'></div>
+  </div>
+  <div class="note">
+    包间依赖<strong>禁止版本区间</strong>（写了会被加载器忽略并告警）；入口类<strong>不能</strong>放在
+    <code>com.catoxide.catoxidesbattlerebuild.*</code>（该前缀永远交给父加载器，看不到包内类）。
   </div>
 </div>
 
 <div class="card">
-  <h2>实体定义 <button class="btn ghost" onclick="addMob()">+ 添加实体</button></h2>
+  <h2>实体定义 <button class="btn ghost" onclick="CPEditor.addMob()">+ 添加实体</button></h2>
   <div id="mobList"></div>
+  <div class="note">纯资源/数据包可以不添加实体——但此时<strong>不要</strong>填 Module-Entry（无代码是合法用法）。</div>
 </div>
 
 <div class="card">
-  <h2>生成</h2>
-  <button class="btn" onclick="generateZip()">下载内容包 zip</button>
-  <button class="btn ghost" onclick="previewJson()">预览 JSON</button>
-  <button class="btn ghost" onclick="previewManifest()">预览 MANIFEST</button>
+  <h2>预检与生成</h2>
+  <button class="btn ghost" onclick="CPEditor.runPreflight()">运行预检</button>
+  <button class="btn" onclick="CPEditor.generateZip()">下载内容包 zip</button>
+  <button class="btn ghost" onclick="CPEditor.previewManifest()">预览 MANIFEST</button>
+  <button class="btn ghost" onclick="CPEditor.previewGradle()">预览 build.gradle</button>
+  <button class="btn ghost" onclick="CPEditor.previewEntry()">预览入口类</button>
   <div class="status" id="status"></div>
   <div class="out" id="output"></div>
+</div>
+
+<div class="card">
+  <h2>产物与后续</h2>
   <div class="note">
-    <b>使用步骤：</b>① 填写包设置 + 实体表单 → ② 下载 zip（含 MANIFEST.MF + entities/*.json）→
-    ③ 解压到 <code>contentpacks-source/&lt;你的包名&gt;/</code>，如需代码按模板写入口类 →
-    运行 <code>powershell -File contentpacks-source/build-pack.ps1 -SourceDir contentpacks-source/&lt;你的包名&gt; -OutJar contentpacks/&lt;你的包名&gt;.jar</code>
-    <br>格式规范见 <code>design/CONTENTPACK_FORMAT.md</code>
+    ① 下载 zip → 解压到 <code>contentpacks-source/</code>（得到 <code>contentpacks-source/&lt;包名&gt;/</code>）<br>
+    ② 构建：<code>gradlew :packs:&lt;包名&gt;:contentpackJar</code> → 产物 <code>contentpacks/&lt;Module-Name&gt;.jar</code>
+    （也可 <code>gradlew contentpackJar</code> 构建全部包）<br>
+    ③ 产物按 <strong>Module-Name</strong> 命名：改名/弃用的旧 jar 必须手工删除，否则同 Module-Name 重复，
+    加载哪个<strong>取决于扫描顺序</strong><br>
+    规范：<code>design/CONTENTPACK_FORMAT.md</code> §2/§9、<code>design/GRADLE_MULTIPROJECT.md</code> §2.3
   </div>
 </div>
 
 <script>
-let mobId = 0;
-const BUILTIN_BEHAVIORS = ["attack","ai","raycast"];
+'use strict';
+// 整页逻辑包在 IIFE 里：经典 <script> 的顶层 const 与共享核心脚本共享同一个全局词法环境，
+// 重名会直接 SyntaxError 让整段脚本失效（这是本页第一版真实踩到的坑）。
+window.CPEditor = (function () {
+    const SC = window.PackScaffold;   // 共享核心（tools/contentpack-editor/src/core/packScaffold.js）
 
-function addMob(data) {
-  const id = ++mobId;
-  const div = document.createElement('div');
-  div.className = 'mob';
-  div.innerHTML = `
-    <h3>实体 #${id} <button class="btn ghost" onclick="this.parentElement.parentElement.remove()">删除</button></h3>
+    let mobId = 0;
+    const BEHAVIORS = (SC && SC.BUILTIN_BEHAVIORS) || ['attack', 'ai', 'raycast'];
+    const val = (id) => (document.getElementById(id) || { value: '' }).value.trim();
+
+    function addMob(data) {
+        const id = ++mobId;
+        const div = document.createElement('div');
+        div.className = 'mob';
+        div.innerHTML = `
+    <h3>实体 #${id} <button class="btn ghost" data-act="del-mob">删除</button></h3>
     <div class="grid">
-      <div><label>id（必填）</label><input class="f-id" value="${data?.id||'example_mob'}"></div>
-      <div><label>namespace（缺省挂主mod）</label><input class="f-ns" value="${data?.ns||''}"></div>
-      <div><label>displayName</label><input class="f-dn" value="${data?.dn||''}"></div>
-      <div><label>width</label><input class="f-w" type="number" step="0.1" value="${data?.w||0.6}"></div>
-      <div><label>height</label><input class="f-h" type="number" step="0.1" value="${data?.h||1.95}"></div>
-      <div><label>maxHealth</label><input class="f-mh" type="number" step="0.5" value="${data?.mh||20}"></div>
-      <div><label>attackDamage</label><input class="f-ad" type="number" step="0.5" value="${data?.ad||3}"></div>
-      <div><label>movementSpeed</label><input class="f-ms" type="number" step="0.01" value="${data?.ms||0.23}"></div>
-      <div><label>followRange</label><input class="f-fr" type="number" value="${data?.fr||16}"></div>
-      <div><label>armor</label><input class="f-ar" type="number" step="0.5" value="${data?.ar||0}"></div>
-      <div><label>model id（如 ns:model）</label><input class="f-mid" value="${data?.mid||'minecraft:zombie'}"></div>
-      <div><label>texture（如 ns:textures/...png）</label><input class="f-tex" value="${data?.tex||'minecraft:textures/entity/zombie/zombie.png'}"></div>
+      <div><label>id（必填，小写）</label><input class="f-id" value="${(data && data.id) || 'example_mob'}"></div>
+      <div><label>namespace（缺省挂主mod）</label><input class="f-ns" value="${(data && data.ns) || ''}"></div>
+      <div><label>displayName</label><input class="f-dn" value="${(data && data.dn) || ''}"></div>
+      <div><label>width</label><input class="f-w" type="number" step="0.1" value="${(data && data.w) || 0.6}"></div>
+      <div><label>height</label><input class="f-h" type="number" step="0.1" value="${(data && data.h) || 1.95}"></div>
+      <div><label>maxHealth</label><input class="f-mh" type="number" step="0.5" value="${(data && data.mh) || 20}"></div>
+      <div><label>attackDamage</label><input class="f-ad" type="number" step="0.5" value="${(data && data.ad) || 3}"></div>
+      <div><label>movementSpeed</label><input class="f-ms" type="number" step="0.01" value="${(data && data.ms) || 0.23}"></div>
+      <div><label>followRange</label><input class="f-fr" type="number" value="${(data && data.fr) || 16}"></div>
+      <div><label>armor</label><input class="f-ar" type="number" step="0.5" value="${(data && data.ar) || 0}"></div>
+      <div><label>model id（如 ns:model）</label><input class="f-mid" value="${(data && data.mid) || 'minecraft:zombie'}"></div>
+      <div><label>texture（如 ns:textures/...png）</label><input class="f-tex" value="${(data && data.tex) || 'minecraft:textures/entity/zombie/zombie.png'}"></div>
     </div>
     <div style="margin-top:10px">
       <label>音效（ResourceLocation，留空=无）</label>
       <div class="grid">
-        <div><input class="f-s1" placeholder="ambient" value="${data?.s1||'minecraft:entity.zombie.ambient'}"></div>
-        <div><input class="f-s2" placeholder="hurt" value="${data?.s2||'minecraft:entity.zombie.hurt'}"></div>
-        <div><input class="f-s3" placeholder="death" value="${data?.s3||'minecraft:entity.zombie.death'}"></div>
-        <div><input class="f-s4" placeholder="step" value="${data?.s4||'minecraft:entity.zombie.step'}"></div>
-        <div><input class="f-s5" placeholder="swing" value="${data?.s5||''}"></div>
+        <div><input class="f-s1" placeholder="ambient" value="${(data && data.s1) || 'minecraft:entity.zombie.ambient'}"></div>
+        <div><input class="f-s2" placeholder="hurt" value="${(data && data.s2) || 'minecraft:entity.zombie.hurt'}"></div>
+        <div><input class="f-s3" placeholder="death" value="${(data && data.s3) || 'minecraft:entity.zombie.death'}"></div>
+        <div><input class="f-s4" placeholder="step" value="${(data && data.s4) || 'minecraft:entity.zombie.step'}"></div>
+        <div><input class="f-s5" placeholder="swing" value="${(data && data.s5) || ''}"></div>
       </div>
     </div>
     <div style="margin-top:10px">
-      <label>动画映射（state → 动画名）</label>
-      <div id="anims-${id}"></div>
-      <div class="row"><button class="btn ghost" onclick="addAnimRow('anims-${id}','0','still')">+ 动画</button></div>
+      <label>动画映射（state → 动画名，state 必须是整数）</label>
+      <div class="anims"></div>
+      <div class="row"><button class="btn ghost" data-act="add-anim">+ 动画</button></div>
     </div>
     <div style="margin-top:10px">
       <label>行为组件（type + JSON 配置）</label>
-      <div id="behs-${id}"></div>
+      <div class="behs"></div>
       <div class="row">
-        <button class="btn ghost" onclick="addBehRow('behs-${id}','attack')">+ 行为</button>
-        <span class="note">内置: ${BUILTIN_BEHAVIORS.join(' / ')}</span>
+        <button class="btn ghost" data-act="add-beh">+ 行为</button>
+        <span class="note">内置: ${BEHAVIORS.join(' / ')}</span>
       </div>
     </div>`;
-  document.getElementById('mobList').appendChild(div);
-  ['0,still','1,walking','3,attack'].forEach(p=>{const [s,n]=p.split(',');addAnimRow(`anims-${id}`,s,n);});
-  addBehRow(`behs-${id}`,'attack');
-  addBehRow(`behs-${id}`,'ai');
-}
+        document.getElementById('mobList').appendChild(div);
+        div.querySelector('[data-act="del-mob"]').addEventListener('click', () => div.remove());
+        div.querySelector('[data-act="add-anim"]').addEventListener('click', () => addAnimRow(div.querySelector('.anims'), '0', 'still'));
+        div.querySelector('[data-act="add-beh"]').addEventListener('click', () => addBehRow(div.querySelector('.behs'), 'attack'));
+        [['0', 'still'], ['1', 'walking'], ['3', 'attack']]
+            .forEach(([s, n]) => addAnimRow(div.querySelector('.anims'), s, n));
+        addBehRow(div.querySelector('.behs'), 'attack');
+        addBehRow(div.querySelector('.behs'), 'ai');
+        return div;
+    }
 
-function addAnimRow(containerId, s, n) {
-  const c = document.getElementById(containerId);
-  const row = document.createElement('div');
-  row.className = 'anim-row';
-  row.innerHTML = `<input class="a-s" placeholder="state(0-7)" value="${s||''}" style="max-width:70px">
-    <input class="a-n" placeholder="动画名(still/walking/attack...)" value="${n||''}">
-    <button class="btn ghost" onclick="this.parentElement.remove()">×</button>`;
-  c.appendChild(row);
-}
+    function addAnimRow(container, s, n) {
+        const row = document.createElement('div');
+        row.className = 'anim-row';
+        row.innerHTML = `<input class="a-s" placeholder="state(0-7)" value="${s || ''}" style="max-width:70px">
+      <input class="a-n" placeholder="动画名(still/walking/attack...)" value="${n || ''}">
+      <button class="btn ghost" data-act="del">×</button>`;
+        row.querySelector('[data-act="del"]').addEventListener('click', () => row.remove());
+        container.appendChild(row);
+    }
 
-function addBehRow(containerId, type) {
-  const c = document.getElementById(containerId);
-  const row = document.createElement('div');
-  row.className = 'beh-row';
-  row.innerHTML = `<select class="b-t" style="max-width:110px">
-      ${BUILTIN_BEHAVIORS.map(t=>`<option ${t===type?'selected':''}>${t}</option>`).join('')}</select>
-    <input class="b-c" placeholder='{"damage":3.0}' value='${type==='attack'?'{"damage":3.0,"cooldown":20}':type==='ai'?'{"goals":["hunt_player","random_stroll"]}':'{"range":12.0}'}'>
-    <button class="btn ghost" onclick="this.parentElement.remove()">×</button>`;
-  c.appendChild(row);
-}
+    function addBehRow(container, type) {
+        const defaults = type === 'attack' ? '{"damage":3.0,"cooldown":20}'
+            : type === 'ai' ? '{"goals":["hunt_player","random_stroll"]}' : '{"range":12.0}';
+        const row = document.createElement('div');
+        row.className = 'beh-row';
+        row.innerHTML = `<select class="b-t" style="max-width:110px">
+        ${BEHAVIORS.map((t) => `<option ${t === type ? 'selected' : ''}>${t}</option>`).join('')}</select>
+      <input class="b-c" value='${defaults}'>
+      <button class="btn ghost" data-act="del">×</button>`;
+        row.querySelector('[data-act="del"]').addEventListener('click', () => row.remove());
+        container.appendChild(row);
+    }
 
-function collectMobs() {
-  const mobs = [];
-  document.querySelectorAll('.mob').forEach(m=>{
-    const g = id => m.querySelector(id)?.value || '';
-    const anims = {}; m.querySelectorAll('.anim-row').forEach(r=>{
-      const s=r.querySelector('.a-s').value, n=r.querySelector('.a-n').value;
-      if(s!=='' && n!=='') anims[s]=n; });
-    const behs = []; m.querySelectorAll('.beh-row').forEach(r=>{
-      const t=r.querySelector('.b-t').value, c=r.querySelector('.b-c').value.trim();
-      let cfg = {}; try { cfg = c ? JSON.parse(c) : {}; } catch(e) { cfg = {_error:c}; }
-      behs.push({type:t, ...cfg}); });
-    const sounds = {};
-    ['f-s1','f-s2','f-s3','f-s4','f-s5'].forEach((sel,i)=>{
-      const v=g('.'+sel); if(v) sounds[['ambient','hurt','death','step','swing'][i]]=v; });
-    const obj = { id:g('.f-id') };
-    if(g('.f-ns')) obj.namespace=g('.f-ns');
-    if(g('.f-dn')) obj.displayName=g('.f-dn');
-    obj.size={width:parseFloat(g('.f-w')), height:parseFloat(g('.f-h'))};
-    obj.attributes={maxHealth:parseFloat(g('.f-mh')), attackDamage:parseFloat(g('.f-ad')),
-      movementSpeed:parseFloat(g('.f-ms')), followRange:parseFloat(g('.f-fr')), armor:parseFloat(g('.f-ar'))};
-    obj.model={type:'entity', id:g('.f-mid')};
-    if(g('.f-tex')) obj.texture=g('.f-tex');
-    if(Object.keys(sounds).length) obj.sounds=sounds;
-    if(Object.keys(anims).length) obj.animations=anims;
-    if(behs.length) obj.behaviors=behs;
-    mobs.push(obj);
-  });
-  return mobs;
-}
+    /** 表单 → MANIFEST 属性表（交给共享核心规范化：补 Module-Type、按规范排序、丢空值） */
+    function collectAttrs() {
+        return SC.canonicalizeManifest({
+            'Module-Name': val('pkgName'),
+            'Module-Version': val('pkgVersion'),
+            'Module-Requires': val('pkgRequires'),
+            'Module-Type': 'contentpack',
+            'Module-Entry': val('pkgEntry'),
+            'Module-Dependencies': val('pkgDeps'),
+            'Module-Dependencies-Optional': val('pkgDepsOpt'),
+            'Module-Lib-Requires': val('pkgLibReq'),
+            'Module-Mod-Requires': val('pkgModReq'),
+            'Module-Mod-Optional': val('pkgModOpt'),
+        });
+    }
 
-function buildManifest() {
-  const L = [];
-  L.push('Manifest-Version: 1.0');
-  L.push('Module-Name: '+(document.getElementById('pkgName').value||'my-pack'));
-  L.push('Module-Version: '+(document.getElementById('pkgVersion').value||'0.0.0'));
-  if(document.getElementById('pkgRequires').value) L.push('Module-Requires: '+document.getElementById('pkgRequires').value);
-  L.push('Module-Type: contentpack');
-  if(document.getElementById('pkgEntry').value) L.push('Module-Entry: '+document.getElementById('pkgEntry').value);
-  if(document.getElementById('pkgDeps').value) L.push('Module-Dependencies: '+document.getElementById('pkgDeps').value);
-  if(document.getElementById('pkgModReq').value) L.push('Module-Mod-Requires: '+document.getElementById('pkgModReq').value);
-  return L.join('\r\n');
-}
+    const extraDeps = () => val('pkgExtraDeps').split(/[;\n]/).map((s) => s.trim()).filter(Boolean);
 
-function showOutput(title, text) {
-  const o = document.getElementById('output');
-  o.style.display='block';
-  o.textContent = '===== '+title+' =====\n\n'+text;
-}
+    function collectMobs() {
+        const mobs = [];
+        document.querySelectorAll('.mob').forEach((m) => {
+            const g = (sel) => (m.querySelector(sel) ? m.querySelector(sel).value : '') || '';
+            const num = (sel, dflt) => {
+                const raw = g(sel);
+                if (raw === '') return dflt;
+                const v = parseFloat(raw);
+                return Number.isFinite(v) ? v : NaN;   // NaN 会被预检拦下（写进 JSON 会变 null）
+            };
+            const anims = {};
+            m.querySelectorAll('.anim-row').forEach((r) => {
+                const s = r.querySelector('.a-s').value.trim(), n = r.querySelector('.a-n').value.trim();
+                if (s !== '' && n !== '') anims[s] = n;
+            });
+            const behs = [];
+            m.querySelectorAll('.beh-row').forEach((r) => {
+                const t = r.querySelector('.b-t').value, c = r.querySelector('.b-c').value.trim();
+                const spec = {};
+                let bad = null;
+                if (c) { try { Object.assign(spec, JSON.parse(c)); } catch (e) { bad = c; } }
+                if (bad === null) behs.push(Object.assign(spec, { type: t }));  // 下拉框是 type 的权威来源
+                else behs.push({ type: t, __invalidJson: bad });               // 交给预检报 error，不写进 jar
+            });
+            const sounds = {};
+            ['f-s1', 'f-s2', 'f-s3', 'f-s4', 'f-s5'].forEach((sel, i) => {
+                const v = g('.' + sel);
+                if (v) sounds[['ambient', 'hurt', 'death', 'step', 'swing'][i]] = v;
+            });
+            const obj = { id: g('.f-id') };
+            if (g('.f-ns')) obj.namespace = g('.f-ns');
+            if (g('.f-dn')) obj.displayName = g('.f-dn');
+            obj.size = { width: num('.f-w', 0.6), height: num('.f-h', 1.95) };
+            obj.attributes = {
+                maxHealth: num('.f-mh', 20), attackDamage: num('.f-ad', 3), movementSpeed: num('.f-ms', 0.23),
+                followRange: num('.f-fr', 16), armor: num('.f-ar', 0),
+            };
+            obj.model = { type: 'entity', id: g('.f-mid') };
+            if (g('.f-tex')) obj.texture = g('.f-tex');
+            if (Object.keys(sounds).length) obj.sounds = sounds;
+            if (Object.keys(anims).length) obj.animations = anims;
+            if (behs.length) obj.behaviors = behs;
+            mobs.push(obj);
+        });
+        return mobs;
+    }
 
-function status(msg, ok) {
-  const s = document.getElementById('status');
-  s.className = 'status '+(ok?'ok':'err');
-  s.textContent = msg;
-}
+    /** 写进 zip 的实体 JSON（剥掉预检用的内部标记） */
+    function mobJson(mob) {
+        const clean = JSON.parse(JSON.stringify(mob));
+        if (Array.isArray(clean.behaviors)) {
+            for (const b of clean.behaviors) {
+                if (b.__invalidJson !== undefined) { delete b.__invalidJson; b._error = 'bad json'; }
+            }
+        }
+        return JSON.stringify(clean, null, 2);
+    }
 
-function previewJson() {
-  const mobs = collectMobs();
-  if(!mobs.length){ status('请至少添加一个实体', false); return; }
-  showOutput('entities/*.json 预览（每实体一个文件）', mobs.map((m,i)=>`entities/entity_${i+1}.json:\n${JSON.stringify(m,null,2)}`).join('\n\n'));
-  status('JSON 生成完毕', true);
-}
+    /** 与 tools/contentpack-editor 的 manifest.js 同格式：CRLF + 结尾换行 */
+    function stringifyManifest(attrs) {
+        const lines = ['Manifest-Version: 1.0'];
+        for (const [k, v] of Object.entries(attrs)) lines.push(`${k}: ${v}`);
+        return lines.join('\r\n') + '\r\n';
+    }
 
-function previewManifest() {
-  showOutput('MANIFEST.MF', buildManifest());
-  status('MANIFEST 生成完毕', true);
-}
+    /** 预检：共享核心规则 + 本页特有项（坏 JSON / 死数据 / 额外依赖必须 compileOnly） */
+    function preflight() {
+        const attrs = collectAttrs();
+        const mobs = collectMobs();
+        const findings = SC.validateManifest(attrs).concat(SC.validateEntities(mobs));
 
-async function generateZip() {
-  if(typeof JSZip === 'undefined'){ status('JSZip 加载失败（需联网加载 CDN）；可用"预览"复制内容手动打包', false); return; }
-  const mobs = collectMobs();
-  if(!mobs.length){ status('请至少添加一个实体', false); return; }
-  const zip = new JSZip();
-  zip.file('META-INF/MANIFEST.MF', buildManifest());
-  mobs.forEach((m,i)=>{ zip.file('entities/'+m.id+'.json', JSON.stringify(m,null,2)); });
-  const blob = await zip.generateAsync({type:'blob'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = (document.getElementById('pkgName').value||'my-pack')+'-content.zip';
-  a.click();
-  URL.revokeObjectURL(a.href);
-  status('zip 已下载：解压到 contentpacks-source/'+(document.getElementById('pkgName').value||'my-pack')+'/ 即可', true);
-}
+        const badBeh = [];
+        mobs.forEach((m) => (m.behaviors || []).forEach((b, i) => {
+            if (b.__invalidJson !== undefined) badBeh.push(`${m.id}.behaviors[${i}]`);
+        }));
+        if (badBeh.length) {
+            findings.push({
+                level: 'error', code: 'E-BEH-JSON',
+                msg: `行为配置不是合法 JSON：${badBeh.join(', ')}（原样写进 jar 会让该行为静默失效）`,
+                src: 'BehaviorSpec / BehaviorAssembler',
+            });
+        }
+        if (mobs.length && !attrs['Module-Entry']) {
+            findings.push({
+                level: 'error', code: 'E-DATA-NO-ENTRY',
+                msg: `有 ${mobs.length} 个实体但没填 Module-Entry：加载器不会自动注册 entities/，` +
+                    `只有包的 register() 调 registerDataDrivenMob 才会注册 ⇒ 这些 JSON 是死数据。`,
+                src: 'ContentPackContext.java:198',
+            });
+        }
+        if (!mobs.length && !attrs['Module-Entry']) {
+            findings.push({
+                level: 'warn', code: 'W-EMPTY-PACK',
+                msg: '既没有实体也没有入口类：会产出一个空包（只有当你要放资源/数据时才合理）。',
+                src: 'CONTENTPACK_FORMAT §2',
+            });
+        }
+        for (const d of extraDeps()) {
+            if (/\b(implementation|api|runtimeOnly|compile)\b/.test(d)) {
+                findings.push({
+                    level: 'error', code: 'E-EXTRA-DEP',
+                    msg: `额外依赖必须写成 compileOnly(...)：包的类加载闭包只有「父环境前缀 + 自己 jar + _libs」——${d}`,
+                    src: 'ChildFirstClassLoader',
+                });
+            }
+        }
+        return { attrs, mobs, findings };
+    }
 
-addMob({id:'example_mob'});
+    /** 包内文件清单（路径相对包根目录，对应 contentpacks-source/<包名>/） */
+    function buildFiles() {
+        const attrs = collectAttrs();
+        const mobs = collectMobs();
+        const files = {
+            // ⚠️ MANIFEST.MF 必须在【包根目录】：两条构建路径读的都是 <包名>/MANIFEST.MF，
+            //    放到 META-INF/ 下会让构建脚本找不到它 → 产物没有 Module-Type → 运行期被静默忽略。
+            'MANIFEST.MF': stringifyManifest(attrs),
+            'build.gradle': SC.renderBuildGradle(attrs['Module-Name'], { extraDeps: extraDeps() }),
+        };
+        const src = SC.renderEntryClass({
+            moduleEntry: attrs['Module-Entry'],
+            packId: val('pkgId') || (attrs['Module-Name'] || '').replace(/-/g, '_'),
+            displayName: val('pkgDisplay') || attrs['Module-Name'],
+            version: attrs['Module-Version'] || '1.0.0',
+            entityIds: mobs.map((m) => m.id),
+        });
+        if (src) files[SC.entryLocation(attrs['Module-Entry']).path] = src;
+        mobs.forEach((m) => { files['entities/' + m.id + '.json'] = mobJson(m); });
+        return files;
+    }
+
+    function show(title, text) {
+        const o = document.getElementById('output');
+        o.style.display = 'block';
+        o.textContent = '===== ' + title + ' =====\n\n' + text;
+    }
+
+    function status(msg, cls) {
+        const s = document.getElementById('status');
+        s.className = 'status ' + (cls || '');
+        s.textContent = msg;
+    }
+
+    function renderFindings(findings) {
+        const errs = findings.filter((f) => f.level === 'error');
+        const warns = findings.filter((f) => f.level === 'warn');
+        const lines = [`预检：${errs.length} 个 error / ${warns.length} 个 warn`];
+        for (const f of errs) lines.push(`[ERROR] ${f.code} ${f.msg}  〔${f.src}〕`);
+        for (const f of warns) lines.push(`[WARN ] ${f.code} ${f.msg}  〔${f.src}〕`);
+        return { text: lines.join('\n'), errors: errs.length, warns: warns.length };
+    }
+
+    function runPreflight() {
+        const { findings } = preflight();
+        const r = renderFindings(findings);
+        show('预检结果', r.text + '\n\n（预检只读：不写任何文件。构建命令见页面底部）');
+        status(r.errors === 0 ? (r.warns ? `预检通过（${r.warns} 个 warn）` : '预检通过')
+            : `预检未通过：${r.errors} 个 error`,
+        r.errors === 0 ? (r.warns ? 'warn' : 'ok') : 'err');
+        return r;
+    }
+
+    function preview(title, text) { show(title, text === undefined ? '(无)' : text); }
+    function previewManifest() { preview('MANIFEST.MF', buildFiles()['MANIFEST.MF']); }
+    function previewGradle() { preview('build.gradle', buildFiles()['build.gradle']); }
+
+    function previewEntry() {
+        const files = buildFiles();
+        const key = Object.keys(files).find((k) => k.endsWith('.java'));
+        if (!key) { status('没有 Module-Entry，因此没有入口类骨架（纯数据包是合法用法）', 'warn'); return; }
+        preview(key, files[key]);
+    }
+
+    async function generateZip() {
+        if (!SC) { status('共享核心 PackScaffold 未加载：请确认 tools/contentpack-editor/src/core/packScaffold.js 存在', 'err'); return; }
+        const { attrs, findings } = preflight();
+        const r = renderFindings(findings);
+        if (r.errors > 0) {
+            show('预检未通过 —— 已阻止下载', r.text + '\n\n先修掉 error；若确实要原样导出，用「预览」手动复制内容。');
+            status(`预检未通过：${r.errors} 个 error（已阻止下载）`, 'err');
+            return;
+        }
+        if (typeof JSZip === 'undefined') {
+            status('JSZip 加载失败（需联网 CDN）；可用「预览」按钮复制内容手动打包', 'err');
+            return;
+        }
+        const files = buildFiles();
+        const packName = attrs['Module-Name'];
+        const zip = new JSZip();
+        const root = zip.folder(packName);      // 顶层目录 = 包名 ⇒ 解压到 contentpacks-source/ 即可
+        for (const [rel, content] of Object.entries(files)) root.file(rel, content);
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = packName + '-content.zip';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        show('产物清单', r.text + '\n\n' + Object.keys(files).map((f) => `${packName}/${f}`).join('\n')
+            + `\n\n下一步：解压到 contentpacks-source/ → gradlew :packs:${packName}:contentpackJar`);
+        status(`zip 已下载（顶层目录 ${packName}/）：解压到 contentpacks-source/ 后 gradlew :packs:${packName}:contentpackJar`,
+            r.warns ? 'warn' : 'ok');
+    }
+
+    function init() {
+        if (!SC) {
+            status('共享核心 PackScaffold 未加载：请确认 tools/contentpack-editor/src/core/packScaffold.js 存在', 'err');
+            return;
+        }
+        addMob({ id: 'example_mob' });
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+
+    return { addMob, runPreflight, generateZip, previewManifest, previewGradle, previewEntry, preflight, buildFiles, collectMobs };
+})();
 </script>
 </body>
 </html>

@@ -150,5 +150,52 @@ test('getDefaultAnimations 生成完整映射', () => {
     assert.strictEqual(ranged['3'], 'shoot');
 });
 
-console.log(`\n结果: ${passed} 通过, ${failed} 失败`);
-if (failed > 0) process.exit(1);
+console.log('=== 6. (REVIEW) 路径校验 / MANIFEST 续行 / jar 提取 ===');
+const os = require('os');
+test('S2: healthConfig ns/id 含 .. 或非法字符 → 拒绝/钳制（此前可写出包外任意 .json）', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cpe-hc-'));
+    try {
+        // 段含路径分隔符 → 字符集直接拒绝
+        assert.throws(() => HealthConfig.saveHealthConfig(tmp, '../../x', 'm', { parts: [] }), /namespace/);
+        assert.throws(() => HealthConfig.saveHealthConfig(tmp, 'okns', 'a/b', { parts: [] }), /实体 id/);
+        assert.throws(() => HealthConfig.readHealthConfig(tmp, '../../x', 'm'), /namespace/);
+        // '..' 的点号在字符集内（MC 资源位置 path 段允许 '.'）：单级 '..' 被 join 折叠进包目录（安全）；
+        // 多级 '..' 必然带 '/' 分隔 → 字符集直接拒绝；join 后边界校验是最后防线
+        const p1 = HealthConfig.healthConfigFilePath(tmp, '..', 'm');
+        assert.ok(p1.startsWith(path.resolve(tmp) + path.sep), '单级 .. 应折叠进包目录: ' + p1);
+        assert.throws(() => HealthConfig.saveHealthConfig(tmp, '../..', 'm', { parts: [] }), /namespace/);
+        assert.throws(() => HealthConfig.readHealthConfig(tmp, '../..', 'm'), /namespace/);
+        const r = HealthConfig.saveHealthConfig(tmp, 'myns', 'mob1', { parts: [] });
+        assert.ok(fs.existsSync(path.join(tmp, 'assets', 'myns', 'health_config', 'mob1.json')));
+        assert.deepStrictEqual(r, { file: path.join('assets', 'myns', 'health_config', 'mob1.json') });
+        assert.strictEqual(HealthConfig.readHealthConfig(tmp, 'myns', 'mob1').parts.length, 0);
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});
+test('L8: parseManifest 支持 72 字节续行（行首空格 = 上一属性值的延续）', () => {
+    const m = ManifestLib.parseManifest('Module-Name: abc\r\n ' + 'defgh\r\n ' + 'ijk\r\nModule-Version: 1.0\r\n');
+    // 续行去掉行首 1 个空格后拼接：abc + defgh + ijk
+    assert.strictEqual(m['Module-Name'], 'abcdefghijk');
+    assert.strictEqual(m['Module-Version'], '1.0');
+    const m2 = ManifestLib.parseManifest('A: x\r\n \r\nB: y\r\n');
+    assert.strictEqual(m2['A'], 'x');
+    assert.strictEqual(m2['B'], 'y');
+});
+
+// L7（async 校验）：非法 jar 内路径在调用 jar 命令之前即拒绝（无需 JDK）
+const l7Checks = [];
+const l7p1 = ModelParser.parseModelFromJar('C:/fake.jar', 'spark_models/../../evil.json')
+    .then(() => l7Checks.push(['L7: 含 .. 的 jar 内路径被拒', false, '未被拒绝']),
+          (e) => l7Checks.push(['L7: 含 .. 的 jar 内路径被拒', /非法/.test(String(e.message)), String(e.message)]));
+const l7p2 = ModelParser.parseModelFromJar('C:/fake.jar', 'other/x.json')
+    .then(() => l7Checks.push(['L7: 非 spark_models 路径被拒', false, '未被拒绝']),
+          (e) => l7Checks.push(['L7: 非 spark_models 路径被拒', /非法/.test(String(e.message)), String(e.message)]));
+Promise.all([l7p1, l7p2]).then(() => {
+    for (const [name, good, extra] of l7Checks) {
+        if (good) { passed++; console.log(`  ✓ ${name}`); }
+        else { failed++; console.log(`  ✗ ${name} → ${extra}`); }
+    }
+    console.log(`\n结果: ${passed} 通过, ${failed} 失败`);
+    if (failed > 0) process.exit(1);
+});

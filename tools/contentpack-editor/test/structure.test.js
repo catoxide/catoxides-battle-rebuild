@@ -411,5 +411,59 @@ test('exportToPack：落盘 .nbt 含 blockNbt（文件级往返，模拟"导出�
     }
 });
 
+console.log('=== N. (REVIEW) schema 校验加固 ===');
+const mkBp = (over) => Object.assign({
+    formatVersion: 1, structureId: 't', namespace: 't',
+    structure: {
+        step: 'surface_structures', terrainAdaptation: 'beard_thin', startPool: 'start',
+        maxDistanceFromCenter: 80, biomes: ['#minecraft:is_overworld'], projectToSurface: true, maxSurfaceLevel: 0,
+    },
+    pieces: [{ name: 'p', size: [4, 2, 4], boxFills: [], fillBlocks: [], jigsaws: [] }],
+    templatePools: [{ name: 'start', elements: [{ template: 'p', weight: 1, projection: 'rigid' }] }],
+    structureSet: { spacing: 32, separation: 12, salt: 1, frequency: 1 },
+}, over);
+test('基线：合法蓝图通过校验', () => {
+    assert.strictEqual(S.validateBlueprint(mkBp({})).valid, true);
+});
+test('M1: size 长度 ≠ 3 被拒（此前 !size.length===3 死代码放行 size:[5]）', () => {
+    const v = S.validateBlueprint(mkBp({ pieces: [{ name: 'p', size: [5], boxFills: [], fillBlocks: [], jigsaws: [] }] }));
+    assert.strictEqual(v.valid, false);
+    assert.ok(v.errors.some((e) => e.includes('size')), JSON.stringify(v.errors));
+});
+test('M1: size 单维 > 512 被拒、= 512 通过', () => {
+    assert.strictEqual(S.validateBlueprint(mkBp({ pieces: [{ name: 'p', size: [513, 2, 4], boxFills: [], fillBlocks: [], jigsaws: [] }] })).valid, false);
+    assert.strictEqual(S.validateBlueprint(mkBp({ pieces: [{ name: 'p', size: [512, 2, 4], boxFills: [], fillBlocks: [], jigsaws: [] }] })).valid, true);
+});
+test('L6: structureId/namespace 为 "." / ".." 被拒（防路径逃逸）', () => {
+    assert.strictEqual(S.validateBlueprint(mkBp({ structureId: '..' })).valid, false);
+    assert.strictEqual(S.validateBlueprint(mkBp({ structureId: '.' })).valid, false);
+    assert.strictEqual(S.validateBlueprint(mkBp({ namespace: '..' })).valid, false);
+});
+test('L6: writeStructure 拒绝 "." / ".." structureId（纵深防御）', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cped-ws-'));
+    try {
+        assert.throws(() => S.writeStructure(tmp, { structureId: '..' }), /structureId/);
+        assert.ok(!fs.existsSync(path.join(tmp, 'blueprint.json')), '.. 不得写到包根');
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});
+test('L5: readStructure/deleteStructure 拒绝 structures/ 外路径', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cped-l5-'));
+    try {
+        fs.writeFileSync(path.join(tmp, 'outside.json'), '{}');
+        assert.throws(() => S.readStructure(tmp, '../outside.json'));
+        assert.deepStrictEqual(S.deleteStructure(tmp, '../outside.json'), { deleted: false });
+        assert.ok(fs.existsSync(path.join(tmp, 'outside.json')), '包外文件不得被删');
+        // 合法路径正常
+        fs.mkdirSync(path.join(tmp, 'structures', 'x'), { recursive: true });
+        fs.writeFileSync(path.join(tmp, 'structures', 'x', 'blueprint.json'), JSON.stringify({ structureId: 'x' }));
+        assert.strictEqual(S.readStructure(tmp, 'structures/x/blueprint.json').structureId, 'x');
+        assert.deepStrictEqual(S.deleteStructure(tmp, 'structures/x/blueprint.json'), { deleted: true });
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});
+
 console.log(`\n结构模块测试: ${passed} 通过, ${failed} 失败`);
 process.exit(failed ? 1 : 0);

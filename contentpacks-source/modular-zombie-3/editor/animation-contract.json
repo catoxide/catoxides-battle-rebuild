@@ -1,0 +1,104 @@
+{
+  "contract_version": 1,
+  "content_type": "spark_animation_set",
+  "sets": [
+    {
+      "id": "modular_zombie_3",
+      "label": "Modular Zombie 3（实体）",
+      "model": {
+        "path": "spark_models/entity/zombie3pack/modular_zombie_3.json",
+        "texture": "assets/zombie3pack/textures/entity/modular_zombie_3.png"
+      },
+      "animations": {
+        "dir": "spark_animations/entity/zombie3pack/modular_zombie_3/",
+        "required": [
+          {
+            "name": "still",
+            "loop": "true"
+          },
+          {
+            "name": "walking",
+            "loop": "true"
+          },
+          {
+            "name": "running",
+            "loop": "true"
+          },
+          {
+            "name": "attack",
+            "loop": "hold_on_last_frame"
+          },
+          {
+            "name": "alert",
+            "loop": "true"
+          },
+          {
+            "name": "hit_front",
+            "loop": "hold_on_last_frame"
+          },
+          {
+            "name": "hit_back",
+            "loop": "hold_on_last_frame"
+          },
+          {
+            "name": "aggressive",
+            "loop": "true"
+          }
+        ]
+      }
+    }
+  ],
+  "wiring": {
+    "referenced_by": "ModularZombie3.getStateAnimationName / determineAnimationState（本包 java/example/contentpack/zombie3/）",
+    "state_machine": {
+      "type": "java_state_machine",
+      "note": "状态机由 Java 驱动（非数据文件）；此表为契约侧镜像，供编辑器展示状态→动画映射",
+      "states": [
+        {
+          "id": 0,
+          "name": "idle",
+          "animation": "still"
+        },
+        {
+          "id": 1,
+          "name": "walking",
+          "animation": "walking"
+        },
+        {
+          "id": 2,
+          "name": "running",
+          "animation": "running"
+        },
+        {
+          "id": 3,
+          "name": "attack",
+          "animation": "attack"
+        },
+        {
+          "id": 4,
+          "name": "alert",
+          "animation": "alert"
+        },
+        {
+          "id": 5,
+          "name": "hit_front",
+          "animation": "hit_front"
+        },
+        {
+          "id": 6,
+          "name": "hit_back",
+          "animation": "hit_back"
+        },
+        {
+          "id": 7,
+          "name": "winding",
+          "animation": "aggressive"
+        }
+      ]
+    }
+  },
+  "validation": {
+    "bones_must_exist_in_model": true,
+    "max_duration": 6
+  }
+}

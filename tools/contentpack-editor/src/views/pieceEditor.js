@@ -165,11 +165,24 @@
     // plain JSON → tagged NBT（类型推断；blueprint 存储格式 = tagged，long 的 v 用字符串）
     function inferTag(value, fieldName) {
         const forced = fieldName ? NBT_FIELD_TYPES[fieldName] : null;
-        if (forced) return { $t: forced, v: Math.trunc(Number(value)) };
+        if (forced) {
+            const n = Math.trunc(Number(value));
+            // REVIEW-L9：强类型字段（byte/short/int）越界值此前静默截断 → 显式报错
+            const maxAbs = { 1: 127, 2: 32767, 3: 2147483647 }[forced];
+            if (maxAbs != null && Math.abs(n) > maxAbs) {
+                throw new Error(`字段 ${fieldName} 为 ${forced === 1 ? 'byte' : 'short'} 类型，值 ${value} 超出范围（±${maxAbs}）`);
+            }
+            return { $t: forced, v: n };
+        }
         if (typeof value === 'string') return { $t: 8, v: value };
         if (typeof value === 'boolean') return { $t: 1, v: value ? 1 : 0 };
         if (typeof value === 'number') {
-            if (Number.isInteger(value)) return { $t: 3, v: value };
+            if (Number.isInteger(value)) {
+                // REVIEW-L9：超 int32 的整数此前推断为 int → writeInt32LE 静默截断，
+                // 写出的模板 NBT 数值错误且无告警。改推 long（v 用字符串保 JSON 安全）
+                if (Math.abs(value) > 2147483647) return { $t: 4, v: String(value) };
+                return { $t: 3, v: value };
+            }
             return { $t: 6, v: value };
         }
         if (Array.isArray(value)) {

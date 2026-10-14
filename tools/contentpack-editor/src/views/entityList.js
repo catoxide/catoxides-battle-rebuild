@@ -93,7 +93,11 @@ window.EntityList = (function () {
                 const res = await window.api.deleteEntity(currentPackDir, ent.id);
                 if (!res.ok) { window.showError(t('common.saveFailed') + res.error); return; }
                 // 尝试删除对应部位配置（namespace 未知时用包名尝试）
-                const ns = ent.namespace || currentPackDir.split(/[\\/]/).pop();
+                // REVIEW-M7：与 entityEditor.packNamespace 对齐做 '-'→'_' 转换——
+                // 包目录名含 '-'（如 my-pack）且实体未声明 namespace 时，
+                // 保存用 my_pack、删除用 my-pack → 删除后正式 health 配置永远残留
+                const packNs = currentPackDir.split(/[\\/]/).pop().replace(/-/g, '_');
+                const ns = ent.namespace || packNs;
                 await window.api.deleteHealth(currentPackDir, ns, ent.id);
                 window.showStatus(tf('dyn.deleted', { id: ent.id }), true);
                 await loadEntities(currentPackDir);

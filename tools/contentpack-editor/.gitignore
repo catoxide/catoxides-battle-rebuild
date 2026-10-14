@@ -1,0 +1,4 @@
+# 开发工作区（CDP 调试脚本/asar 解包/编译产物/浏览器 profile）
+scratch/
+# playwright-cli 运行产物（快照/控制台日志）
+.playwright-cli/

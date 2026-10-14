@@ -2,6 +2,8 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
+<!-- REVIEW-L3：与主窗口同款 CSP（此前无 CSP，纵深防御缺失） -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
 <title>片段 3D 编辑器</title>
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -81,6 +83,7 @@
     <span class="note ed-spacer"></span>
     <span class="note" id="edHint"></span>
   </footer>
+  <script src="lib/errorCapture.js"></script> <!-- REVIEW-L3：渲染端错误捕获（与主窗口/模型编辑器一致） -->
   <script src="i18n.js"></script>
   <script src="core/voxel.js"></script>
   <script src="core/structureGrowth.js"></script> <!-- P16b 虚影拼合（self.StructureGrowth） -->
