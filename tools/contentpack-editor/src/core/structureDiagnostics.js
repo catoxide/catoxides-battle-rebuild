@@ -187,6 +187,9 @@ function checkJigsawContracts(bp) {
         ? require('./structureGrowth')
         : (typeof self !== 'undefined' ? self.StructureGrowth : null);
     const results = [];
+    // 0.2.1：导入蓝图的池引用可能是完整 ID（ns:name），池表用裸名 —— 归一化后再查，
+    // 否则导入的结构在「检查可生成性」里全部报「池不存在」。
+    const normRef = (ref) => String(ref == null ? '' : ref).replace(/^[a-z0-9_.-]+:/, '');
     const byName = new Map();
     for (const p of bp.pieces || []) byName.set(p.name, p);
     const poolByName = new Map();
@@ -198,7 +201,7 @@ function checkJigsawContracts(bp) {
     for (const p of bp.pieces || []) {
         for (const j of p.jigsaws || []) {
             const base = { piece: p.name, jigsaw: j.name };
-            const pool = poolByName.get(j.pool);
+            const pool = poolByName.get(normRef(j.pool));
             if (!pool) {
                 results.push(Object.assign({}, base, { level: 'error', msg: '池不存在: ' + j.pool, ok: false }));
                 continue;

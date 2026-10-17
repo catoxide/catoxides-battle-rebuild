@@ -13,8 +13,8 @@ window.StructureList = (function () {
         const listEl = document.getElementById('entityList'); // 中栏列表容器（两种内容类型共用）
         listEl.innerHTML = '';
         if (!packDir) return;
-        const res = await window.api.listStructures(packDir);
-        if (!res.ok) { window.showError(t('dyn.loadStructuresFail') + res.error); return; }
+        const res = await window.api.listStructures(packDir).catch((e) => ({ ok: false, error: String((e && e.message) || e) }));
+        if (!res || !res.ok) { window.showError(t('dyn.loadStructuresFail') + ((res && res.error) || '')); return; }
         const structures = res.data || [];
         window.AppState.structures = structures;
         if (!structures.length) {
@@ -63,9 +63,13 @@ window.StructureList = (function () {
             item.querySelector('.act-del').addEventListener('click', async (e) => {
                 e.stopPropagation();
                 if (!confirm(tf('dyn.deleteStructureConfirm', { id: s.structureId }))) return;
-                const res = await window.api.deleteStructure(currentPackDir, s.file, s.structureId);
-                if (!res.ok) { window.showError(t('common.saveFailed') + res.error); return; }
-                window.showStatus(tf('dyn.structureDeleted', { id: s.structureId }), true);
+                let res;
+                try { res = await window.api.deleteStructure(currentPackDir, s.file, s.structureId); }
+                catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
+                if (!res || !res.ok) { window.showError(t('dyn.deleteStructureFail') + ((res && res.error) || '')); return; }
+                const cleaned = (res.data && res.data.cleanedFiles) || [];
+                window.showStatus(tf('dyn.structureDeleted', { id: s.structureId }) +
+                    (cleaned.length ? `（已清理原版数据文件 ${cleaned.length} 个）` : ''), true);
                 await loadStructures(currentPackDir);
             });
             item.addEventListener('click', () => {

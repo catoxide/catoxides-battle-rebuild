@@ -294,5 +294,50 @@ console.log('=== 9. (REVIEW-M6) 旋转片段的碰撞检查按旋转后足迹（
     ok('死端记录 = 位置重叠', g.deadEnds.some((d) => d.reason === '位置重叠'), JSON.stringify(g.deadEnds));
 }
 
+// 0.2.1 自查：导入蓝图的池引用是完整 ID（ns:name），生长/诊断必须能命中裸名池
+{
+    const bpNs = {
+        structureId: 'nsref',
+        namespace: 'demo',
+        structure: { step: 'surface_structures', startPool: 'demo:start', size: 7 },
+        pieces: [{
+            name: 'root', size: [4, 2, 4], boxFills: [], fillBlocks: [],
+            // 水平朝向生长，避免包围盒重叠干扰（本模拟把重叠视为放置失败）
+            jigsaws: [{ x: 3, y: 0, z: 0, name: 'j1', pool: 'demo:child', target: 't2', joint: 'aligned', orientation: 'east_up' }],
+        }, {
+            name: 'child', size: [2, 2, 2], boxFills: [], fillBlocks: [],
+            jigsaws: [{ x: 0, y: 0, z: 0, name: 't2', pool: 'demo:start', target: 'j1', joint: 'aligned', orientation: 'west_up' }],
+        }],
+        templatePools: [
+            { name: 'start', elements: [{ template: 'root', weight: 1, projection: 'rigid' }] },
+            { name: 'child', elements: [{ template: 'child', weight: 1, projection: 'rigid' }] },
+        ],
+    };
+    const gNs = G.growStructure(bpNs, { rng: () => 0.5, maxPieces: 4 });
+    ok('完整 ID 池引用可生长（ns:start 命中裸名池 start）', !gNs.error && gNs.placements.length >= 1, JSON.stringify({ error: gNs.error, n: gNs.placements.length }));
+    ok('完整 ID 的子池引用也能命中（ns:child）', !gNs.error && gNs.placements.length >= 2, JSON.stringify({ placements: gNs.placements.map((p) => p.pieceName), dead: gNs.deadEnds }));
+}
+
+// 0.2.1：selectionPriority（camelCase，编辑器/导入写入的字段）现在真的生效
+{
+    // 同一模板里两个都能对接的 jigsaw：west_up（r=0，优先级 5）与 east_up（r=2，优先级 0）
+    const bpPrio = {
+        structure: { step: 'surface_structures', startPool: 'start', size: 7 },
+        pieces: [
+            { name: 'pa', size: [2, 2, 2], boxFills: [], fillBlocks: [], jigsaws: [
+                { x: 0, y: 0, z: 0, name: 'src', pool: 'start', target: 'x', joint: 'aligned', orientation: 'east_up' },
+                { x: 1, y: 0, z: 0, name: 'x', pool: 'start', target: 'src', joint: 'aligned', orientation: 'west_up', selectionPriority: 5 },
+                { x: 1, y: 0, z: 1, name: 'x', pool: 'start', target: 'src', joint: 'aligned', orientation: 'east_up', selectionPriority: 0 },
+            ] },
+        ],
+        templatePools: [{ name: 'start', elements: [{ template: 'pa', weight: 1, projection: 'rigid' }] }],
+    };
+    const c = G.jigsawCandidates(bpPrio, 'pa', 0, [0, 0, 0]);
+    ok('候选包含两种优先级', (c.cands || []).length >= 2 && (c.cands || []).some((x) => x.priority === 5) && (c.cands || []).some((x) => x.priority === 0), JSON.stringify(c.cands));
+    // 同权重下优先级高者必须选中（此前 snake_case 读取 → 恒为 0，可能随机选到 0 优先级的那个）
+    const pick = G.poolPick1to1(bpPrio, 'pa', 0, [0, 0, 0], () => 0.9);
+    ok('camelCase selectionPriority 生效：选中优先级 5 的 jigsaw', !!pick && pick.priority === 5, JSON.stringify(pick));
+}
+
 console.log('\n生长模拟测试: ' + pass + ' 通过, ' + fail + ' 失败');
 process.exit(fail ? 1 : 0);

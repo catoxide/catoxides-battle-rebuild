@@ -340,7 +340,10 @@ textarea { font-family: Consolas, monospace; resize: vertical; min-height: 60px;
 .anim-table .a-id { width: 36px; color: var(--fg-dim); }
 
 /* ===== 状态栏/输出 ===== */
-.status { margin-top: 10px; font-size: 13px; }
+.status { margin-top: 10px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* 0.2.1：全局状态条（在 #editorContent 之外，任何模式下都可见）；空内容时不占位 */
+#statusBar { margin: 0 10px 6px; padding: 4px 8px; border-radius: 6px; background: rgba(255,255,255,.04); }
+#statusBar:empty { display: none; }
 .status.ok { color: var(--ok); }
 .status.err { color: var(--err); }
 .out {

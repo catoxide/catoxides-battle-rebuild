@@ -95,7 +95,16 @@ function stageStructure(packName, blueprint) {
  */
 function readStagedStructure(packName, structureId) {
     const file = path.join(packStagingDir(packName), 'structures', sanitize(structureId), 'blueprint.json');
-    return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) : null;
+    if (!fs.existsSync(file)) return null;
+    // 0.2.1：草稿 JSON 损坏不能让整个结构列表失败（此前 JSON.parse 抛错冒到
+    // structure:list 的 catch → 列表全空，且错误写在不可见的实体状态条上）
+    try {
+        const bp = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        return bp && typeof bp === 'object' ? bp : null;
+    } catch (e) {
+        console.error('[staging] 草稿 JSON 损坏: ' + file + ' — ' + (e.message || e));
+        return null;
+    }
 }
 
 /**
@@ -106,7 +115,14 @@ function readStagedStructure(packName, structureId) {
  */
 function readStagedEntity(packName, entityId) {
     const file = path.join(packStagingDir(packName), 'entities', sanitize(entityId) + '.json');
-    return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) : null;
+    if (!fs.existsSync(file)) return null;
+    try {
+        const v = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        return v && typeof v === 'object' ? v : null;
+    } catch (e) {
+        console.error('[staging] 实体草稿损坏: ' + file + ' — ' + (e.message || e));
+        return null;
+    }
 }
 
 /**
@@ -118,7 +134,14 @@ function readStagedEntity(packName, entityId) {
  */
 function readStagedHealthConfig(packName, namespace, entityId) {
     const file = path.join(packStagingDir(packName), 'assets', sanitize(namespace), 'health_config', sanitize(entityId) + '.json');
-    return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) : null;
+    if (!fs.existsSync(file)) return null;
+    try {
+        const v = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        return v && typeof v === 'object' ? v : null;
+    } catch (e) {
+        console.error('[staging] 部位配置草稿损坏: ' + file + ' — ' + (e.message || e));
+        return null;
+    }
 }
 
 /**

@@ -29,8 +29,11 @@ window.StructureEditor = (function () {
     // ===== 打开/聚焦 =====
     async function ensureConstants() {
         if (constants) return constants;
-        const res = await window.api.getStructureDefaults();
-        if (res.ok) constants = res.data.constants;
+        let res = null;
+        try { res = await window.api.getStructureDefaults(); }
+        catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
+        if (res && res.ok) constants = res.data.constants;
+        else showError(t('dyn.getDefaultsFail') + ((res && res.error) || ''));
         fillConstantSelects();
         return constants;
     }
@@ -56,12 +59,17 @@ window.StructureEditor = (function () {
         // 读蓝图（暂存优先由主进程处理）
         let bp = null;
         if (!isNew && structure && structure.structureId) {
-            const res = await window.api.readStructure(pack.dir, structure.file, structure.structureId);
-            if (!res.ok) { window.showError('读取结构失败: ' + res.error); return; }
+            let res;
+            try { res = await window.api.readStructure(pack.dir, structure.file, structure.structureId); }
+            catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
+            if (!res || !res.ok) { window.showError('读取结构失败: ' + ((res && res.error) || '')); return; }
             bp = res.data;
         } else {
-            const res = await window.api.getStructureDefaults();
-            bp = res.ok ? res.data.blueprint : null;
+            let res;
+            try { res = await window.api.getStructureDefaults(); }
+            catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
+            if (!res || !res.ok) { window.showError(t('dyn.getDefaultsFail') + ((res && res.error) || '')); return; }
+            bp = res.data.blueprint;
         }
         if (!bp) return;
         if (isNew) { bp.structureId = ''; }
@@ -150,11 +158,15 @@ window.StructureEditor = (function () {
         badge.textContent = tab.isNew ? t('dyn.newDraft') : (tab._staged ? t('dyn.draftUnexported') : '');
         const out = document.getElementById('structOutput');
         out.style.display = 'none'; out.textContent = '';
+        const diag = document.getElementById('diagReport');
+        // 0.2.1：切结构/新建后 3D 页签的诊断报告清空（此前残留上一个结构的检查结果）
+        if (diag) { diag.style.display = 'none'; diag.innerHTML = ''; }
         const bar = document.getElementById('structStatus');
         if (bar) { bar.textContent = ''; bar.className = 'status'; }
     }
 
     // ===== 表单填充（blueprint → DOM） =====
+    let origStartHeight = null; // 最近一次 populate 的原始 HeightProvider（0.2.1：未改时原样保留）
     function populate(bp) {
         document.getElementById('sId').value = bp.structureId || '';
         document.getElementById('sNs').value = bp.namespace || '';
@@ -167,7 +179,12 @@ window.StructureEditor = (function () {
             : ((bp.structure && bp.structure.biomes) || '');
         document.getElementById('sSize').value = (bp.structure && bp.structure.size != null) ? bp.structure.size : 7;
         const sh = (bp.structure && bp.structure.startHeight) || {};
-        document.getElementById('sStartH').value = Number.isInteger(sh.absolute) ? sh.absolute : 0;
+        origStartHeight = sh;
+        // 0.2.1：above_bottom / {type:...} 的 HeightProvider 此前被强行读成 0 并在保存时
+        // 改写成 {absolute:0}（导入的结构名存实亡）。这里按常数取值显示，类型本身在未修改时保留。
+        document.getElementById('sStartH').value = Number.isInteger(sh.absolute)
+            ? sh.absolute
+            : (Number.isInteger(sh.above_bottom) ? sh.above_bottom : 0);
         document.getElementById('sProjHm').value = (bp.structure && bp.structure.projectStartToHeightmap) || '';
         document.getElementById('sUseExp').checked = !bp.structure || bp.structure.useExpansionHack !== false;
         const ss = bp.structureSet || {};
@@ -194,6 +211,9 @@ window.StructureEditor = (function () {
         piece.boxFills = [];
         piece.fillBlocks = r.piece.fillBlocks;
         piece.jigsaws = r.piece.jigsaws;
+        // 0.2.1：替换片段时必须同步替换方块实体 NBT（此前旧 NBT 残留 → 越界校验失败/
+        // 把旧箱子内容写到新结构里）；圈地读取没返回 NBT 时清空而不是沿用旧值。
+        piece.blockNbt = r.piece.blockNbt || [];
         renderPieces(tab.bp);
         renderLegend(tab);
         schedulePreviewUpdate(tab);
@@ -625,7 +645,16 @@ window.StructureEditor = (function () {
             .split(',').map((s) => s.trim()).filter(Boolean);
         const sizeV = parseInt(document.getElementById('sSize').value, 10);
         tab.bp.structure.size = (Number.isInteger(sizeV) && sizeV >= 1 && sizeV <= 128) ? sizeV : 7;
-        tab.bp.structure.startHeight = { absolute: parseInt(document.getElementById('sStartH').value, 10) || 0 };
+        // 0.2.1：未修改起始高度时原样保留 HeightProvider（above_bottom / {type:...} 不被洗成 absolute:0）
+        const shVal = parseInt(document.getElementById('sStartH').value, 10);
+        const shInput = Number.isInteger(shVal) ? shVal : 0;
+        const shOrig = origStartHeight || {};
+        const shOrigNum = Number.isInteger(shOrig.absolute) ? shOrig.absolute : (Number.isInteger(shOrig.above_bottom) ? shOrig.above_bottom : 0);
+        if (shOrig && (Number.isInteger(shOrig.above_bottom) || shOrig.type !== undefined) && shInput === shOrigNum) {
+            tab.bp.structure.startHeight = shOrig;
+        } else {
+            tab.bp.structure.startHeight = { absolute: shInput };
+        }
         const hm = document.getElementById('sProjHm').value;
         if (hm) tab.bp.structure.projectStartToHeightmap = hm;
         else delete tab.bp.structure.projectStartToHeightmap;
@@ -918,11 +947,12 @@ window.StructureEditor = (function () {
         const edited = applyVoxelEdits(tab);
         if (!tab.bp.structureId) { showError(t('common.idRequired')); return; }
         const res = await window.api.saveStructure(tab.packDir, tab.bp);
-        if (!res.ok) { showError(t('common.saveFailed') + res.error); return; }
+        if (!res || !res.ok) { showError(t('common.saveFailed') + ((res && res.error) || '')); return; }
         tab._staged = true;
         tab.isNew = false;
         renderFrame(tab);
-        showStatus(tf('dyn.savedAsDraft', { id: tab.bp.structureId }), true);
+        // 0.2.1：结构保存不再复用「实体已保存」文案
+        showStatus(tf('dyn.structureSavedAsDraft', { id: tab.bp.structureId }), true);
         if (window.StructureList && window.StructureList.loadStructures) {
             window.StructureList.loadStructures(tab.packDir);
         }
@@ -943,62 +973,114 @@ window.StructureEditor = (function () {
         }
     }
 
+    let isBuilding = false;
+
+    /**
+     * 打包（0.2.1 修正）：先把当前编辑保存成草稿、导出并重新生成整包原版数据，再构建。
+     * 此前只做「暂存导出（可选）+ 预检 + Gradle」——改完字段直接点打包，jar 里 data/ 是旧文件，
+     * 但界面照样报 Build OK（构建成功 ≠ 游戏里是新数据）。
+     */
     async function build() {
         const tab = activeTab();
         if (!tab) return;
-        const stagedRes = await window.api.stagingList(tab.packDir);
-        if (stagedRes.ok && stagedRes.data && stagedRes.data.hasStaged) {
-            const go = confirm(tf('dyn.buildStagedWarn', { n: stagedRes.data.items.length }));
-            if (go) {
-                const expRes = await window.api.stagingExport(tab.packDir);
-                if (!expRes.ok) { showError(t('common.exportFailed') + expRes.error); return; }
-            }
-        }
-        const outName = (tab.packName || 'pack') + '.jar';
-        const outEl = document.getElementById('structOutput');
-        outEl.style.display = 'block';
+        if (isBuilding) return;
+        isBuilding = true;
+        const btn = document.getElementById('btnStructBuild');
+        const oldText = btn ? btn.textContent : '';
+        if (btn) btn.disabled = true;
+        try {
+            const outName = (tab.packName || 'pack') + '.jar';
+            const outEl = document.getElementById('structOutput');
+            outEl.style.display = 'block';
+            outEl.textContent = '';
 
-        // ① 预检（只读）：有 error 直接中止，不做「构建成功但加载不了」的无用功
-        const pre = await window.api.preflightPack(tab.packDir);
-        const renderFindings = (data) => {
-            const f = (data && data.findings) || [];
-            const errs = f.filter((x) => x.level === 'error');
-            const warns = f.filter((x) => x.level === 'warn');
-            const oks = f.filter((x) => x.level === 'ok');
-            const lines = [tf('dyn.preflightSummary', { e: errs.length, w: warns.length })];
-            for (const x of errs) lines.push(`[ERROR] ${x.code} ${x.msg}${x.src ? '  〔' + x.src + '〕' : ''}`);
-            for (const x of warns) lines.push(`[WARN ] ${x.code} ${x.msg}${x.src ? '  〔' + x.src + '〕' : ''}`);
-            for (const x of oks) lines.push(`[OK   ] ${x.msg}`);
-            return lines.join('\n');
-        };
-        if (pre.ok) {
-            outEl.textContent = renderFindings(pre.data) + '\n\n';
+            // ① 先保存当前编辑（校验不通过直接中止，避免「打包的是旧数据」）
+            collectInto(tab);
+            applyVoxelEdits(tab);
+            if (!tab.bp.structureId) { showError(t('common.idRequired')); return; }
+            const saveRes = await window.api.saveStructure(tab.packDir, tab.bp);
+            if (!saveRes || !saveRes.ok) {
+                showError(t('common.saveFailed') + ((saveRes && saveRes.error) || ''));
+                return;
+            }
+            tab._staged = true;
+            tab.isNew = false;
+
+            // ② 暂存 → 正式包
+            const expRes = await window.api.stagingExport(tab.packDir);
+            if (!expRes || !expRes.ok) {
+                showError(t('common.exportFailed') + ((expRes && expRes.error) || ''));
+                return;
+            }
+            tab._staged = false;
+
+            // ③ 重新生成整包原版数据（blueprint → data/<ns>/worldgen/…）
+            //    冲突/校验失败都中止构建：宁可报错，也不要打出与蓝图不一致的 jar
+            const vanRes = await window.api.exportStructureVanillaAll(tab.packDir);
+            const vanData = (vanRes && vanRes.data) || {};
+            if (!vanRes || !vanRes.ok) {
+                outEl.textContent = '=== ' + t('structure.exportVanillaFail') + ' ===\n' + ((vanRes && vanRes.error) || '');
+                showError(t('structure.exportVanillaFail') + '：' + String((vanRes && vanRes.error) || '').split('\n')[0]);
+                return;
+            }
+            if (vanData.stagedNotExported && vanData.stagedNotExported.length) {
+                outEl.textContent += tf('structure.exportVanillaStagedSkipped', { ids: vanData.stagedNotExported.join(', ') }) + '\n';
+            }
+            const vanStructures = vanData.structures || [];
+            const vanFiles = vanStructures.reduce((a, s) => a + (s.files || []).length, 0);
+
+            // ④ 预检
+            const renderFindings = (data) => {
+                const f = (data && data.findings) || [];
+                const errs = f.filter((x) => x.level === 'error');
+                const warns = f.filter((x) => x.level === 'warn');
+                const oks = f.filter((x) => x.level === 'ok');
+                const lines = [tf('dyn.preflightSummary', { e: errs.length, w: warns.length })];
+                for (const x of errs) lines.push(`[ERROR] ${x.code} ${x.msg}${x.src ? '  〔' + x.src + '〕' : ''}`);
+                for (const x of warns) lines.push(`[WARN ] ${x.code} ${x.msg}${x.src ? '  〔' + x.src + '〕' : ''}`);
+                for (const x of oks) lines.push(`[OK   ] ${x.msg}`);
+                return lines.join('\n');
+            };
+            let pre = null;
+            try { pre = await window.api.preflightPack(tab.packDir); }
+            catch (e) { pre = { ok: false, error: String((e && e.message) || e) }; }
+            if (!pre || !pre.ok) {
+                // 0.2.1：预检 IPC 失败不再「照样继续打包」（此前会带着未知状态跑 Gradle）
+                outEl.textContent += t('dyn.preflightError') + '：' + ((pre && pre.error) || '') + '\n' + t('dyn.buildAborted');
+                showStatus(t('dyn.preflightError'), false);
+                return;
+            }
+            outEl.textContent += renderFindings(pre.data) + '\n\n';
             if (!pre.data.ok) {
                 outEl.textContent += t('dyn.buildAborted');
                 showStatus(tf('dyn.preflightFailed', { n: pre.data.errors.length }), false);
                 return;
             }
-        }
 
-        // ② 打包（Gradle 优先，失败回退 build-pack.ps1）
-        outEl.textContent += t('dyn.buildRunning') + '\n';
-        const res = await window.api.buildPack({ packDir: tab.packDir, outJarName: outName });
-        const data = res.data || {};
-        let text = (data.preflight ? renderFindings(data.preflight) + '\n\n' : '');
-        text += res.ok ? '=== Build OK ===\n' : '=== Build Failed ===\n';
-        if (data.mode) text += `[mode: ${data.mode}]\n`;
-        if (data.autoCreated && data.autoCreated.length) {
-            text += tf('dyn.autoScaffold', { files: data.autoCreated.join(', ') }) + '\n';
-        }
-        text += (data.stdout || '');
-        if (data.stderr) text += '\n[stderr]\n' + data.stderr;
-        if (data.verify && data.verify.length) text += '\n' + renderFindings({ findings: data.verify }) + '\n';
-        if (!res.ok) text += '\n' + res.error;
-        outEl.textContent = text;
-        if (res.ok) {
-            showStatus(tf('dyn.buildDone', { name: data.expectedJar || outName }), true);
-        } else {
-            showStatus(t('dyn.buildFail'), false);
+            // ⑤ 打包（Gradle 优先，失败回退 build-pack.ps1）
+            outEl.textContent += t('dyn.buildRunning') + '\n';
+            const res = await window.api.buildPack({ packDir: tab.packDir, outJarName: outName });
+            const data = (res && res.data) || {};
+            let text = `[vanilla export: ${vanStructures.length} structure(s) / ${vanFiles} file(s)]\n\n`;
+            text += (data.preflight ? renderFindings(data.preflight) + '\n\n' : '');
+            text += res && res.ok ? '=== Build OK ===\n' : '=== Build Failed ===\n';
+            if (data.mode) text += `[mode: ${data.mode}]\n`;
+            if (data.autoCreated && data.autoCreated.length) {
+                text += tf('dyn.autoScaffold', { files: data.autoCreated.join(', ') }) + '\n';
+            }
+            text += (data.stdout || '');
+            if (data.stderr) text += '\n[stderr]\n' + data.stderr;
+            if (data.verify && data.verify.length) text += '\n' + renderFindings({ findings: data.verify }) + '\n';
+            if (!res || !res.ok) text += '\n' + ((res && res.error) || '');
+            outEl.textContent = text;
+            if (res && res.ok) {
+                showStatus(tf('dyn.buildDone', { name: data.expectedJar || outName }), true);
+            } else {
+                showStatus(t('dyn.buildFail'), false);
+            }
+        } finally {
+            isBuilding = false;
+            if (btn) { btn.disabled = false; btn.textContent = oldText; }
         }
     }
 
@@ -1020,8 +1102,16 @@ window.StructureEditor = (function () {
             return;
         }
         const files = (res.data && res.data.files) || [];
+        // 0.2.1：导出成功后主进程已写正式蓝图并删除该结构草稿 → 重置徽标并刷新列表
+        tab._staged = false;
+        tab.isNew = false;
+        renderFrame(tab);   // 会清空 #structOutput/#structStatus，故输出放在其后
+        outEl.style.display = 'block';
         outEl.textContent = '=== Vanilla Export OK ===\n' + files.map((f) => '  ' + f).join('\n');
         showStatus(tf('structure.exportVanillaDone', { n: files.length }), true);
+        if (window.StructureList && window.StructureList.loadStructures) {
+            window.StructureList.loadStructures(tab.packDir);
+        }
     }
 
     // ===== 事件绑定 =====
@@ -1037,6 +1127,7 @@ window.StructureEditor = (function () {
             tab.bp.pieces.push({
                 name: 'piece_' + (tab.bp.pieces.length + 1),
                 size: [8, 4, 8],
+                // 0.2.1：默认填充区必须在模板尺寸内（此前 to:[8,0,0]，合法最大 x=7 → 保存必报越界）
                 boxFills: [{ from: [0, 0, 0], to: [7, 0, 7], block: 'minecraft:stone_bricks' }],
                 fillBlocks: [],
                 jigsaws: [],
@@ -1057,7 +1148,15 @@ window.StructureEditor = (function () {
             let k = 2;
             const exists = (n) => tab.bp.pieces.some((x) => x.name === n);
             while (exists(name)) name = (r.piece.name || 'region') + '_' + (k++);
-            tab.bp.pieces.push({ name, size: r.piece.size, boxFills: [], fillBlocks: r.piece.fillBlocks, jigsaws: r.piece.jigsaws });
+            tab.bp.pieces.push({
+                name,
+                size: r.piece.size,
+                boxFills: [],
+                fillBlocks: r.piece.fillBlocks,
+                jigsaws: r.piece.jigsaws,
+                // 0.2.1：圈地读取返回的方块实体 NBT（箱子内容/刷怪笼等）此前被丢弃
+                blockNbt: r.piece.blockNbt || [],
+            });
             renderPieces(tab.bp);
             renderLegend(tab);
             schedulePreviewUpdate(tab);
@@ -1187,5 +1286,24 @@ window.StructureEditor = (function () {
 
     bindEvents();
 
-    return { open, closeActiveTab, hasActiveTab };
+    // 0.2.1：切包时丢弃全部结构标签（否则左侧选中 B 包、右侧还是 A 包的结构）
+    function closeAll() {
+        tabs = [];
+        activeUid = null;
+        stopPreview();
+        const frame = document.getElementById('structureEditorContent');
+        if (frame) frame.classList.add('hidden');
+        if (window.applyEditorVisibility) window.applyEditorVisibility();
+    }
+
+    // 0.2.1：切语言后重渲染当前结构（动态生成的卡片/表格不会随 applyDOM 更新）
+    function rerender() {
+        const tab = activeTab();
+        if (!tab) return;
+        renderTabBar();
+        renderFrame(tab);
+        populate(tab.bp);
+    }
+
+    return { open, closeActiveTab, closeAll, rerender, hasActiveTab };
 })();

@@ -554,6 +554,13 @@ function importVanilla(srcPath, opts = {}) {
     }
 
     // ---- 数据包 / jar / zip / 文件夹
+    // 0.2.1：单独选一个 .json 是最常见的误操作 → 给明确提示，而不是「找不到 EOCD」
+    if (stat.isFile() && /\.json$/i.test(srcPath)) {
+        result.errors.push('选中的是单个 .json 文件，无法直接导入。\n' +
+            '请选择：结构模板 .nbt，或数据包 .jar/.zip，或数据包文件夹（含 data/<命名空间>/worldgen）。\n' +
+            '若想导入一个结构的定义，请把它放进数据包目录后整包导入。');
+        return result;
+    }
     let src;
     try {
         src = openSource(srcPath);
@@ -609,12 +616,15 @@ function importVanilla(srcPath, opts = {}) {
                     listStructureSets: () => structureSets,
                     sourceLabel: srcPath,
                 });
-                result.blueprints.push({ blueprint: built.blueprint, warnings: built.warnings, stats: built.stats });
-                for (const w of built.warnings) result.warnings.push(`[${sid}] ${w}`);
                 const v = S.validateBlueprint(built.blueprint);
                 if (!v.valid) {
+                    // 0.2.1：校验失败的蓝图不算「已导入」（此前 imported++ 仍执行 → 报告里
+                    // 「写入 N 个」与实际不符，主进程二次校验时又会静默跳过）
                     result.errors.push(`${sid}: 生成的蓝图校验失败: ${v.errors.slice(0, 3).join('; ')}`);
+                    continue;
                 }
+                result.blueprints.push({ blueprint: built.blueprint, warnings: built.warnings, stats: built.stats });
+                for (const w of built.warnings) result.warnings.push(`[${sid}] ${w}`);
                 imported++;
             } catch (e) {
                 result.errors.push(fullId + ': ' + (e.message || e));

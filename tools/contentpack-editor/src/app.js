@@ -13,6 +13,7 @@
     };
 
     // ===== 全局 UI 辅助 =====
+    // 0.2.1：状态条已移到 #editorContent 之外（index.html），任何模式下都可见。
     window.showError = function (msg) {
         const bar = document.getElementById('statusBar');
         if (bar) {
@@ -28,6 +29,19 @@
             bar.className = 'status ' + (ok ? 'ok' : 'err');
             bar.textContent = msg;
         }
+    };
+
+    // 0.2.1：切换包时丢弃右侧所有编辑框架（此前契约编辑器 packDir 停留在上一个包，
+    // 切换包后点「打包」会打到旧包；实体/结构标签也跨包残留）。
+    window.closeAllEditorsForPackSwitch = function () {
+        try { if (window.EntityEditor && window.EntityEditor.closeAll) window.EntityEditor.closeAll(); } catch { /* 忽略 */ }
+        try { if (window.StructureEditor && window.StructureEditor.closeAll) window.StructureEditor.closeAll(); } catch { /* 忽略 */ }
+        try { if (window.ContractEditor) window.ContractEditor.close(); } catch { /* 忽略 */ }
+        try { if (window.TapeEditor) window.TapeEditor.close(); } catch { /* 忽略 */ }
+        window.AppState.entity = null;
+        window.AppState.healthConfig = { parts: [] };
+        window.AppState.model = null;
+        if (window.applyEditorVisibility) window.applyEditorVisibility();
     };
 
     // 实体/结构/契约/状态机四个编辑器框架的显隐协调。
@@ -157,18 +171,24 @@
 
         // W5.3: 渲染模式开关 + 崩溃自愈横幅
         const btnGpu = document.getElementById('btnGpuToggle');
+        const tt = (k) => (window.I18n ? window.I18n.t(k) : k);
+        let gpuState = false, debugState = false;
         function updateGpuBtn(on) {
+            gpuState = !!on;
             if (!btnGpu) return;
-            btnGpu.textContent = on ? '🐢 软件渲染' : '⚡ 硬件加速';
-            btnGpu.title = on
-                ? '当前软件渲染（绕过 GPU 驱动，3D 略慢但稳定）。点击切回硬件加速（重启生效）。'
-                : '当前硬件加速。若频繁闪退/崩溃，可切软件渲染（重启生效）。';
+            btnGpu.textContent = on ? tt('app.gpuSoft') : tt('app.gpuHard');
+            btnGpu.title = on ? tt('app.gpuSoftTip') : tt('app.gpuHardTip');
         }
         if (btnGpu) {
             btnGpu.addEventListener('click', async () => {
                 try {
                     const cur = await window.api.getSettings();
-                    const on = !(cur && cur.ok && cur.data && cur.data.softwareRendering);
+                    // 0.2.1：读取失败不能当成「当前是硬件加速」→ 否则点击反而切到软件渲染
+                    if (!cur || !cur.ok || !cur.data) {
+                        window.showError && window.showError(tt('app.settingsReadFail') + ' ' + ((cur && cur.error) || ''));
+                        return;
+                    }
+                    const on = !cur.data.softwareRendering;
                     const r = await window.api.setSoftwareRendering(on);
                     if (!r || !r.ok) { window.showError && window.showError('设置失败: ' + (r && r.error)); return; }
                     updateGpuBtn(on);
@@ -180,17 +200,20 @@
         // W5.5: 调试模式开关（chromium.log + DevTools 自动打开 + 崩溃转储；重启生效）
         const btnDebug = document.getElementById('btnDebugToggle');
         function updateDebugBtn(on) {
+            debugState = !!on;
             if (!btnDebug) return;
-            btnDebug.textContent = on ? '🔍 调试中' : '🔍 调试';
-            btnDebug.title = on
-                ? '调试模式已开启（Chromium 日志 → logs/contentpack-editor/chromium.log + DevTools 自动打开 + 崩溃转储）。点击关闭（重启生效）。'
-                : '开启调试模式：抓取 Chromium 内部日志 + 自动打开 DevTools + 原生崩溃转储（重启生效）。';
+            btnDebug.textContent = on ? tt('app.debugOn') : tt('app.debugOff');
+            btnDebug.title = on ? tt('app.debugOnTip') : tt('app.debugOffTip');
         }
         if (btnDebug) {
             btnDebug.addEventListener('click', async () => {
                 try {
                     const cur = await window.api.getSettings();
-                    const on = !(cur && cur.ok && cur.data && cur.data.debugMode);
+                    if (!cur || !cur.ok || !cur.data) {
+                        window.showError && window.showError(tt('app.settingsReadFail') + ' ' + ((cur && cur.error) || ''));
+                        return;
+                    }
+                    const on = !cur.data.debugMode;
                     const r = await window.api.setDebugMode(on);
                     if (!r || !r.ok) { window.showError && window.showError('设置失败: ' + (r && r.error)); return; }
                     updateDebugBtn(on);
@@ -200,7 +223,12 @@
         }
         try {
             const st0 = await window.api.getSettings();
-            if (st0 && st0.ok && st0.data) updateDebugBtn(!!st0.data.debugMode);
+            if (st0 && st0.ok && st0.data) {
+                // 0.2.1：启动时两个按钮都要按真实设置刷新（此前只刷了调试按钮，
+                // 软件渲染模式下 GPU 按钮仍显示「⚡ 硬件加速」，与实际相反）
+                updateDebugBtn(!!st0.data.debugMode);
+                updateGpuBtn(!!st0.data.softwareRendering);
+            }
         } catch { /* 忽略 */ }
 
         // 消费重启通知（W5.5）：reopen = 重启前模型编辑器开着 → 自动重开（W5.2 恢复最后模型）；
@@ -235,6 +263,11 @@
                 // 至少把左栏包列表与中栏内容列表按新语言重画（打开中的编辑面板需重开）。
                 try { window.PackList.loadPacks(); } catch { /* 忽略 */ }
                 try { loadContentList(); } catch { /* 忽略 */ }
+                // 0.2.1：顶栏两个开关按钮与已打开的契约/结构/状态机编辑器也要跟着切换
+                try { updateGpuBtn(gpuState); updateDebugBtn(debugState); } catch { /* 忽略 */ }
+                try { if (window.ContractEditor && window.ContractEditor.rerender) window.ContractEditor.rerender(); } catch { /* 忽略 */ }
+                try { if (window.StructureEditor && window.StructureEditor.rerender) window.StructureEditor.rerender(); } catch { /* 忽略 */ }
+                try { if (window.TapeEditor && window.TapeEditor.rerender) window.TapeEditor.rerender(); } catch { /* 忽略 */ }
             });
             window.I18n.applyDOM();
         } else {
@@ -273,7 +306,14 @@
         initPackPathTools(rootSource);
 
         // 初始化左栏（包列表）→ 选中包 → 加载当前类型列表
+        // 注意：PackList.select() 会先把 AppState.pack 赋成新包，所以这里不能拿
+        // AppState.pack 当「上一个包」，必须自己记（此前比较的结果恒相等 → 从不重置）
+        let editorPackDir = null;
         window.PackList.init(async (pack) => {
+            if (editorPackDir && pack && editorPackDir !== pack.dir) {
+                try { window.closeAllEditorsForPackSwitch(); } catch { /* 忽略 */ }
+            }
+            editorPackDir = pack.dir;
             window.AppState.pack = pack;
             document.getElementById('packNameLabel').textContent = pack.name + ' v' + pack.version;
             document.getElementById('btnNewEntity').disabled = false;
@@ -335,6 +375,11 @@
             window.AppState.contentType = type;
             const tools = document.getElementById('structTools');
             if (tools) tools.style.display = (type === 'structure') ? 'flex' : 'none';
+            // 0.2.1：切内容类型时清掉上一次的结构导入/导出报告（此前一直残留）
+            if (type !== 'structure') {
+                const rep = document.getElementById('structReport');
+                if (rep) { rep.style.display = 'none'; rep.textContent = ''; }
+            }
             const pack = window.AppState.pack;
             if (!pack) return;
             // 契约由包声明、编辑器不新建 → 该类型下禁用"+ 新建"
@@ -427,12 +472,17 @@
             const d = (r && r.data) || {};
             const structures = d.structures || [];
             const fileCount = structures.reduce((a, s) => a + s.files.length, 0);
+            const stagedNotExported = d.stagedNotExported || [];
             const lines = ['=== 导出原版数据（整包） ==='];
             if (structures.length) {
                 for (const s of structures) {
                     lines.push(`  ✔ ${s.id}  · ${s.files.length} 个文件`);
                     for (const f of s.files) lines.push('      ' + f);
                 }
+            }
+            if (stagedNotExported.length) {
+                // 0.2.1：整包导出不含暂存草稿 —— 必须明确列出来，否则用户以为都导出了
+                lines.push(`  未导出的草稿 ${stagedNotExported.length} 个（先逐个「导出」）：${stagedNotExported.join(', ')}`);
             }
             if ((d.errors || []).length) {
                 lines.push('错误:');
@@ -443,7 +493,8 @@
                 window.showError(tf('structure.exportAllFail', { msg: (r && r.error) || '?' }));
                 return;
             }
-            window.showStatus(tf('structure.exportAllDone', { n: structures.length, f: fileCount }), true);
+            window.showStatus(tf('structure.exportAllDone', { n: structures.length, f: fileCount }) +
+                (stagedNotExported.length ? `（另有 ${stagedNotExported.length} 个草稿未导出）` : ''), true);
         }
 
         // 自动加载包列表
@@ -562,6 +613,20 @@
 
     async function refreshAfterPackPaths() {
         await updatePackPathHeader();
+        // 0.2.1：包库/新建包目录变了 → 旧选中的包可能已不在允许根内（后续打包会报
+        // 「非法的包目录」）。这里清掉选中与右侧编辑器，回到空态。
+        try {
+            if (window.AppState && window.AppState.pack) {
+                window.AppState.pack = null;
+                if (window.closeAllEditorsForPackSwitch) window.closeAllEditorsForPackSwitch();
+                const lbl = document.getElementById('packNameLabel');
+                if (lbl) lbl.textContent = '';
+                const ne = document.getElementById('btnNewEntity');
+                if (ne) ne.disabled = true;
+                const el = document.getElementById('entityList');
+                if (el) el.innerHTML = '';
+            }
+        } catch { /* 清态失败不影响刷新 */ }
         try { await window.PackList.loadPacks(); } catch { /* 包列表刷新失败不阻断 */ }
     }
 
@@ -575,7 +640,7 @@
                 window.showStatus(`${label}已更新: ${r.data[which === 'packsRoot' ? 'packsRoot' : 'newPackDir']}`, true);
                 await refreshAfterPackPaths();
             } else if (r && r.error !== 'cancelled') {
-                window.showError(`设置${label}失败: ${r.error}`);
+                window.showError(`设置${label}失败: ${r && r.error}`);
             }
         };
         // 0.2.1：逐项绑定（缺元素只跳过自己，一个都不影响其它绑定）
@@ -588,6 +653,8 @@
                 await refreshAfterPackPaths();
             } else if (r) {
                 window.showError('复位失败: ' + r.error);
+            } else {
+                window.showError('复位失败：主进程未响应');
             }
         };
         // 0.2.1：连接 mod 工程（独立工作区 → 真工程）
@@ -599,6 +666,8 @@
                 location.reload();
             } else if (r && r.error !== 'cancelled') {
                 window.showError('连接工程失败: ' + r.error);
+            } else if (!r) {
+                window.showError('连接工程失败：主进程未响应');
             }
         };
         // 0.2.1：诊断信息（反馈闭环）

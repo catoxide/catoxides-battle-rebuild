@@ -1291,5 +1291,8 @@ window.TapeEditor = (function () {
         }
     }
 
-    return { open, close, hasActiveTab, init };
+    // 0.2.1：切语言后重渲染（工具栏/检查器是动态生成的，data-i18n 覆盖不到）
+    function rerender() { if (S && S.open) renderAll(); }
+
+    return { open, close, hasActiveTab, init, rerender };
 })();

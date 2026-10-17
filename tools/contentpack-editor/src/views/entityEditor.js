@@ -107,6 +107,23 @@ window.EntityEditor = (function () {
         activateTab(next.uid);
     }
 
+    // 0.2.1：切包时关闭全部实体标签（此前右侧标签跨包残留）
+    function closeAll() {
+        if (activeUid) {
+            const tab = activeTab();
+            if (tab) collectInto(tab);
+        }
+        tabs = [];
+        activeUid = null;
+        window.AppState.entity = null;
+        window.AppState.healthConfig = { parts: [] };
+        window.AppState.model = null;
+        const bar = document.getElementById('editorTabsBar');
+        if (bar) bar.innerHTML = '';
+        document.getElementById('editorContent').classList.add('hidden');
+        if (window.applyEditorVisibility) window.applyEditorVisibility();
+    }
+
     // ===== 标签栏渲染 =====
     function renderTabBar() {
         const bar = document.getElementById('editorTabsBar');
@@ -854,5 +871,5 @@ window.EntityEditor = (function () {
     // 初始化事件绑定（模块加载时执行一次）
     bindEvents();
 
-    return { open, closeActiveTab, hasActiveTab: () => activeUid !== null };
+    return { open, closeActiveTab, closeAll, hasActiveTab: () => activeUid !== null };
 })();

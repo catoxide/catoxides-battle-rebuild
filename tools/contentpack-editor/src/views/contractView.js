@@ -9,17 +9,20 @@ window.ContractList = (function () {
     const t = (k) => (window.I18n ? window.I18n.t(k) : k);
     const tf = (k, p) => (window.I18n ? window.I18n.tf(k, p) : k);
     let lastPackDir = null;
+    let activeSetId = null;
 
     async function load(packDir) {
         lastPackDir = packDir;
         const listEl = document.getElementById('entityList');
         listEl.innerHTML = '';
         if (!packDir) return;
-        const res = await window.api.readContract(packDir);
-        if (!res.ok) {
-            const msg = res.error === 'no-contract'
+        let res;
+        try { res = await window.api.readContract(packDir); }
+        catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
+        if (!res || !res.ok) {
+            const msg = (res && res.error === 'no-contract')
                 ? t('contract.none')
-                : t('contract.error') + (res.error || (res.errors || []).join('；'));
+                : t('contract.error') + ((res && (res.error || (res.errors || []).join('；'))) || '');
             const item = document.createElement('div');
             item.className = 'list-item muted';
             item.textContent = msg;
@@ -30,7 +33,9 @@ window.ContractList = (function () {
         for (const set of report.sets) {
             const icon = set.errors.length ? '✗' : (set.warnings.length ? '⚠' : '✓');
             const item = document.createElement('div');
-            item.className = 'list-item';
+            // 0.2.1：当前打开的集高亮（刷新/改语言后能看出当前查看的是哪一个）
+            item.className = 'list-item' + (set.id === activeSetId ? ' active' : '');
+            item.dataset.setId = set.id;
             item.innerHTML = `
                 <div class="li-main">
                     <div class="li-thumb" style="display:flex;align-items:center;justify-content:center;font-size:22px">${icon}</div>
@@ -44,13 +49,21 @@ window.ContractList = (function () {
                 tf('contract.summary', { n: set.animations.length, e: set.errors.length, w: set.warnings.length });
             item.addEventListener('click', () => {
                 window.AppState.activeFrame = 'contract';
+                setActive(set.id);
                 window.ContractEditor.open({ set, report });
             });
             listEl.appendChild(item);
         }
     }
 
-    return { load };
+    function setActive(setId) {
+        activeSetId = setId || null;
+        document.querySelectorAll('#entityList .list-item').forEach((el) => {
+            el.classList.toggle('active', !!activeSetId && el.dataset.setId === activeSetId);
+        });
+    }
+
+    return { load, setActive };
 })();
 
 window.ContractEditor = (function () {
@@ -58,6 +71,9 @@ window.ContractEditor = (function () {
     const tf = (k, p) => (window.I18n ? window.I18n.tf(k, p) : k);
     let isOpen = false;
     let packDir = null;
+    let lastCtx = null;          // 0.2.1：缓存最近一次渲染的 context（切语言/刷新时重渲染）
+    let currentSetId = null;
+    let isBuilding = false;
 
     function esc(s) {
         return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -66,7 +82,10 @@ window.ContractEditor = (function () {
     function open(ctx) {
         const set = ctx.set;
         const report = ctx.report;
+        lastCtx = ctx;
+        currentSetId = set.id;
         packDir = (window.AppState.pack && window.AppState.pack.dir) || null;
+        if (window.ContractList && window.ContractList.setActive) window.ContractList.setActive(set.id);
         isOpen = true;
         window.AppState.activeFrame = 'contract';
 
@@ -148,7 +167,7 @@ window.ContractEditor = (function () {
                         ? st.exits.map((e) => `${esc(e.when)} ⇒ <b>${esc(e.to)}</b>${e.priority ? ` (p${e.priority})` : ''}${e.after ? ` [≥${e.after}s]` : ''}`).join('<br>')
                         : '—';
                     html += `<tr>
-                        <td class="mono"><b>${esc(st.id)}</b>${st.onEnter.length ? ` <span class="note">⚡${st.onEnter.join(',')}</span>` : ''}</td>
+                        <td class="mono"><b>${esc(st.id)}</b>${st.onEnter.length ? ` <span class="note">⚡${esc(st.onEnter.join(','))}</span>` : ''}</td>
                         <td class="mono">${esc(anims)}</td>
                         <td class="mono">${tape}</td>
                         <td class="mono">${exits}</td>
@@ -163,8 +182,8 @@ window.ContractEditor = (function () {
         if (wiring) {
             const smDesc = wiring.state_machine
                 ? (typeof wiring.state_machine === 'object'
-                    ? `${wiring.state_machine.type} → ${wiring.state_machine.path || ''}`
-                    : wiring.state_machine)
+                    ? `${esc(String(wiring.state_machine.type || ''))} → ${esc(String(wiring.state_machine.path || ''))}`
+                    : esc(String(wiring.state_machine)))
                 : 'null';
             html += `
             <div class="card">
@@ -212,39 +231,101 @@ window.ContractEditor = (function () {
     function close() {
         isOpen = false;
         packDir = null;
+        lastCtx = null;
         const frame = document.getElementById('contractEditorContent');
         if (frame) frame.classList.add('hidden');
         if (window.applyEditorVisibility) window.applyEditorVisibility();
     }
 
+    /** 切语言后重渲染当前集（此前只重画列表，正文/标题停在旧语言） */
+    function rerender() {
+        if (isOpen && lastCtx) open(lastCtx);
+    }
+
     async function refresh() {
         if (!packDir) return;
-        const res = await window.api.readContract(packDir);
-        if (!res.ok) {
-            if (window.showError) window.showError(t('contract.error') + (res.error || (res.errors || []).join('；')));
+        let res;
+        try { res = await window.api.readContract(packDir); }
+        catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
+        if (!res || !res.ok) {
+            if (window.showError) window.showError(t('contract.error') + ((res && (res.error || (res.errors || []).join('；'))) || ''));
             return;
         }
         const report = res.data;
-        // 重新打开第一个集（简单策略：当前视图刷新 = 重渲染首集）
-        open({ set: report.sets[0], report });
-        if (window.ContractList && packDir) window.ContractList.load(packDir);
+        if (window.ContractList && packDir) await window.ContractList.load(packDir);
+        // 0.2.1：刷新后恢复用户当前查看的集（此前固定跳回第一个集）
+        const set = (currentSetId && report.sets.find((s) => s.id === currentSetId)) || report.sets[0];
+        if (!set) return;
+        open({ set, report });
     }
 
+    /** 打包：先行检查暂存草稿 → 调 pack:build → 完整呈现产物/输出/校验结果（此前丢弃全部结果） */
     async function build() {
-        if (!packDir) return;
+        if (isBuilding) return;
+        const dir = (window.AppState && window.AppState.pack && window.AppState.pack.dir) || packDir;
+        if (!dir) return;
+        // 目标包与打开时不一致（切过包）→ 以当前选中包为准，并提示
+        if (packDir && dir !== packDir) {
+            packDir = dir;
+            if (window.showStatus) window.showStatus(t('contract.packChanged'), true);
+        }
         const out = document.getElementById('contractOutput');
         const status = document.getElementById('contractStatus');
-        out.style.display = 'block';
-        out.textContent = '';
-        status.className = 'status';
-        status.textContent = '';
-        const res = await window.api.buildPack({ packDir });
-        out.textContent = res.ok
-            ? (res.data && (res.data.output || res.data.log) || 'ok')
-            : 'ERROR: ' + (res.error || '');
-        status.className = 'status ' + (res.ok ? 'ok' : 'err');
-        status.textContent = res.ok ? 'BUILD OK' : 'BUILD FAILED';
+        const btn = document.getElementById('btnContractBuild');
+        const t0 = Date.now();
+        isBuilding = true;
+        if (btn) { btn.disabled = true; btn.dataset.oldText = btn.textContent; btn.textContent = t('contract.building'); }
+        if (out) { out.style.display = 'block'; out.textContent = t('contract.building') + '…'; }
+        if (status) { status.className = 'status'; status.textContent = ''; }
+        try {
+            // 暂存草稿提醒（与实体/结构编辑器一致）
+            let stagedCount = 0;
+            try {
+                const st = await window.api.stagingList(dir);
+                if (st && st.ok && st.data && st.data.items) stagedCount = st.data.items.length;
+                if (stagedCount && !confirm(tf('dyn.buildStagedWarn', { n: stagedCount }))) {
+                    if (out) out.textContent = t('contract.buildCanceled');
+                    return;
+                }
+            } catch { /* 暂存检查失败不阻断 */ }
+            let res;
+            try { res = await window.api.buildPack({ packDir: dir }); }
+            catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
+            if (!res) res = { ok: false, error: '主进程未响应' };
+            const d = res.data || {};
+            const lines = [];
+            if (d.preflight) {
+                const f = d.preflight.findings || [];
+                const errs = f.filter((x) => x.level === 'error');
+                const warns = f.filter((x) => x.level === 'warn');
+                lines.push(tf('dyn.preflightSummary', { e: errs.length, w: warns.length }));
+                for (const x of errs) lines.push(`[ERROR] ${x.code} ${x.msg}${x.src ? '  〔' + x.src + '〕' : ''}`);
+                for (const x of warns) lines.push(`[WARN ] ${x.code} ${x.msg}${x.src ? '  〔' + x.src + '〕' : ''}`);
+            }
+            if (d.mode) lines.push(`[mode: ${d.mode}]`);
+            if (d.autoCreated && d.autoCreated.length) lines.push(tf('dyn.autoScaffold', { files: d.autoCreated.join(', ') }));
+            if (d.gradleTask) lines.push(`[task: ${d.gradleTask}]`);
+            if (d.expectedJar) lines.push(`[jar: ${d.expectedJar}]`);
+            if (d.jarPath) lines.push(`[path: ${d.jarPath}]`);
+            if (d.stdout) lines.push(d.stdout);
+            if (d.stderr) lines.push('[stderr]\n' + d.stderr);
+            for (const v of d.verify || []) {
+                lines.push(`[${String(v.level || '').toUpperCase()}] ${v.code || ''} ${v.msg || ''}${v.src ? '  〔' + v.src + '〕' : ''}`);
+            }
+            if (!res.ok) lines.push('[error] ' + (res.error || ''));
+            lines.push(res.ok ? '=== ' + t('dyn.buildDoneShort') + ' ===' : '=== ' + t('dyn.buildFail') + ' ===');
+            if (out) out.textContent = lines.join('\n');
+            if (status) {
+                status.className = 'status ' + (res.ok ? 'ok' : 'err');
+                status.textContent = res.ok
+                    ? tf('dyn.buildDone', { name: d.expectedJar || '' }) + `（${((Date.now() - t0) / 1000).toFixed(1)}s）`
+                    : t('dyn.buildFail') + (res.error ? '：' + String(res.error).split('\n')[0] : '');
+            }
+        } finally {
+            isBuilding = false;
+            if (btn) { btn.disabled = false; if (btn.dataset.oldText) btn.textContent = btn.dataset.oldText; }
+        }
     }
 
-    return { open, close, refresh, build, hasActiveTab: () => isOpen, getPackDir: () => packDir };
+    return { open, close, refresh, rerender, build, hasActiveTab: () => isOpen, getPackDir: () => packDir };
 })();

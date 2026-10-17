@@ -711,5 +711,49 @@ test('V3: 单个 .nbt 模板导入 → 单片段蓝图（含 jigsaw 池保留原
     }
 });
 
+// 0.2.1 自查：校验缺口回归（startPool 必填 / maxDistance 上限 / fillBlocks 边界与方块 ID）
+test('V4: 校验缺口回归 —— startPool 必填 / maxDistance ≤128 / fillBlocks 边界与非法方块 ID', () => {
+    const base = () => ({
+        formatVersion: 2,
+        structureId: 'v4',
+        namespace: 'demo',
+        structure: {
+            step: 'surface_structures',
+            terrainAdaptation: 'none',
+            startPool: 'start',
+            maxDistanceFromCenter: 80,
+            biomes: ['#minecraft:is_overworld'],
+            size: 7,
+            startHeight: { absolute: 0 },
+            useExpansionHack: true,
+        },
+        pieces: [{
+            name: 'start', size: [8, 4, 8],
+            boxFills: [{ from: [0, 0, 0], to: [7, 0, 7], block: 'minecraft:stone_bricks' }],
+            fillBlocks: [], jigsaws: [],
+        }],
+        templatePools: [{ name: 'start', elements: [{ template: 'start', weight: 1, projection: 'rigid' }] }],
+        structureSet: { spacing: 32, separation: 12, salt: 1, frequency: 1 },
+    });
+    // 基线必须通过
+    assert.strictEqual(S.validateBlueprint(base()).valid, true, JSON.stringify(S.validateBlueprint(base()).errors));
+
+    const noStart = base(); noStart.structure.startPool = '';
+    assert.ok(S.validateBlueprint(noStart).errors.some((e) => e.includes('startPool 必填')), 'startPool 为空应报错');
+
+    const tooFar = base(); tooFar.structure.maxDistanceFromCenter = 200;
+    assert.ok(S.validateBlueprint(tooFar).errors.some((e) => e.includes('128')), 'maxDistance > 128 应报错');
+
+    const oob = base(); oob.pieces[0].fillBlocks.push({ x: 9, y: 0, z: 0, block: 'minecraft:stone' });
+    assert.ok(S.validateBlueprint(oob).errors.some((e) => e.includes('超出模板尺寸')), 'fillBlocks 越界应报错');
+
+    const badBlock = base(); badBlock.pieces[0].fillBlocks.push({ x: 0, y: 0, z: 0, block: 'minecraft:Stone With Space' });
+    assert.ok(S.validateBlueprint(badBlock).errors.some((e) => e.includes('方块 ID 非法')), '非法方块 ID 应报错');
+
+    const badFinal = base();
+    badFinal.pieces[0].jigsaws.push({ x: 0, y: 0, z: 0, name: 'j', pool: 'start', target: 't', joint: 'aligned', orientation: 'up_north', finalState: 'minecraft:stone[bad' });
+    assert.ok(S.validateBlueprint(badFinal).errors.some((e) => e.includes('finalState')), '非法 finalState 应报错');
+});
+
 console.log(`\n结构模块测试: ${passed} 通过, ${failed} 失败`);
 process.exit(failed ? 1 : 0);

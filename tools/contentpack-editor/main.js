@@ -1138,8 +1138,12 @@ function tapeResolvePackFile(p) {
     if (!PACKS_SOURCE_DIR) return { error: '未设置项目根目录' };
     // p.pack 兼容：绝对路径（AppState.pack.dir）或包目录名（相对 PACKS_SOURCE_DIR）
     const packDir = path.isAbsolute(p.pack) ? path.resolve(p.pack) : path.resolve(PACKS_SOURCE_DIR, p.pack);
-    if (packDir === PACKS_SOURCE_DIR
-        || !packDir.startsWith(PACKS_SOURCE_DIR + path.sep)
+    // 0.2.1：允许根 = 包库 + 新建包目录（与 safePackDir 一致）。此前只认包库，
+    // 建在「新建包目录」的包在契约里点「状态机编辑」必然报「包不存在」。
+    const roots = [PACKS_SOURCE_DIR, NEW_PACK_DIR].filter((r, i, a) => r && a.indexOf(r) === i).map((r) => path.resolve(r));
+    const inRoot = roots.some((r) => packDir === r || packDir.startsWith(r + path.sep));
+    const insideButRoot = roots.some((r) => packDir === r);
+    if (!inRoot || insideButRoot
         || !fs.existsSync(packDir) || !fs.statSync(packDir).isDirectory()) {
         return { error: `包不存在: ${p.pack}` };
     }
@@ -1402,18 +1406,22 @@ ipcMain.handle('app:pickPackDir', async (event, which) => {
 });
 
 // --- 包管理 ---
+/** 扫描包库 + 新建包目录（按目录去重合并）——pack:list / pack:create 共用 */
+function scanAllPacks() {
+    const packs = ManifestLib.scanPacks(PACKS_SOURCE_DIR);
+    if (NEW_PACK_DIR && NEW_PACK_DIR !== PACKS_SOURCE_DIR) {
+        let extra = [];
+        try { extra = ManifestLib.scanPacks(NEW_PACK_DIR); } catch { extra = []; }
+        const seen = new Set(packs.map((p) => p.dir));
+        for (const p of extra) if (!seen.has(p.dir)) packs.push(p);
+    }
+    return packs;
+}
+
 ipcMain.handle('pack:list', async () => {
     try {
         if (!ROOT) return { ok: false, error: '尚未设置项目根目录' };
-        const packs = ManifestLib.scanPacks(PACKS_SOURCE_DIR);
-        // W6.1：新建包目录 ≠ 包库目录时合并扫描（按目录去重）——新建的包要能在列表里看到
-        if (NEW_PACK_DIR && NEW_PACK_DIR !== PACKS_SOURCE_DIR) {
-            let extra = [];
-            try { extra = ManifestLib.scanPacks(NEW_PACK_DIR); } catch { extra = []; }
-            const seen = new Set(packs.map((p) => p.dir));
-            for (const p of extra) if (!seen.has(p.dir)) packs.push(p);
-        }
-        return { ok: true, data: packs };
+        return { ok: true, data: scanAllPacks() };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
     }
@@ -1468,8 +1476,22 @@ ipcMain.handle('pack:create', async (event, payload = {}) => {
         if (depErr) return { ok: false, error: depErr };
 
         // W6.1：新建包目录（默认 = 包库目录）
-        const dir = path.join(NEW_PACK_DIR || PACKS_SOURCE_DIR, manifest['Module-Name']);
-        if (fs.existsSync(dir)) return { ok: false, error: `目录已存在: ${dir}` };
+        // 0.2.1：两个根（包库 / 新建包目录）都要查重 —— 同名 Module-Name 会共用
+        // 产物名（contentpacks/<name>.jar）与暂存键，后建的那个会串味。
+        const targetRoot = NEW_PACK_DIR || PACKS_SOURCE_DIR;
+        const dir = path.join(targetRoot, manifest['Module-Name']);
+        const dupRoots = [PACKS_SOURCE_DIR, NEW_PACK_DIR].filter((r, i, a) => r && a.indexOf(r) === i);
+        for (const r of dupRoots) {
+            const candidate = path.join(r, manifest['Module-Name']);
+            if (fs.existsSync(candidate)) {
+                return {
+                    ok: false,
+                    error: `包已存在（Module-Name 唯一）：${candidate}\n` +
+                        (r === PACKS_SOURCE_DIR ? '在「包库目录」里已有同名包。' : '在「新建包目录」里已有同名包。') +
+                        '请换一个包名，或先删除/重命名已有包。',
+                };
+            }
+        }
 
         const files = Preflight.scaffoldFiles(manifest, {
             packId: String(payload.packId || '').trim() || manifest['Module-Name'].replace(/-/g, '_'),
@@ -1484,7 +1506,7 @@ ipcMain.handle('pack:create', async (event, payload = {}) => {
             fs.writeFileSync(full, content, 'utf-8');
             written.push(rel);
         }
-        const packs = ManifestLib.scanPacks(PACKS_SOURCE_DIR);
+        const packs = scanAllPacks();
         return {
             ok: true,
             data: {
@@ -1712,6 +1734,46 @@ ipcMain.handle('entity:delete', async (event, packDir, id) => {
 });
 
 // --- 建筑结构（建筑拼图：blueprint.json → 原版 jigsaw 数据） ---
+
+/**
+ * 同包多结构的「同名片段/池」检查（0.2.1）：
+ * 原版导出路径是扁平命名 `data/<ns>/structure/<piece>.nbt`、
+ * `data/<ns>/worldgen/template_pool/<pool>.json`（路径不含 structureId），
+ * 两个结构都叫 piece_1 / pool_1 时后导出者会静默覆盖前者的模板与池，
+ * 两个结构随之串味。导出前先查冲突并拒绝写盘，让人先改名。
+ * @returns {{pieceConflicts:string[], poolConflicts:string[]}}
+ */
+function findExportNameConflicts(packDir, bp, skipStructureId) {
+    const res = { pieceConflicts: [], poolConflicts: [] };
+    const minePieces = new Set((bp.pieces || []).map((p) => p.name).filter(Boolean));
+    const minePools = new Set((bp.templatePools || []).map((p) => p.name).filter(Boolean));
+    if (!minePieces.size && !minePools.size) return res;
+    let others = [];
+    try { others = StructureSchema.listStructures(packDir); } catch { others = []; }
+    for (const s of others) {
+        if (s.structureId === bp.structureId || s.structureId === skipStructureId) continue;
+        let obp = null;
+        try { obp = StructureSchema.readStructure(packDir, s.file); } catch { continue; }
+        for (const p of obp.pieces || []) {
+            if (p.name && minePieces.has(p.name)) res.pieceConflicts.push(`${p.name}（也被结构 ${s.structureId} 使用）`);
+        }
+        for (const pl of obp.templatePools || []) {
+            if (pl.name && minePools.has(pl.name)) res.poolConflicts.push(`${pl.name}（也被结构 ${s.structureId} 使用）`);
+        }
+    }
+    res.pieceConflicts = Array.from(new Set(res.pieceConflicts));
+    res.poolConflicts = Array.from(new Set(res.poolConflicts));
+    return res;
+}
+
+function exportConflictError(conf) {
+    const parts = [];
+    if (conf.pieceConflicts.length) parts.push('片段名冲突: ' + conf.pieceConflicts.join('、'));
+    if (conf.poolConflicts.length) parts.push('模板池名冲突: ' + conf.poolConflicts.join('、'));
+    return '导出会覆盖其它结构的原版数据文件（模板/池的文件路径不含结构名）：\n' + parts.join('\n') +
+        '\n请把这些片段/池改名（加 <结构名>_ 前缀）后再导出——否则游戏里两个结构会互相串味。';
+}
+
 ipcMain.handle('structure:list', async (event, packDir) => {
     try {
         packDir = safePackDir(packDir);
@@ -1784,6 +1846,54 @@ ipcMain.handle('structure:save', async (event, packDir, blueprint) => {
     }
 });
 
+/**
+ * 删除结构后清理它导出的原版数据文件（0.2.1）：
+ * 此前只删 blueprint / 草稿，data/<ns>/… 里的结构 JSON、structure_set、模板、池全部残留
+ * → 游戏里被删掉的结构还会继续生成。这里按蓝图记录的文件名删除，但**共用的模板/池不动**
+ * （别的蓝图也引用同名文件时保留，避免删 A 破坏 B）。
+ * @returns {string[]} 删除的相对路径
+ */
+function cleanupExportedStructure(packDir, bp) {
+    const fsx = fs;
+    const removed = [];
+    if (!bp || !bp.structureId) return removed;
+    const ns = bp.namespace || path.basename(packDir).toLowerCase().replace(/[^a-z0-9_.-]/g, '_');
+    const sid = bp.structureId;
+    const othersPiece = new Set();
+    const othersPool = new Set();
+    let others = [];
+    try { others = StructureSchema.listStructures(packDir); } catch { others = []; }
+    for (const s of others) {
+        if (s.structureId === sid) continue;
+        let obp = null;
+        try { obp = StructureSchema.readStructure(packDir, s.file); } catch { continue; }
+        for (const p of obp.pieces || []) if (p.name) othersPiece.add(p.name);
+        for (const pl of obp.templatePools || []) if (pl.name) othersPool.add(pl.name);
+    }
+    const targets = [
+        `data/${ns}/worldgen/structure/${sid}.json`,
+        `data/${ns}/worldgen/structure_set/${sid}_set.json`,
+    ];
+    for (const p of bp.pieces || []) {
+        if (p.name && !othersPiece.has(p.name)) targets.push(`data/${ns}/structure/${p.name}.nbt`);
+    }
+    for (const pl of bp.templatePools || []) {
+        if (pl.name && !othersPool.has(pl.name)) targets.push(`data/${ns}/worldgen/template_pool/${pl.name}.json`);
+    }
+    for (const rel of targets) {
+        const abs = path.join(packDir, rel);
+        try {
+            if (fsx.existsSync(abs) && fsx.statSync(abs).isFile()) {
+                fsx.unlinkSync(abs);
+                removed.push(rel);
+            }
+        } catch (e) {
+            Logger.warn('structure', `清理旧导出文件失败: ${rel} — ${String(e.message || e)}`);
+        }
+    }
+    return removed;
+}
+
 ipcMain.handle('structure:delete', async (event, packDir, relFile, structureId) => {
     try {
         packDir = safePackDir(packDir);
@@ -1794,11 +1904,19 @@ ipcMain.handle('structure:delete', async (event, packDir, relFile, structureId) 
         }
         const id = structureId
             || (relFile && relFile !== '(staged)' ? relFile.replace(/\\/g, '/').split('/').slice(-2, -1)[0] : '');
+        // 0.2.1：删除前先读蓝图，用于清理它导出的 data/ 文件
+        let bp = null;
+        if (relFile && relFile !== '(staged)') {
+            try { bp = StructureSchema.readStructure(packDir, relFile); } catch { bp = null; }
+        } else if (id) {
+            try { bp = Staging.readStagedStructure(packNameOf(packDir), id); } catch { bp = null; }
+        }
         const result = relFile && relFile !== '(staged)'
             ? StructureSchema.deleteStructure(packDir, relFile)
             : { deleted: false };
+        const cleaned = bp ? cleanupExportedStructure(packDir, bp) : [];
         if (id) Staging.removeStagedStructure(packNameOf(packDir), id);
-        return { ok: true, data: result };
+        return { ok: true, data: Object.assign({}, result, { cleanedFiles: cleaned }) };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
     }
@@ -1815,6 +1933,11 @@ ipcMain.handle('structure:exportVanilla', async (event, packDir, blueprint) => {
         const { valid, errors } = StructureSchema.validateBlueprint(blueprint);
         if (!valid) {
             return { ok: false, error: '结构校验失败（无法导出）:\n' + errors.join('\n') };
+        }
+        // 0.2.1：同名片段/池会覆盖其它结构的原版文件 → 先拒绝，避免静默串味
+        const conf = findExportNameConflicts(packDir, blueprint, blueprint.structureId);
+        if (conf.pieceConflicts.length || conf.poolConflicts.length) {
+            return { ok: false, error: exportConflictError(conf) };
         }
         // 1. 当前蓝图落盘为正式 blueprint.json（仅此结构）
         StructureSchema.writeStructure(packDir, blueprint);
@@ -1937,10 +2060,42 @@ ipcMain.handle('structure:exportVanillaAll', async (event, packDir) => {
     try {
         packDir = safePackDir(packDir);
         if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        // 0.2.1：整包导出前先查跨结构同名冲突（扁平文件路径会互相覆盖）
+        const all = StructureSchema.listStructures(packDir);
+        const conflicts = [];
+        const used = new Map(); // name → structureId
+        for (const s of all) {
+            let bp = null;
+            try { bp = StructureSchema.readStructure(packDir, s.file); } catch { continue; }
+            for (const p of bp.pieces || []) {
+                if (!p.name) continue;
+                const key = 'piece:' + p.name;
+                if (used.has(key) && used.get(key) !== s.structureId) {
+                    conflicts.push(`片段 ${p.name}：${used.get(key)} 与 ${s.structureId} 同名`);
+                } else used.set(key, s.structureId);
+            }
+            for (const pl of bp.templatePools || []) {
+                if (!pl.name) continue;
+                const key = 'pool:' + pl.name;
+                if (used.has(key) && used.get(key) !== s.structureId) {
+                    conflicts.push(`模板池 ${pl.name}：${used.get(key)} 与 ${s.structureId} 同名`);
+                } else used.set(key, s.structureId);
+            }
+        }
+        if (conflicts.length) {
+            return {
+                ok: false,
+                error: '整包导出已中止：多个结构共用同名片段/池（原版文件路径不含结构名，会互相覆盖）\n' +
+                    conflicts.slice(0, 20).map((c) => '· ' + c).join('\n') +
+                    '\n请改名为 <结构名>_xxx 后再导出。',
+            };
+        }
+        // 暂存草稿提醒（0.2.1）：整包导出只导出正式蓝图，草稿需要先「导出」
+        const stagedItems = Staging.listStaged(packNameOf(packDir)).filter((i) => i.kind === 'structure');
         const r = VanillaExport.exportPack(packDir);
         return {
             ok: r.ok,
-            data: r,
+            data: Object.assign({}, r, { stagedNotExported: stagedItems.map((i) => i.id) }),
             error: r.ok ? undefined : (r.errors || []).join('\n'),
         };
     } catch (e) {
@@ -2305,6 +2460,15 @@ ipcMain.handle('pack:build', async (event, { packDir, outJarName, extraDeps } = 
                 stdout = r.stdout;
                 stderr = r.stderr;
             } catch (e) {
+                // 0.2.1：没有 build-pack.ps1 时不能再「回退」——否则用户看到的是
+                // PowerShell 的「-File 不存在」，完全不知所云。直接把 Gradle 的错误返回。
+                if (!hasBuildScript) {
+                    return {
+                        ok: false,
+                        error: `Gradle 构建失败，且当前项目根没有 build-pack.ps1 可回退：\n${e.message}`,
+                        data: { preflight, autoCreated, mode: 'gradle', stdout, stderr: e.message, jarPath: null, expectedJar: null, verify: [], gradleTask: task },
+                    };
+                }
                 mode = 'ps1-fallback';
                 stderr = `Gradle 构建失败，回退到 build-pack.ps1：\n${e.message}\n`;
                 const outJar = path.join('contentpacks', outJarName || (preflight.manifest['Module-Name'] + '.jar'));

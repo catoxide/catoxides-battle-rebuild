@@ -53,6 +53,13 @@ const ELEMENT_TYPES = ['minecraft:single_pool_element', 'minecraft:legacy_single
 const JIGSAW_SIZE_MIN = 1;
 const JIGSAW_SIZE_MAX = 128;
 
+/**
+ * 方块 ID/状态语法（0.2.1）：`namespace:path` / `path` / 可选属性 `[k=v,...]`；
+ * 允许 `#` 前缀表示蓝图占位符（导出时转 air）。与 vanillaExport.parseBlockId 的正则保持一致，
+ * 让「非法方块 ID」在保存阶段就报出来，而不是导出时才失败。
+ */
+const BLOCK_ID_RE = /^#?[a-z0-9_.\-:]+(?:\[[^\]]*\])?$/;
+
 /** project_start_to_heightmap 取值（Heightmap.Types 名，1.21.1 原版只用到前两个） */
 const HEIGHTMAPS = [
     'WORLD_SURFACE_WG', 'OCEAN_FLOOR_WG', 'WORLD_SURFACE', 'OCEAN_FLOOR',
@@ -228,6 +235,10 @@ function validateBlueprint(bp) {
     if (st.maxDistanceFromCenter !== undefined && (!Number.isInteger(st.maxDistanceFromCenter) || st.maxDistanceFromCenter <= 0)) {
         errors.push('structure.maxDistanceFromCenter 应为正整数');
     }
+    // 0.2.1：原版 codec 是 intRange(1,128)，超出范围是世界加载失败（不是警告）
+    if (Number.isInteger(st.maxDistanceFromCenter) && st.maxDistanceFromCenter > 128) {
+        errors.push('structure.maxDistanceFromCenter 不能超过 128（原版 codec 限制 1-128，超出会加载失败）');
+    }
     // 1.21.1 jigsaw codec 必填/有约束的字段
     if (st.size !== undefined && (!Number.isInteger(st.size) || st.size < JIGSAW_SIZE_MIN || st.size > JIGSAW_SIZE_MAX)) {
         errors.push('structure.size 应为 ' + JIGSAW_SIZE_MIN + '-' + JIGSAW_SIZE_MAX + ' 的整数（最大扩展深度）');
@@ -317,11 +328,29 @@ function validateBlueprint(bp) {
                 errors.push(tag + ': boxFills#' + j + ' 需要 from/to/block');
                 return;
             }
+            // 0.2.1：方块 ID 语法提前校验（此前能保存，导出时才抛「非法方块 ID」）
+            if (!BLOCK_ID_RE.test(String(bf.block).trim())) {
+                errors.push(tag + ': boxFills#' + j + ' 方块 ID 非法: ' + bf.block);
+            }
             for (let d = 0; d < 3; d++) {
                 if (bf.from[d] < 0 || bf.to[d] < bf.from[d] || bf.to[d] >= size[d]) {
                     errors.push(tag + ': boxFills#' + j + ' 超出模板尺寸 ' + size.join('x'));
                     break;
                 }
+            }
+        });
+        // 0.2.1：fillBlocks 也要查边界与方块 ID（此前导出时静默丢弃越界项、非法 ID 才报错）
+        (p.fillBlocks || []).forEach((fb, fi) => {
+            const ftag = tag + ': fillBlocks#' + fi;
+            if (!fb || !Number.isInteger(fb.x) || !Number.isInteger(fb.y) || !Number.isInteger(fb.z)) {
+                errors.push(ftag + ' 需要整数坐标 x/y/z');
+                return;
+            }
+            if (fb.x < 0 || fb.y < 0 || fb.z < 0 || fb.x >= size[0] || fb.y >= size[1] || fb.z >= size[2]) {
+                errors.push(ftag + ' 坐标 (' + fb.x + ',' + fb.y + ',' + fb.z + ') 超出模板尺寸 ' + size.join('x'));
+            }
+            if (!fb.block || !BLOCK_ID_RE.test(String(fb.block).trim())) {
+                errors.push(ftag + ' 方块 ID 非法: ' + (fb.block === undefined ? '(空)' : fb.block));
             }
         });
         // jigsaws
@@ -335,6 +364,11 @@ function validateBlueprint(bp) {
             }
             if (!ORIENTATIONS.includes(j.orientation)) errors.push(jtag + ': orientation 非法: ' + j.orientation);
             if (j.joint && !JOINTS.includes(j.joint)) errors.push(jtag + ': joint 非法: ' + j.joint);
+            // 0.2.1：finalState（jigsaw 块的目标方块状态）语法提前校验
+            if (j.finalState !== undefined && j.finalState !== null && j.finalState !== '' &&
+                !BLOCK_ID_RE.test(String(j.finalState).trim())) {
+                errors.push(jtag + ': finalState 方块状态非法: ' + j.finalState);
+            }
         });
         // P12: blockNbt（方块实体 NBT，tagged JSON：顶层 {$t:10, v:{...}}；long 的 v 用字符串以保 JSON 安全）
         (p.blockNbt || []).forEach((bn, bi) => {
@@ -421,8 +455,10 @@ function validateBlueprint(bp) {
         });
     });
 
-    // startPool 必须存在
-    if (st.startPool && !st.startPool.includes(':') && !poolNames.has(st.startPool)) {
+    // startPool 必须存在（0.2.1：必填 —— 空值会让导出的 start_pool 变成 ""，世界加载失败）
+    if (!st.startPool) {
+        errors.push('structure.startPool 必填（起始模板池）');
+    } else if (!st.startPool.includes(':') && !poolNames.has(st.startPool)) {
         errors.push('structure.startPool "' + st.startPool + '" 不存在于模板池列表');
     }
 

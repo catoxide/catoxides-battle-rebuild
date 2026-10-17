@@ -14,7 +14,7 @@
   <!-- W6.1 包路径设置：包库目录 / 新建包目录（覆盖默认 <项目根>/contentpacks-source） -->
   <span id="packPathTools" style="display:flex; gap:4px; align-items:center">
     <button class="btn ghost small" id="btnPickPacksRoot" data-i18n="app.packRoot" title="包库目录（内容包列表来源）—— 点击选择目录">📦 包库</button>
-    <button class="btn ghost small" id="btnPickNewPackDir" data-i18n="app.newPackDir" title="新建包目录（新建内容包落在此）—— 点击选择目录">➕ 新建包</button>
+    <button class="btn ghost small" id="btnPickNewPackDir" data-i18n="app.newPackDir" title="新建包目录（新建内容包落在此）—— 点击选择目录">➕ 新建包目录</button>
     <button class="btn ghost small" id="btnResetPackPaths" data-i18n="app.resetPaths" title="复位包路径为默认（<项目根>/contentpacks-source）" style="display:none">↺ 默认</button>
     <!-- 0.2.1：无 mod 工程时自动落"独立工作区"，此处显示来源标记 + 一键连接真工程 -->
     <span id="rootSourceChip" class="root-chip" style="display:none" title=""></span>
@@ -38,6 +38,11 @@
   <span id="gpuBannerText"></span>
   <button class="btn ghost small" id="btnGpuBannerClose" style="margin-left:auto">知道了</button>
 </div>
+
+<!-- 0.2.1 修复：全局状态/错误条移到编辑器容器之外。
+     此前它挂在默认隐藏的 #editorContent 里，包管理（新建包/删除/列表）、结构编辑器（结构模式下
+     #editorContent 被隐藏）等操作的反馈全部不可见 —— 按钮看起来「点了没反应」。 -->
+<div class="status" id="statusBar"></div>
 
 <div class="app-body">
   <!-- 左栏收起后的展开按钮（固定定位） -->
@@ -230,7 +235,6 @@
         </div>
       </div>
 
-      <div class="status" id="statusBar"></div>
       <pre class="out" id="buildOutput"></pre>
     </div>
 
@@ -271,7 +275,7 @@
             <div><label data-i18n="structure.step">step（生成步骤）</label><select id="sStep"></select></div>
             <div><label data-i18n="structure.ta">terrainAdaptation（地形适应，Java 取值）</label><select id="sTa"></select></div>
             <div><label data-i18n="structure.startPool">startPool（起始模板池）</label><input id="sStartPool" placeholder="如 start"></div>
-            <div><label data-i18n="structure.maxDist">maxDistanceFromCenter（最大扩展半径，格）</label><input id="sMaxDist" type="number" min="1"></div>
+            <div><label data-i18n="structure.maxDist">maxDistanceFromCenter（最大扩展半径，格 1-128）</label><input id="sMaxDist" type="number" min="1" max="128"></div>
             <div><label data-i18n="structure.biomes">biomes（生物群系 ID/tag，逗号分隔）</label><input id="sBiomes" placeholder="#minecraft:is_overworld"></div>
             <div><label data-i18n="structure.size">size（最大扩展深度 1-128，必填）</label><input id="sSize" type="number" min="1" max="128" value="7"></div>
             <div><label data-i18n="structure.startHeight">start_height（起始高度 absolute）</label><input id="sStartH" type="number" value="0"></div>
@@ -370,7 +374,6 @@
       <div class="status" id="structStatus"></div>
       <pre class="out" id="structOutput"></pre>
     </div>
-
     <!-- 动画契约（编辑器契约）：包声明 Module-Editor-Schema，编辑器只读盘点 + 校验 -->
     <div id="contractEditorContent" class="hidden">
       <div class="editor-header">

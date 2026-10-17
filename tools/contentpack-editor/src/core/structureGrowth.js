@@ -19,6 +19,27 @@
  */
 'use strict';
 
+/**
+ * 池/片段引用归一化（0.2.1）：导入的蓝图里池引用可能是完整 ID（ns:name），
+ * 而蓝图内的池表用裸名 —— 此前按裸名查 Map 一律查不到，导致「导入的结构在 3D
+ * 页签生长失败 / 导航树全 ✗」。统一去掉命名空间前缀再查。
+ */
+function normRef(ref) {
+    return String(ref == null ? '' : ref).replace(/^[a-z0-9_.-]+:/, '');
+}
+
+/**
+ * 片段 jigsaw 的 selection_priority（0.2.1 修正）：
+ * 编辑器/导入写入的是 camelCase `selectionPriority`，这里却按 snake_case `selection_priority`
+ * 读取 → 优先级逻辑此前恒为 0（配置形同虚设）。两种写法都认。
+ */
+function jigsawPriority(j) {
+    if (!j) return 0;
+    if (typeof j.selectionPriority === 'number') return j.selectionPriority;
+    if (typeof j.selection_priority === 'number') return j.selection_priority;
+    return 0;
+}
+
 /** orientation 首词（面）→ 生长方向向量（世界坐标，北 = -Z） */
 const FACE_DIR = {
     up: [0, 1, 0],
@@ -137,7 +158,7 @@ function growStructure(bp, opts = {}) {
     for (const pl of bp.templatePools || []) poolByName.set(pl.name, pl);
 
     const st = bp.structure || {};
-    const startPool = poolByName.get(st.startPool);
+    const startPool = poolByName.get(normRef(st.startPool));
     if (!startPool) return { placements: [], deadEnds: [], error: 'startPool 不存在: ' + st.startPool };
     const startEl = pickWeighted(templateElements(startPool), rng);
     if (!startEl) return { placements: [], deadEnds: [], error: 'startPool 无元素' };
@@ -206,7 +227,7 @@ function growStructure(bp, opts = {}) {
         ];
         const cellGhost = { x: attemptCell[0], y: attemptCell[1], z: attemptCell[2], w: 1, h: 1, d: 1 };
 
-        const pool = poolByName.get(srcJg.pool);
+        const pool = poolByName.get(normRef(srcJg.pool));
         if (!pool) { pushDeadEnd(srcPl, srcJg, '池不存在' + srcJg.pool, cellGhost); continue; }
         const el = pickWeighted(templateElements(pool), rng);
         if (!el) { pushDeadEnd(srcPl, srcJg, '池为空', cellGhost); continue; }
@@ -238,9 +259,9 @@ function growStructure(bp, opts = {}) {
             continue;
         }
         // selection_priority 高者优先，同分随机
-        cands.sort((a, b) => (tpl.jigsaws[b.ji].selection_priority || 0) - (tpl.jigsaws[a.ji].selection_priority || 0));
-        const bestPrio = tpl.jigsaws[cands[0].ji].selection_priority || 0;
-        const tied = cands.filter((c) => (tpl.jigsaws[c.ji].selection_priority || 0) === bestPrio);
+        cands.sort((a, b) => jigsawPriority(tpl.jigsaws[b.ji]) - jigsawPriority(tpl.jigsaws[a.ji]));
+        const bestPrio = jigsawPriority(tpl.jigsaws[cands[0].ji]);
+        const tied = cands.filter((c) => jigsawPriority(tpl.jigsaws[c.ji]) === bestPrio);
         const pick = tied[Math.floor(rng() * tied.length)];
         const J = tpl.jigsaws[pick.ji];
 
@@ -319,7 +340,7 @@ function jigsawCandidates(bp, srcPieceName, srcJi, srcOffset) {
     if (!src) return { cands: [], error: '源片段不存在: ' + srcPieceName };
     const jg = (src.jigsaws || [])[srcJi];
     if (!jg) return { cands: [], error: 'jigsaw 块不存在: ' + srcPieceName + '[' + srcJi + ']' };
-    const pool = poolByName.get(jg.pool);
+    const pool = poolByName.get(normRef(jg.pool));
     if (!pool) return { cands: [], error: '池不存在: ' + jg.pool };
     const targetOpp = oppositeOrientation(jg.orientation);
     const D = orientationDir(jg.orientation);
@@ -345,7 +366,7 @@ function jigsawCandidates(bp, srcPieceName, srcJi, srcOffset) {
                     rotation: r,
                     targetJi: ji,
                     targetName: j.name,
-                    priority: j.selection_priority || 0,
+                    priority: jigsawPriority(j),
                     offset: [
                         srcWorld[0] + D[0] - jPos[0],
                         srcWorld[1] + D[1] - j.y,
