@@ -389,14 +389,19 @@ function buildJigsawBlueprint(ctx) {
         }
     }
     if (startPoolEntry && startPoolEntry.dropped) {
-        warnings.push(`起始池 ${startPoolEntry.origId} 无可表达元素 —— 蓝图里改用默认池引用`);
+        warnings.push(`起始池 ${startPoolEntry.origId} 无可表达元素 —— 蓝图里改用空池引用`);
     }
 
     // ---- 结构定义
+    // 起始池被丢弃（空池）时不能写 namespace:被丢弃池名——那会导出成指向不存在池的
+    // start_pool（数据包在游戏里报错）。改用 minecraft:empty（原版空池，永远存在）。
+    const startPoolRef = startPoolEntry
+        ? (startPoolEntry.dropped ? 'minecraft:empty' : (namespace + ':' + startPoolEntry.name))
+        : (json.start_pool || '');
     const structure = {
         step: json.step || 'surface_structures',
         terrainAdaptation: json.terrain_adaptation || 'none',
-        startPool: startPoolEntry ? (namespace + ':' + startPoolEntry.name) : (json.start_pool || ''),
+        startPool: startPoolRef,
         maxDistanceFromCenter: json.max_distance_from_center != null ? json.max_distance_from_center : 80,
         biomes: S.normalizeBiomes(json.biomes),
         size: json.size != null ? Math.max(S.JIGSAW_SIZE_MIN, Math.min(S.JIGSAW_SIZE_MAX, json.size)) : 7,
@@ -420,7 +425,7 @@ function buildJigsawBlueprint(ctx) {
         'start_pool', 'step', 'terrain_adaptation', 'use_expansion_hack', 'project_start_to_heightmap',
         'start_jigsaw_name', 'dimension_padding', 'liquid_settings', 'pool_aliases',
     ].includes(k));
-    if (unknownKeys.length) warnings.push(`结构定义含未识别字段（已保留? 否）: ${unknownKeys.join(', ')}`);
+    if (unknownKeys.length) warnings.push(`结构定义含未识别字段（已丢弃）: ${unknownKeys.join(', ')}`);
 
     // ---- 结构集合：找引用本结构的那一个
     const structureFullId = ctx.structNs + ':' + ctx.structPath;

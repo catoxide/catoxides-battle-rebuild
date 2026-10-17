@@ -36,6 +36,8 @@ window.TapeEditor = (function () {
     async function open(ctx) {
         // DOMContentLoaded 前被程序化调用时兜底初始化
         if (!document.getElementById('tapeToolbar')) init();
+        // 换文件前先停掉旧文件的仿真定时器（否则孤儿 setInterval 会拿新 S 继续 tick）
+        if (S) stopSim();
         S = freshState();
         S.packName = ctx.packName;
         S.relPath = ctx.relPath;
@@ -60,6 +62,8 @@ window.TapeEditor = (function () {
         const loaded = Doc.loadDoc(res.data.content);
         if (!loaded.ok) {
             if (window.showError) window.showError(loaded.error);
+            // 解析失败必须真正关闭：否则画布里还是上一个文件的旧 DOM、activeFrame 仍是 tape（假编辑器）
+            close();
             return;
         }
         S.doc = loaded.doc;
@@ -468,6 +472,15 @@ window.TapeEditor = (function () {
     function renderInspector() {
         const box = document.getElementById('tapeInspector');
         box.innerHTML = '';
+        // 选中可能已失效（状态重命名/删除、撤销、换文件）→ 先校验再渲染。
+        // 此前重命名/删除状态必然在 renderStateInspector 里读到 undefined 抛 TypeError，
+        // 检查器半渲染、徽标不更新、S.sel 悬挂。
+        if (S.sel && S.sel.kind === 'state' && !hasKey(S.doc, S.sel.track + ':' + S.sel.name)) S.sel = null;
+        if (S.sel && S.sel.kind === 'edge') {
+            const tr = S.doc.tracks[S.sel.track];
+            const st = tr && tr.states[S.sel.name];
+            if (!st || !(st.exit || [])[S.sel.index]) S.sel = null;
+        }
         if (S.sel && S.sel.kind === 'state') renderStateInspector(box, S.sel);
         else if (S.sel && S.sel.kind === 'edge') renderEdgeInspector(box, S.sel);
         else renderTrackInspector(box);
@@ -540,8 +553,11 @@ window.TapeEditor = (function () {
         const commitName = () => {
             const v = nameInput.value.trim();
             if (v && v !== sel.name) {
-                const r = commit(() => Doc.renameState(S.doc, sel.track, sel.name, v));
-                if (r) S.sel = { kind: 'state', track: sel.track, name: v };
+                const oldName = sel.name;
+                // 先更新选中（mutate 会立刻 renderAll，读的是 S.sel；旧名已不存在）
+                S.sel = { kind: 'state', track: sel.track, name: v };
+                const r = commit(() => Doc.renameState(S.doc, sel.track, oldName, v));
+                if (!r) S.sel = { kind: 'state', track: sel.track, name: oldName }; // 失败回滚选中
                 renderAll();
             }
         };
@@ -576,8 +592,9 @@ window.TapeEditor = (function () {
         delBtn.className = 'btn ghost small danger';
         delBtn.textContent = T('tape.delete');
         delBtn.addEventListener('click', () => {
+            S.sel = null; // 先清选中：mutate 内部会渲染，避免读到已删除状态
             const r = mutate(() => Doc.removeState(S.doc, sel.track, sel.name));
-            if (r) S.sel = null;
+            if (!r) S.sel = { kind: 'state', track: sel.track, name: sel.name };
             renderAll();
         });
         box.appendChild(delBtn);
@@ -676,8 +693,8 @@ window.TapeEditor = (function () {
                 row.appendChild(del);
                 box.appendChild(row);
 
-                // 里程碑
-                if ((seg.milestones || []).length) {
+                // 里程碑（整个块总是渲染：按钮此前在 if 内，导致没有里程碑的段无法添加第一个）
+                {
                     const msBox = document.createElement('div');
                     msBox.className = 'tape-ms';
                     (seg.milestones || []).forEach((m, mi) => {

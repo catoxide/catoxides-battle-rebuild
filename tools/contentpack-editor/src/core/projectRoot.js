@@ -40,8 +40,8 @@ function isProjectRoot(fsImpl, dir) {
 function ensureWorkspace(fsImpl, baseDir) {
     if (!baseDir) return null;
     const root = path.join(baseDir, WORKSPACE_NAME);
+    const created = [];
     try {
-        const created = [];
         for (const sub of REQUIRED_SUBDIRS) {
             const d = path.join(root, sub);
             if (!fsImpl.existsSync(d)) {
@@ -49,6 +49,11 @@ function ensureWorkspace(fsImpl, baseDir) {
                 created.push(d);
             }
         }
+        // 目录"存在"≠"可写"（只读盘 / 安全软件拦写 / 被其它程序占用都常见）。
+        // 这里探一次写：失败就换下一个候选，避免保存时才炸且报错点离根因很远。
+        const probe = path.join(root, '.write-probe');
+        fsImpl.writeFileSync(probe, 'ok');
+        fsImpl.unlinkSync(probe);
         return { root, created };
     } catch {
         return null; // 只读/无权限/被占用 → 让调用方换下一个候选目录

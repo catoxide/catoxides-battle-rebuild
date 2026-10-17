@@ -494,7 +494,7 @@ window.StructureEditor = (function () {
                     for (const pl of bp.templatePools || []) {
                         const els = pl.elements || [];
                         add2(row('pool:' + pl.name, 2, '',
-                            `🏊 ${esc(pl.name)} <span class="note">${t('structure.tree.fallback')} ${esc(pl.fallback || 'minecraft:empty_pool_element')}</span>`,
+                            `🏊 ${esc(pl.name)} <span class="note">${t('structure.tree.fallback')} ${esc(normalizeFallback(pl.fallback))}</span>`,
                             true,
                             (add3) => {
                                 for (let i = 0; i < els.length; i++) {
@@ -514,6 +514,17 @@ window.StructureEditor = (function () {
     }
 
     // ---- 池卡片 ----
+    /**
+     * 模板池 fallback 是「池 ID」而不是元素类型：历史数据/旧 UI 里误用过
+     * minecraft:empty_pool_element（那是空元素类型，写进 fallback 会被 codec 拒绝/静默失效）
+     * → 统一归一成原版空池 minecraft:empty。
+     */
+    function normalizeFallback(v) {
+        const s = String(v || '').trim();
+        if (!s || s === 'minecraft:empty_pool_element' || s === 'empty_pool_element') return 'minecraft:empty';
+        return s;
+    }
+
     function renderPools(bp) {
         const box = document.getElementById('poolsContainer');
         box.innerHTML = '';
@@ -535,7 +546,7 @@ window.StructureEditor = (function () {
                 <button class="btn ghost small pl-addelem">+ ${t('structure.element')}</button>
                 <div class="row" style="margin-top:8px">
                     <label style="margin:0">${t('structure.fallback')}</label>
-                    <input class="pl-fallback" value="${esc(pl.fallback || 'minecraft:empty_pool_element')}" style="width:300px">
+                    <input class="pl-fallback" value="${esc(normalizeFallback(pl.fallback))}" style="width:300px">
                 </div>`;
             const elsB = card.querySelector('.pl-elements');
             const pieceNames = (bp.pieces || []).map((p) => p.name).filter(Boolean);
@@ -578,6 +589,11 @@ window.StructureEditor = (function () {
             <td><select class="el-proj" style="width:150px">${projOpts}</select></td>
             <td><button class="btn ghost small fr-del">×</button></td>`;
         const kind = tr.querySelector('.el-kind');
+        // 不可编辑但需保留的字段（见 collectInto）：暂存在行 dataset 上，随行一起参与收集
+        if (el.elementType) tr.dataset.elementType = el.elementType;
+        if (el.processors !== undefined && el.processors !== null) {
+            try { tr.dataset.processors = JSON.stringify(el.processors); } catch { /* 忽略 */ }
+        }
         const tplCell = tr.querySelector('.el-tpl-cell');
         const featCell = tr.querySelector('.el-feat-cell');
         const sync = () => {
@@ -630,6 +646,9 @@ window.StructureEditor = (function () {
         }
 
         // 片段
+        // blockNbt（P12 方块实体 NBT）与 importFrom 在 DOM 里没有编辑控件，但 3D 片段编辑器
+        // 会把 blockNbt 写回 tab.bp.pieces → 这里按片段名保留，避免「保存草稿」把它洗掉。
+        const prevPieceByName = new Map((tab.bp.pieces || []).map((p) => [p && p.name, p]));
         tab.bp.pieces = [];
         document.querySelectorAll('#piecesContainer .piece-card').forEach((card) => {
             const p = {
@@ -672,6 +691,11 @@ window.StructureEditor = (function () {
                 };
                 if (jg.name || jg.pool) p.jigsaws.push(jg);
             });
+            const prev = prevPieceByName.get(p.name);
+            if (prev) {
+                if (Array.isArray(prev.blockNbt) && prev.blockNbt.length) p.blockNbt = prev.blockNbt;
+                if (prev.importFrom) p.importFrom = prev.importFrom;
+            }
             if (p.name) tab.bp.pieces.push(p);
         });
 
@@ -681,24 +705,31 @@ window.StructureEditor = (function () {
             const pl = {
                 name: card.querySelector('.pl-name').value.trim(),
                 elements: [],
-                fallback: card.querySelector('.pl-fallback').value.trim() || 'minecraft:empty_pool_element',
+                fallback: normalizeFallback(card.querySelector('.pl-fallback').value),
             };
             card.querySelectorAll('.pl-elements .el-row').forEach((tr) => {
+                // elementType / processors 在 UI 里不可编辑，但导入的蓝图可能带（legacy 元素、
+                // 处理器列表）→ 用 dataset 暂存，收集时原样带回，避免「打开再保存」把数据洗掉。
+                const meta = {};
+                if (tr.dataset.elementType) meta.elementType = tr.dataset.elementType;
+                if (tr.dataset.processors) {
+                    try { meta.processors = JSON.parse(tr.dataset.processors); } catch { /* 坏数据忽略 */ }
+                }
                 const isFeature = tr.querySelector('.el-kind').value === 'feature';
                 if (isFeature) {
                     const feature = tr.querySelector('.el-feature').value.trim();
                     if (!feature) return;
-                    pl.elements.push({
+                    pl.elements.push(Object.assign({
                         feature,
                         weight: num(tr.querySelector('.el-weight')) || 1,
                         projection: tr.querySelector('.el-proj').value,
-                    });
+                    }, meta));
                 } else {
-                    pl.elements.push({
+                    pl.elements.push(Object.assign({
                         template: tr.querySelector('.el-template').value,
                         weight: num(tr.querySelector('.el-weight')) || 1,
                         projection: tr.querySelector('.el-proj').value,
-                    });
+                    }, meta));
                 }
             });
             if (pl.name) tab.bp.templatePools.push(pl);
@@ -1044,7 +1075,7 @@ window.StructureEditor = (function () {
             tab.bp.templatePools.push({
                 name: 'pool_' + (tab.bp.templatePools.length + 1),
                 elements: [{ template: (tab.bp.pieces[0] && tab.bp.pieces[0].name) || '', weight: 1, projection: 'rigid' }],
-                fallback: 'minecraft:empty_pool_element',
+                fallback: 'minecraft:empty',
             });
             renderPools(tab.bp);
         });

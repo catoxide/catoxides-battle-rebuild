@@ -33,6 +33,19 @@ function sanitize(name) {
 }
 
 /**
+ * 剥掉编辑器内部字段（`_staged` 等 `_` 前缀）。这些字段由 entity:read/structure:read 注入，
+ * 若原样暂存 → exportStaged 整文件拷贝 → 变成正式包里的脏数据。
+ */
+function stripInternal(obj) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) {
+        if (!k.startsWith('_')) out[k] = v;
+    }
+    return out;
+}
+
+/**
  * 写实体草稿：暂存 entities/<id>.json
  * @param {string} packName
  * @param {Object} entity 已通过校验的实体对象
@@ -41,8 +54,8 @@ function sanitize(name) {
 function stageEntity(packName, entity) {
     const dir = path.join(packStagingDir(packName), 'entities');
     fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, entity.id + '.json');
-    fs.writeFileSync(file, JSON.stringify(entity, null, 2), 'utf-8');
+    const file = path.join(dir, sanitize(entity.id) + '.json');
+    fs.writeFileSync(file, JSON.stringify(stripInternal(entity), null, 2), 'utf-8');
     return { file: path.relative(getStagingRoot(), file), staged: true };
 }
 
@@ -54,9 +67,9 @@ function stageEntity(packName, entity) {
  * @param {Object} config
  */
 function stageHealthConfig(packName, namespace, entityId, config) {
-    const dir = path.join(packStagingDir(packName), 'assets', namespace, 'health_config');
+    const dir = path.join(packStagingDir(packName), 'assets', sanitize(namespace), 'health_config');
     fs.mkdirSync(dir, { recursive: true });
-    const file = path.join(dir, entityId + '.json');
+    const file = path.join(dir, sanitize(entityId) + '.json');
     fs.writeFileSync(file, JSON.stringify(config, null, 2), 'utf-8');
     return { file: path.relative(getStagingRoot(), file), staged: true };
 }
@@ -70,7 +83,7 @@ function stageStructure(packName, blueprint) {
     const dir = path.join(packStagingDir(packName), 'structures', sanitize(blueprint.structureId));
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, 'blueprint.json');
-    fs.writeFileSync(file, JSON.stringify(blueprint, null, 2), 'utf-8');
+    fs.writeFileSync(file, JSON.stringify(stripInternal(blueprint), null, 2), 'utf-8');
     return { file: path.relative(getStagingRoot(), file), staged: true };
 }
 
@@ -92,7 +105,7 @@ function readStagedStructure(packName, structureId) {
  * @returns {Object|null}
  */
 function readStagedEntity(packName, entityId) {
-    const file = path.join(packStagingDir(packName), 'entities', entityId + '.json');
+    const file = path.join(packStagingDir(packName), 'entities', sanitize(entityId) + '.json');
     return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) : null;
 }
 
@@ -104,7 +117,7 @@ function readStagedEntity(packName, entityId) {
  * @returns {Object|null}
  */
 function readStagedHealthConfig(packName, namespace, entityId) {
-    const file = path.join(packStagingDir(packName), 'assets', namespace, 'health_config', entityId + '.json');
+    const file = path.join(packStagingDir(packName), 'assets', sanitize(namespace), 'health_config', sanitize(entityId) + '.json');
     return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) : null;
 }
 
@@ -232,14 +245,14 @@ function discardStaged(packName) {
  */
 function removeStagedEntity(packName, entityId) {
     const base = packStagingDir(packName);
-    const f1 = path.join(base, 'entities', entityId + '.json');
+    const f1 = path.join(base, 'entities', sanitize(entityId) + '.json');
     if (fs.existsSync(f1)) fs.unlinkSync(f1);
     // 健康配置：需遍历 namespaces
     const assetsDir = path.join(base, 'assets');
     if (fs.existsSync(assetsDir)) {
         for (const ns of fs.readdirSync(assetsDir, { withFileTypes: true })) {
             if (!ns.isDirectory()) continue;
-            const f2 = path.join(assetsDir, ns.name, 'health_config', entityId + '.json');
+            const f2 = path.join(assetsDir, ns.name, 'health_config', sanitize(entityId) + '.json');
             if (fs.existsSync(f2)) fs.unlinkSync(f2);
         }
     }
@@ -257,14 +270,14 @@ function removeStagedEntity(packName, entityId) {
  */
 function removeStagedHealthConfig(packName, namespace, entityId) {
     if (!namespace || !entityId) return false;
-    const f = path.join(packStagingDir(packName), 'assets', namespace, 'health_config', entityId + '.json');
+    const f = path.join(packStagingDir(packName), 'assets', sanitize(namespace), 'health_config', sanitize(entityId) + '.json');
     if (fs.existsSync(f)) fs.unlinkSync(f);
     // 兜底：namespace 猜错（如删除路径与保存路径的 ns 转换不一致）时，按 id 全 ns 清理
     const assetsDir = path.join(packStagingDir(packName), 'assets');
     if (fs.existsSync(assetsDir)) {
         for (const ns of fs.readdirSync(assetsDir, { withFileTypes: true })) {
             if (!ns.isDirectory() || ns.name === namespace) continue;
-            const f2 = path.join(assetsDir, ns.name, 'health_config', entityId + '.json');
+            const f2 = path.join(assetsDir, ns.name, 'health_config', sanitize(entityId) + '.json');
             if (fs.existsSync(f2)) fs.unlinkSync(f2);
         }
     }

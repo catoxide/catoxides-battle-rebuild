@@ -82,7 +82,7 @@ window.PackList = (function () {
         });
         document.getElementById('npConfirm').addEventListener('click', createPack);
         document.getElementById('npCancel').addEventListener('click', () => toggleNewPackForm(false));
-        loadPacks();
+        // 首次加载由 app.js 显式 await（只加载一次，避免 init 与启动流程各拉一遍列表）
     }
 
     return { init, loadPacks };

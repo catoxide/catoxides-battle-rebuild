@@ -185,10 +185,12 @@ window.ContractEditor = (function () {
         document.getElementById('contractBody').innerHTML = html;
 
         // 状态机可视化编辑器入口（W2）
+        // 用 onclick 赋值而非 addEventListener：open()/refresh() 会被反复调用，
+        // 旧写法每次叠加一个监听器 → 点一次按钮打开 N 次状态机编辑器。
         if (sm) {
             const editBtn = document.getElementById('btnEditTape');
             if (editBtn) {
-                editBtn.addEventListener('click', () => {
+                editBtn.onclick = () => {
                     const animNames = report.sets.flatMap((s) => s.animations.map((a) => a.name));
                     window.AppState.activeFrame = 'tape';
                     window.TapeEditor.open({
@@ -197,8 +199,11 @@ window.ContractEditor = (function () {
                         animNames,
                         title: set.label,
                     });
-                });
+                };
             }
+        } else {
+            const editBtn = document.getElementById('btnEditTape');
+            if (editBtn) editBtn.onclick = null;
         }
 
         if (window.applyEditorVisibility) window.applyEditorVisibility();

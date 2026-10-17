@@ -71,8 +71,27 @@ t('③b 工作区已存在 → 复用不报错、created 为空（幂等）', ()
     assert.strictEqual(r.created.length, 0);
 });
 
-t('④ 文档目录不可写（是文件）→ 回退 userData 工作区', () => {
-    const docsBlocker = path.join(tmp, 'docs-blocked');
+t('③c 工作区目录已存在但不可写（探写失败）→ 回退 userData', () => {
+    const docs = path.join(tmp, 'docs-ro');
+    const ws = path.join(docs, PR.WORKSPACE_NAME);
+    for (const sub of PR.REQUIRED_SUBDIRS) fs.mkdirSync(path.join(ws, sub), { recursive: true });
+    const ud = path.join(tmp, 'ud-ro');
+    fs.mkdirSync(ud, { recursive: true });
+    // 只有 documents 工作区拒写：模拟只读盘/安全软件拦写（目录存在但写不进去）
+    const denyFs = Object.create(fs);
+    denyFs.writeFileSync = (p, ...rest) => {
+        if (String(p).startsWith(ws)) throw new Error('EACCES: permission denied');
+        return fs.writeFileSync(p, ...rest);
+    };
+    const r = PR.resolveProjectRoot({
+        configRoot: null, detectRoot: () => null,
+        documentsDir: docs, userDataDir: ud, fsImpl: denyFs,
+    });
+    assert.strictEqual(r.source, 'workspace-userdata', '不可写的文档工作区应被跳过');
+    assert.strictEqual(r.root, path.join(ud, PR.WORKSPACE_NAME));
+});
+
+t('④ 文档目录不可写（是文件）→ 回退 userData 工作区', () => {    const docsBlocker = path.join(tmp, 'docs-blocked');
     fs.writeFileSync(docsBlocker, 'x'); // 文件，无法在其中建目录
     const ud = path.join(tmp, 'ud-4');
     fs.mkdirSync(ud, { recursive: true });

@@ -184,8 +184,9 @@ window.EntityEditor = (function () {
     async function readHealthFor(pack, ns, entityId) {
         if (!entityId) return { parts: [] };
         const res = await window.api.readHealth(pack.dir, ns, entityId);
-        if (res.ok && res.data) return res.data;
-        return { parts: [] };
+        if (res && res.ok) return res.data || { parts: [] };
+        // 读取失败 ≠ 没有配置：标记后保存时【不删】正式 health 配置（此前失败被吞成 parts:[] → 删配置）
+        return { parts: [], _readFailed: true, _error: (res && res.error) || '读取失败' };
     }
 
     /** 把当前 DOM 表单写回指定 tab（切换/关闭前调用） */
@@ -599,13 +600,25 @@ window.EntityEditor = (function () {
         if (!tab) return;
         const entity = collectEntity();
         if (!entity.id) { window.showError(t('common.idRequired')); return; }
+        // 0.2.1：animations 由 3D 模型编辑器直写（主窗口只读）。主窗口缓存的是打开时的快照，
+        // 若期间在 3D 里改过状态映射，直接落草稿/导出会把新映射回退 → 保存前取磁盘最新值。
+        try {
+            const fresh = await window.api.readEntity(tab.pack.dir, entity.id);
+            if (fresh && fresh.ok && fresh.data) {
+                if (fresh.data.animations) entity.animations = fresh.data.animations;
+                else delete entity.animations;
+            }
+        } catch { /* 读取失败：保留原值，不阻断保存 */ }
         // 保存实体草稿（写入 app 暂存区，不碰正式包）
         const res = await window.api.saveEntity(tab.pack.dir, entity);
         if (!res.ok) { window.showError(t('common.saveFailed') + res.error); return; }
         // 保存/删除部位配置草稿
         const ns = entity.namespace || packNamespace(tab.pack);
         const cfg = window.AppState.healthConfig;
-        if (cfg && cfg.parts && cfg.parts.length) {
+        if (cfg && cfg._readFailed) {
+            // 读取失败 ≠ 没有配置：此前会被当成空配置走 deleteHealth，直接删掉正式包里的部位配置
+            window.showStatus('部位配置读取失败，本次未改动（未删除正式配置）: ' + (cfg._error || ''), false);
+        } else if (cfg && cfg.parts && cfg.parts.length) {
             const hres = await window.api.saveHealth(tab.pack.dir, ns, entity.id, cfg);
             if (!hres.ok) { window.showError(t('common.saveFailed') + hres.error); return; }
         } else {

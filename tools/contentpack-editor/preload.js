@@ -99,6 +99,8 @@ const api = {
     // 3D 模型编辑器窗口（W2 子窗口；W3 gizmo/大纲/属性；W3.1 新建/另存为；W3.5 资源联动 / W4.2 实体状态映射 / W5 契约接入）
     // W4.2：ctx = {pack, packDir, entityId}（可选；主窗口"3D 中编辑"传入 → 模型编辑器状态映射面板）
     openModelEditor: (ctx) => ipcRenderer.invoke('modelEditor:open', ctx),
+    // 0.2.1：模型编辑器未保存修改计数（主进程关窗提示用）
+    modelEditorDirty: (n) => ipcRenderer.send('modelEditor:dirty', n),
     getModelEditorPendingContext: () => ipcRenderer.invoke('modelEditor:getPendingContext'),
     onModelEditorEntityContext: (cb) => ipcRenderer.on('modelEditor:entityContext', (e, ctx) => cb(ctx)),
     // W4.2：状态映射直写正式包（模型编辑器不走主窗口暂存区）

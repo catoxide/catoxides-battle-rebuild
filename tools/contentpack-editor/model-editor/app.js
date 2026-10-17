@@ -340,6 +340,7 @@
     function closeNewPanel() { $('meNewPanel').hidden = true; }
 
     function createNewModel() {
+        if (!confirmDiscard('新建模型')) return;
         const ident = $('meNewIdent').value;
         const id = SS.parseIdentifier(ident);
         if (!id.ok) { setStatus('✗ ' + id.error); return; }
@@ -362,6 +363,7 @@
         doc.model = geo;
         doc.undoStack = U.createUndoStack(geo);
         doc.dirty = false;
+        notifyUnsaved();
         doc.selection = null;
         doc.sourceFile = null;
         doc.sourceFormat = 'spark';
@@ -409,6 +411,7 @@
         if (!r.ok) { setStatus('✗ ' + (r.error || '另存为失败')); return; }
         doc.sourceFile = r.data.path;
         doc.dirty = false;
+        notifyUnsaved();
         $('meModelName').textContent = doc.sourceFile.split(/[\\/]/).pop();
         const extra = [];
         if (r.data.contractCreated) extra.push('已生成最小契约 editor/animation-contract.json');
@@ -1162,9 +1165,11 @@
 
     /** W4.6：模型载入核心（文件对话框 / 仓库列表共用；sourcePath = 包内绝对路径或 null） */
     function applyLoadedModelCore(data, { displayName, sourcePath, statusMsg }) {
+        if (data && !confirmDiscard('更换当前模型')) return false;
         doc.model = data;
         doc.undoStack = U.createUndoStack(data);
         doc.dirty = false;
+        notifyUnsaved();
         doc.selection = null;
         doc.sourceFile = sourcePath || null;
         // 另存为 ns：从源路径解析（<pack>/spark_models/<type>/<ns>/<name>.json）
@@ -1232,6 +1237,7 @@
             if (!r) return;
             if (r.ok) {
                 doc.dirty = false;
+        notifyUnsaved();
                 if (isBb) {
                     setStatus(`已保存 ${doc.sourceFile.split(/[\\/]/).pop()} ✓（bbmodel v5；Blockbench 可直接打开）`);
                 } else {
@@ -1896,6 +1902,25 @@
     // W5.6：初始视图模式（无模型 = 3D；模型加载后恢复记忆模式，默认 split = UV 常驻）
     setViewMode('3d', { persist: false });
     renderMouseHint();
+
+    // ---------- 0.2.1：未保存修改上报 + 换模型前确认 ----------
+    // 此前 doc.dirty 只写不读：关窗/换模型/新建都静默丢弃未保存编辑。
+    function unsavedCount() {
+        let n = (doc.model && doc.dirty) ? 1 : 0;
+        if (doc.animDirty) n += doc.animDirty.size;
+        if (doc.animDeleted) n += doc.animDeleted.size;
+        return n;
+    }
+    function notifyUnsaved() {
+        try {
+            if (window.api && window.api.modelEditorDirty) window.api.modelEditorDirty(unsavedCount());
+        } catch (e) { /* 忽略 */ }
+    }
+    function confirmDiscard(what) {
+        if (!unsavedCount()) return true;
+        return window.confirm(`有未保存的修改（${unsavedCount()} 处）。\n${what}会丢失这些修改，继续吗？`);
+    }
+    setInterval(notifyUnsaved, 1000); // 兜底：任何改动路径都会在 1s 内上报主进程（关窗提示用）
 
     // ---------- W5.2：页面加载时自动恢复最后打开的模型（崩溃→自动重载/窗口重开后不再"空编辑器"） ----------
     (async function restoreLastModel() {

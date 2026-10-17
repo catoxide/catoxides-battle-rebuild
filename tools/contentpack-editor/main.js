@@ -500,6 +500,13 @@ function createPieceEditorWindow() {
                 if (r.response === 1) {
                     editorFlushForClose = true;
                     pieceEditorWin.webContents.send('pieceEditor:flush'); // 渲染端写回后回 pieceEditor:flushed
+                    // 兜底：渲染端写回抛错时不会回 flushed → 1.5s 后强制关闭，避免窗口关不掉
+                    setTimeout(() => {
+                        if (!pieceEditorWin || pieceEditorWin.isDestroyed() || !editorFlushForClose) return;
+                        editorFlushForClose = false;
+                        editorForceClose = true;
+                        pieceEditorWin.close();
+                    }, 1500);
                 } else if (r.response === 2) {
                     editorForceClose = true;
                     pieceEditorWin.close();
@@ -525,6 +532,8 @@ ipcMain.on('pieceEditor:dirty', (event, n) => {
 // P14：flush 完成回报 —— 仅「写回并关闭」流程放行关闭；
 // 重开前的预 flush（见 pieceEditor:open）不关窗（由 webContents.once 投递 payload）
 ipcMain.on('pieceEditor:flushed', () => {
+    // pieceEditor:open 的「先 flush 再投递」分支：写回完成后立即投递排队的新目标（1500ms 兜底仍在）
+    if (pieceEditorPending) deliverEditorPayload();
     if (!editorFlushForClose) return;
     editorFlushForClose = false;
     if (pieceEditorWin && !pieceEditorWin.isDestroyed()) {
@@ -544,17 +553,11 @@ ipcMain.handle('pieceEditor:open', (event, payload) => {
         } else {
             const win = pieceEditorWin;
             if (editorDirtyCount > 0 && !win.webContents.isLoading()) {
-                let delivered = false;
-                const deliver = () => {
-                    if (delivered || !win || win.isDestroyed()) return;
-                    delivered = true;
-                    win.webContents.removeListener('pieceEditor:flushed', onFlushed);
-                    deliverEditorPayload();
-                };
-                const onFlushed = () => deliver();
-                win.webContents.once('pieceEditor:flushed', onFlushed);
+                // 关键：新目标 payload 必须先在 pending 里排队——flush 完成（或 1500ms 兜底）后
+                // 投递的就是它。此前这里没赋值 → 标题换了、画面还是旧片段，新 payload 永久丢失。
+                pieceEditorPending = payload;
                 win.webContents.send('pieceEditor:flush');
-                setTimeout(deliver, 1500); // 渲染端异常兜底：超时强制投递
+                setTimeout(deliverEditorPayload, 1500); // 渲染端异常兜底：超时强制投递
             } else {
                 pieceEditorPending = payload;
                 if (!win.webContents.isLoading()) deliverEditorPayload(); // 已加载 → 立即投递
@@ -582,6 +585,8 @@ ipcMain.on('pieceEditor:saveEdits', (event, payload) => {
 // ---------- 3D 模型编辑器（W2 子窗口；W3.5 资源联动 / W4.2 实体状态映射 / W5 契约接入） ----------
 let modelEditorWin = null;
 let modelEditorEntityCtx = null; // W4.2 实体上下文 {pack, packDir, entityId}（主窗口"3D 中编辑"设置）
+let modelEditorDirtyCount = 0;   // 0.2.1：未保存修改数（渲染端每秒上报；关窗提示用）
+let modelEditorForceClose = false;
 function createModelEditorWindow() {
     modelEditorWin = new BrowserWindow({
         width: 1280,
@@ -597,8 +602,38 @@ function createModelEditorWindow() {
     modelEditorWin.loadFile(path.join(__dirname, 'model-editor', 'index.html'));
     guardRendererReload(modelEditorWin, '模型编辑器窗口');
     maybeOpenDevTools(modelEditorWin); // W5.5
-    modelEditorWin.on('closed', () => { modelEditorWin = null; });
+    // 0.2.1：有未保存修改 → 关窗前确认（此前 doc.dirty 只写不读，关窗静默丢弃几何/动画编辑）
+    modelEditorWin.on('close', (e) => {
+        if (modelEditorDirtyCount > 0 && !modelEditorForceClose) {
+            e.preventDefault();
+            dialog.showMessageBox(modelEditorWin, {
+                type: 'warning',
+                title: '未保存的模型修改',
+                message: `有 ${modelEditorDirtyCount} 处未保存的修改。`,
+                detail: '关闭窗口会丢失这些修改（模型几何 / 动画 / 契约）。\n请先点「💾 保存」。',
+                buttons: ['取消', '不保存关闭'],
+                defaultId: 0,
+                cancelId: 0,
+            }).then((r) => {
+                if (r.response === 1 && modelEditorWin && !modelEditorWin.isDestroyed()) {
+                    modelEditorForceClose = true;
+                    modelEditorWin.close();
+                }
+            });
+        }
+    });
+    modelEditorWin.on('closed', () => {
+        modelEditorWin = null;
+        modelEditorDirtyCount = 0;
+        modelEditorForceClose = false;
+        modelEditorEntityCtx = null; // 关窗后清上下文：否则工具栏无 ctx 重开会套用上一次的实体
+    });
 }
+
+// 0.2.1：模型编辑器未保存修改上报（1s 一次；fire-and-forget）
+ipcMain.on('modelEditor:dirty', (event, n) => {
+    modelEditorDirtyCount = Math.max(0, Number(n) | 0);
+});
 
 ipcMain.handle('modelEditor:open', (event, ctx) => {
     try {
@@ -655,9 +690,13 @@ ipcMain.handle('modelEditor:saveEntityDirect', (event, packDir, entityJson) => {
         if (entityJson.animations) base.animations = entityJson.animations;
         else delete base.animations;
         const result = EntitySchema.saveEntity(packDir, base);
-        // 暂存草稿存在则同步为新基线 —— 防止主窗口随后"导出"用旧草稿覆盖直写结果
-        if (Staging.readStagedEntity(packName, entityJson.id)) {
-            Staging.stageEntity(packName, base);
+        // 暂存草稿存在则同步【只同步动画】——基线是正式包实体，整份回写会把主窗口
+        // 尚未导出的草稿字段（attributes/behaviors/size…）覆盖掉（实测丢数据路径）。
+        const stagedEntity = Staging.readStagedEntity(packName, entityJson.id);
+        if (stagedEntity) {
+            if (base.animations) stagedEntity.animations = base.animations;
+            else delete stagedEntity.animations;
+            Staging.stageEntity(packName, stagedEntity);
         }
         Logger.info('model-editor', `状态映射直写: ${path.basename(String(packDir))}/${entityJson.id} → ${result.file}${fromStaged ? '（基线=暂存草稿，已一并落盘）' : ''}`);
         return { ok: true, data: result };
@@ -678,6 +717,10 @@ ipcMain.handle('modelEditor:saveHealthDirect', (event, packDir, namespace, entit
             return { ok: false, error: '部位配置校验失败:\n' + errors.join('\n') };
         }
         const result = HealthConfig.saveHealthConfig(packDir, namespace, entityId, config);
+        // 暂存草稿存在则同步（3D 直写比主窗口草稿新）：否则主窗口随后「导出」会用旧草稿覆盖回去
+        if (Staging.readStagedHealthConfig(packNameOf(packDir), namespace, entityId)) {
+            Staging.stageHealthConfig(packNameOf(packDir), namespace, entityId, config);
+        }
         Logger.info('model-editor', `部位配置直写: ${path.basename(String(packDir))}/${namespace}/${entityId} → ${result.file}`);
         return { ok: true, data: result };
     } catch (e) {
@@ -1066,6 +1109,16 @@ ipcMain.handle('modelEditor:saveModel', (event, p) => {
         }
         if (!PACKS_SOURCE_DIR) return { ok: false, error: '未设置项目根目录' };
         const abs = path.resolve(p.path);
+        // 0.2.1：.bbmodel 源（外部 Blockbench 工程文件，不在包内）此前一律报「路径超出包源目录」，
+        // 保存永远失败。这里只允许【覆写已存在的 .bbmodel】（文件由打开对话框产生，不新增任意写入口）。
+        if (abs.toLowerCase().endsWith('.bbmodel')) {
+            if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+                return { ok: false, error: 'bbmodel 文件不存在（只允许覆写已打开过的工程）: ' + abs };
+            }
+            fs.writeFileSync(abs, p.content, 'utf-8');
+            Logger.info('model-editor', `保存 bbmodel: ${abs}（${p.content.length} 字节）`);
+            return { ok: true, data: { path: abs } };
+        }
         if (abs !== PACKS_SOURCE_DIR && !abs.startsWith(PACKS_SOURCE_DIR + path.sep)) {
             return { ok: false, error: '路径超出包源目录: ' + abs };
         }
@@ -2196,6 +2249,28 @@ ipcMain.handle('pack:build', async (event, { packDir, outJarName, extraDeps } = 
         if (!/^[A-Za-z0-9._-]+$/.test(dirName)) {
             return { ok: false, error: `包目录名非法（仅允许字母/数字/._-）: ${dirName}` };
         }
+        // REVIEW-S7 同族：outJarName 会拼进 contentpacks/… 并作为 build-pack.ps1 参数，收紧字符集
+        if (outJarName !== undefined && outJarName !== null &&
+            !(typeof outJarName === 'string' && /^[A-Za-z0-9._-]+\.jar$/.test(outJarName))) {
+            return { ok: false, error: `outJarName 非法（仅允许字母/数字/._- 且以 .jar 结尾）: ${outJarName}` };
+        }
+
+        // 0.2.1：独立工作区 / 非 mod 工程根没有构建入口——直接给可操作提示，
+        // 而不是让 powershell 抛「build-pack.ps1 不存在」这种看不懂的失败。
+        const gradlewFile = path.join(ROOT, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew');
+        const hasGradlew = fs.existsSync(gradlewFile);
+        const hasBuildScript = !!(BUILD_SCRIPT && fs.existsSync(BUILD_SCRIPT));
+        if (!hasGradlew && !hasBuildScript) {
+            return {
+                ok: false,
+                error: `当前项目根没有可用的构建入口（既无 gradlew 也无 build-pack.ps1）：${ROOT}\n` +
+                    (String(ROOT_SOURCE || '').startsWith('workspace')
+                        ? '当前处于「独立工作区」模式（未连接 mod 工程）—— 打包需要 mod 工程的 Gradle 环境。' +
+                          '请点顶栏「📁 连接工程…」选择工程根后再打包。'
+                        : '请检查顶栏显示的项目根是否正确。'),
+                data: { preflight: null, autoCreated: [], mode: null, verify: [] },
+            };
+        }
 
         // ① 自动补齐 Gradle 骨架（生成器的职责：让包天生就是 Gradle 包）
         const autoCreated = [];
@@ -2224,7 +2299,7 @@ ipcMain.handle('pack:build', async (event, { packDir, outJarName, extraDeps } = 
         let stderr = '';
         const task = `${Scaffold.gradleProjectPath(dirName)}:contentpackJar`;
         const gradlew = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
-        if (fs.existsSync(path.join(ROOT, process.platform === 'win32' ? 'gradlew.bat' : 'gradlew'))) {
+        if (hasGradlew) {
             try {
                 const r = await runCommand(gradlew, [task, '--console=plain'], { cwd: ROOT });
                 stdout = r.stdout;
@@ -2481,6 +2556,16 @@ function handleApiRequest(req, res) {
     }
     if (req.method !== 'POST' || req.url !== '/invoke') {
         return send(404, { ok: false, error: 'Not found（可用: GET /status, POST /invoke）' });
+    }
+    // REVIEW-0.2.0 遗留（AI API 无鉴权）的浏览器侧补强：本机浏览器里的任意网页都能对
+    // 127.0.0.1 发「简单请求」POST（text/plain，不触发 CORS 预检）→ 等于任意网页可调本 API。
+    // 两道闸：① 带 Origin 头 = 来自浏览器（CLI/AI 客户端不带）→ 拒绝；② 必须是 JSON content-type。
+    // 真正的强鉴权（token）见 REVIEW-0.2.0 L11 建议，未做以免破坏既有 CLI 用法。
+    const origin = req.headers.origin;
+    if (origin) return send(403, { ok: false, error: '拒绝浏览器跨源调用（Origin: ' + origin + '）' });
+    const ctype = String(req.headers['content-type'] || '');
+    if (!/^application\/json\b/i.test(ctype)) {
+        return send(415, { ok: false, error: 'Content-Type 必须是 application/json' });
     }
     let body = '';
     let aborted = false;

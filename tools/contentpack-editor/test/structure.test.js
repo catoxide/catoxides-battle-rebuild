@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
 const NBT = require('../src/core/nbt');
 const S = require('../src/core/structureSchema');
 const V = require('../src/core/vanillaExport');
+const VI = require('../src/core/vanillaImport');
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -573,6 +574,141 @@ test('O4: 结构定义导出现代字段（size/start_height/use_expansion_hack�
     assert.deepStrictEqual(st.start_height, { absolute: -10 });
     assert.strictEqual(st.use_expansion_hack, false);
     assert.ok(!('project_to_surface' in st) && !('max_surface_level' in st));
+});
+
+// ===== 7. 原版数据包 → 蓝图 → 原版数据（vanillaImport / vanillaExport 往返） =====
+/** 造一个最小 1.21.1 jigsaw 数据包目录 */
+function mkVanillaPack(tmp, { legacyElem = false } = {}) {
+    const w = (...p) => path.join(tmp, ...p);
+    fs.mkdirSync(w('data', 'demo', 'worldgen', 'structure'), { recursive: true });
+    fs.mkdirSync(w('data', 'demo', 'worldgen', 'template_pool'), { recursive: true });
+    fs.mkdirSync(w('data', 'demo', 'worldgen', 'structure_set'), { recursive: true });
+    fs.mkdirSync(w('data', 'demo', 'structure'), { recursive: true });
+    fs.writeFileSync(w('data', 'demo', 'worldgen', 'structure', 'demo_struct.json'), JSON.stringify({
+        type: 'minecraft:jigsaw',
+        biomes: ['#minecraft:is_overworld'],
+        step: 'surface_structures',
+        terrain_adaptation: 'beard_thin',
+        start_pool: 'demo:start_pool',
+        size: 7,
+        start_height: { absolute: 0 },
+        use_expansion_hack: true,
+        max_distance_from_center: 80,
+        spawn_overrides: {},
+    }));
+    const els = [{
+        weight: 2,
+        element: {
+            element_type: 'minecraft:single_pool_element',
+            location: 'demo:piece_a',
+            projection: 'rigid',
+            processors: 'minecraft:street_plains',
+        },
+    }];
+    if (legacyElem) {
+        els.push({ weight: 1, element: { element_type: 'minecraft:legacy_single_pool_element', location: 'demo:piece_a', projection: 'terrain_matching' } });
+    }
+    fs.writeFileSync(w('data', 'demo', 'worldgen', 'template_pool', 'start_pool.json'),
+        JSON.stringify({ elements: els, fallback: 'minecraft:empty' }));
+    fs.writeFileSync(w('data', 'demo', 'worldgen', 'structure_set', 'demo_set.json'), JSON.stringify({
+        structures: [{ structure: 'demo:demo_struct', weight: 1 }],
+        placement: { type: 'minecraft:random_spread', spacing: 24, separation: 8, salt: 12345 },
+    }));
+    // 模板 NBT 用导出器自己造（与游戏 1.21.1 格式一致），带 1 个 jigsaw 块
+    const piece = {
+        name: 'piece_a', size: [3, 3, 3],
+        boxFills: [{ from: [0, 0, 0], to: [2, 0, 2], block: 'minecraft:stone_bricks' }],
+        fillBlocks: [], jigsaws: [{
+            x: 0, y: 1, z: 0, name: 'demo:out', pool: 'demo:start_pool', target: 'minecraft:empty',
+            joint: 'rollable', orientation: 'north_up', finalState: 'minecraft:air',
+        }],
+    };
+    fs.writeFileSync(w('data', 'demo', 'structure', 'piece_a.nbt'), V.buildTemplateNbt(piece, 'demo'));
+    return tmp;
+}
+
+test('V1: 数据包文件夹导入 → 蓝图（池/模板/jigsaw/结构集全部重建，命名空间改写）', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cped-vimp-'));
+    try {
+        mkVanillaPack(tmp, { legacyElem: true });
+        const r = VI.importVanilla(tmp, { namespace: 'packns' });
+        assert.strictEqual(r.ok, true, JSON.stringify(r.errors));
+        assert.strictEqual(r.blueprints.length, 1);
+        const bp = r.blueprints[0].blueprint;
+        assert.strictEqual(bp.namespace, 'packns');
+        assert.strictEqual(bp.structure.startPool, 'packns:start_pool');
+        assert.strictEqual(bp.pieces.length, 1);
+        assert.strictEqual(bp.pieces[0].name, 'piece_a');
+        assert.ok(bp.pieces[0].jigsaws.length >= 1);
+        assert.strictEqual(bp.pieces[0].jigsaws[0].pool, 'packns:start_pool', 'jigsaw 池引用应改写到蓝图池');
+        const pool = bp.templatePools.find((p) => p.name === 'start_pool');
+        assert.ok(pool, 'start_pool 应被导入');
+        // 不可编辑字段必须带进蓝图（否则编辑器「打开→保存」会洗掉）
+        assert.strictEqual(pool.elements[0].processors, 'minecraft:street_plains');
+        assert.strictEqual(pool.elements[0].elementType, 'minecraft:single_pool_element');
+        const legacy = pool.elements.find((e) => e.elementType === 'minecraft:legacy_single_pool_element');
+        assert.ok(legacy, 'legacy_single_pool_element 应保留 elementType');
+        // 结构集 placement 来自原版文件
+        assert.strictEqual(bp.structureSet.spacing, 24);
+        assert.strictEqual(bp.structureSet.separation, 8);
+        assert.strictEqual(bp.structureSet.salt, 12345);
+        assert.strictEqual(S.validateBlueprint(bp).valid, true);
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});
+
+test('V2: 导入的蓝图导出回原版文件 → processors/element_type/start_pool/placement 不丢', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cped-vrt-'));
+    try {
+        mkVanillaPack(tmp);
+        const bp = VI.importVanilla(tmp, { namespace: 'packns' }).blueprints[0].blueprint;
+        const out = V.exportBlueprint(bp);
+        assert.deepStrictEqual(out.errors, []);
+        const pool = JSON.parse(out.files.find((f) => f.relPath === 'data/packns/worldgen/template_pool/start_pool.json').content);
+        assert.strictEqual(pool.elements[0].element.processors, 'minecraft:street_plains');
+        // 权重会被归一化（约分到互质，保持相对比例）：2:1 → 2:1 或等比例
+        if (pool.elements.length > 1) {
+            assert.strictEqual(pool.elements[0].weight / pool.elements[1].weight, 2);
+        }
+        assert.strictEqual(pool.fallback, 'minecraft:empty');
+        const st = JSON.parse(out.files.find((f) => f.relPath === `data/packns/worldgen/structure/${bp.structureId}.json`).content);
+        assert.strictEqual(st.start_pool, 'packns:start_pool');
+        assert.strictEqual(st.terrain_adaptation, 'beard_thin');
+        const set = JSON.parse(out.files.find((f) => f.relPath === `data/packns/worldgen/structure_set/${bp.structureId}_set.json`).content);
+        assert.strictEqual(set.placement.spacing, 24);
+        assert.strictEqual(set.placement.salt, 12345);
+        // 模板 NBT 往返：导出的 .nbt 再解析回片段，方块与 jigsaw 都还在
+        const nbtFile = out.files.find((f) => f.relPath === 'data/packns/structure/piece_a.nbt');
+        assert.ok(nbtFile, '应导出模板 NBT');
+        const roundTrip = VI.templateToPiece(nbtFile.content, 'piece_a');
+        assert.deepStrictEqual(roundTrip.piece.size, [3, 3, 3]);
+        assert.strictEqual(roundTrip.piece.jigsaws.length, 1);
+        assert.ok(roundTrip.piece.boxFills.length + roundTrip.piece.fillBlocks.length > 0);
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});
+
+test('V3: 单个 .nbt 模板导入 → 单片段蓝图（含 jigsaw 池保留原 ID 的警告路径）', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cped-vnbt-'));
+    try {
+        const p = path.join(tmp, 'lonely.nbt');
+        fs.writeFileSync(p, V.buildTemplateNbt({
+            name: 'x', size: [2, 2, 2], boxFills: [{ from: [0, 0, 0], to: [1, 1, 1], block: 'minecraft:stone' }],
+            fillBlocks: [], jigsaws: [{ x: 0, y: 0, z: 0, name: 'a', pool: 'minecraft:empty', target: 'b', joint: 'aligned', orientation: 'up_north', finalState: 'minecraft:air' }],
+        }, 'demo'));
+        const r = VI.importVanilla(p, { namespace: 'packns' });
+        assert.strictEqual(r.ok, true, JSON.stringify(r.errors));
+        assert.strictEqual(r.kind, 'template');
+        const bp = r.blueprints[0].blueprint;
+        assert.strictEqual(bp.pieces.length, 1);
+        assert.strictEqual(bp.templatePools.length, 1);
+        assert.strictEqual(bp.structure.startPool, 'start');
+        assert.strictEqual(S.validateBlueprint(bp).valid, true);
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
 });
 
 console.log(`\n结构模块测试: ${passed} 通过, ${failed} 失败`);

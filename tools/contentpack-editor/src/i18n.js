@@ -506,6 +506,7 @@
             'editor.saveDraft': 'Save Draft',
             'editor.build': 'Build',
             'editor.preflight': 'Preflight',
+            'editor.refresh': 'Refresh',
             'editor.tab.basic': 'Basic',
             'editor.tab.model': 'Model & Assets',
             'editor.tab.parts': 'Body Parts',

@@ -120,6 +120,32 @@ test('11. (REVIEW-L6) structureId ".." 不再逃逸 structures/ 目录（草稿�
     Staging.discardStaged('s6-pack');
 });
 
+test('12. (0.2.1) stageEntity 剥掉 _staged 等内部字段（否则导出后变成正式包脏数据）', () => {
+    const e = Object.assign(EntitySchema.createDefaultEntity(), { id: 'meta_mob', _staged: true, _x: 1 });
+    Staging.stageEntity(PACK_NAME, e);
+    const read = Staging.readStagedEntity(PACK_NAME, 'meta_mob');
+    assert.strictEqual(read._staged, undefined, '_staged 不应落盘');
+    assert.strictEqual(read._x, undefined);
+    assert.strictEqual(read.id, 'meta_mob');
+    Staging.removeStagedEntity(PACK_NAME, 'meta_mob');
+});
+
+test('13. (0.2.1) id 含路径分隔符/.. 时草稿仍落在暂存区内（不越界）', () => {
+    Staging.stageEntity(PACK_NAME, Object.assign(EntitySchema.createDefaultEntity(), { id: '..\\..\\evil' }));
+    Staging.stageHealthConfig(PACK_NAME, '..\\..', '..\\..\\evil', { parts: [] });
+    const root = path.resolve(Staging.getStagingRoot());
+    const all = [];
+    (function walk(d) {
+        for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+            const q = path.join(d, ent.name);
+            if (ent.isDirectory()) walk(q); else all.push(path.resolve(q));
+        }
+    })(root);
+    for (const f of all) assert.ok(f.startsWith(root + path.sep), '草稿越界: ' + f);
+    Staging.removeStagedEntity(PACK_NAME, '..\\..\\evil');
+    Staging.removeStagedHealthConfig(PACK_NAME, '..\\..', '..\\..\\evil');
+});
+
 // 清理
 fs.rmSync(tmpRoot, { recursive: true, force: true });
 

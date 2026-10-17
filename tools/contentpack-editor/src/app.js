@@ -231,6 +231,10 @@
             langSel.value = window.I18n.getLang();
             langSel.addEventListener('change', () => {
                 window.I18n.setLang(langSel.value);
+                // applyDOM 只翻译静态 [data-i18n]；列表/状态栏/面板是动态渲染的 →
+                // 至少把左栏包列表与中栏内容列表按新语言重画（打开中的编辑面板需重开）。
+                try { window.PackList.loadPacks(); } catch { /* 忽略 */ }
+                try { loadContentList(); } catch { /* 忽略 */ }
             });
             window.I18n.applyDOM();
         } else {
@@ -249,6 +253,11 @@
                 if (p.needProjectRoot) {
                     // 兜底分支：主进程连独立工作区都建不出来（极罕见）→ 引导选择，但继续初始化界面
                     await setupProjectRoot();
+                    // 0.2.1：用户取消时顶栏仍要有一行可读信息（此前空白 = 和反馈机"没有源码串"同款症状）
+                    const hp = document.getElementById('headerPaths');
+                    if (hp && !hp.textContent) {
+                        hp.textContent = '源码: （未设置）—— 点顶栏「📁 连接工程…」选择 mod 工程';
+                    }
                 } else {
                     document.getElementById('headerPaths').textContent = `源码: ${p.packsSourceDir}`;
                 }
