@@ -166,10 +166,11 @@ deepEq('group origin = flip(pivot)', r3(rootGrp.origin), [-0, 24, 0]);
 const armRGrp = bbObj.groups.find((g) => g.name === 'arm_r');
 check('arm_r mirror_uv=true', armRGrp.mirror_uv === true);
 check('torso 旋转 X/Y 反号', JSON.stringify(bbObj.groups.find((g) => g.name === 'torso').rotation) === JSON.stringify([0, -30, 0]));
-// cube from = flip(origin)
+// cube 盒 X 镜像交换两端（Blockbench bedrock.js#compileCube 权威规则）：
+//   from.x = −(origin.x + size.x)，to.x = −origin.x；y/z 不变
 const el0 = bbObj.elements.find((e) => e.name === 'root_1');
-deepEq('element from = flip(cube.origin)', r3(el0.from), [0, 4, 0]);
-deepEq('element to = from + size', r3(el0.to), [4, 24, 4]);
+deepEq('element from.x = −(cube.origin.x+size.x)，y/z = origin/size', r3(el0.from), [-4, 4, 0]);
+deepEq('element to.x = −cube.origin.x，y/z = origin+size', r3(el0.to), [0, 24, 4]);
 // per-face up/down 角点序
 const elRot = bbObj.elements.find((e) => e.name === 'torso_2');
 check('旋转 cube 有 origin+rotation', JSON.stringify(elRot.origin) === JSON.stringify([-3, 11, -1]) && JSON.stringify(elRot.rotation) === JSON.stringify([-10, 20, 35]));
@@ -294,6 +295,51 @@ console.log('== 4. locator 与无 outliner 扁平退化 ==');
     check('无 outliner 有 warning', r2.warnings.some((w) => w.includes('outliner')));
     check('无 outliner 元素挂 __root', r2.geometry.bones.some((b2) => b2.name === '__root' && b2.cubes.length === 1));
     check('无 outliner 组仍导入', r2.geometry.bones.some((b2) => b2.name === 'g'));
+}
+
+// ---------- 5. 盒 X 镜像（真实 sword.bbmodel 数据回归） ----------
+// 2026-10-18 真机对账：Blockbench 5.2.2 打开 sword.bbmodel 后渲染 x∈[-12,-8]（left 手），
+// 本编辑器旧实现画到 x∈[-16,-12]（整体偏 −size.x）。下面的数值取自该文件 + Blockbench 实读。
+console.log('== 5. 盒 X 镜像（Blockbench 对账） ==');
+{
+    const m = {
+        meta: { format_version: '5.0', model_format: 'bedrock', box_uv: false },
+        resolution: { width: 32, height: 32 },
+        name: 'sword', model_identifier: 'sword',
+        groups: [{ name: 'hands', uuid: 'g1', origin: [-11, 3, 8], rotation: [0, 0, 0], export: true }],
+        elements: [{
+            name: 'left', type: 'cube', uuid: 'e1',
+            from: [-12, 3, 7], to: [-8, 15, 11], origin: [-11, 3, 8], rotation: [90, 0, 0],
+            faces: { north: { uv: [0, 0, 4, 12], texture: 0 } },
+        }],
+        outliner: [{ uuid: 'g1', isOpen: false, children: ['e1'] }],
+        textures: [{ name: 'sword', width: 32, height: 32, uuid: 'tx1' }],
+    };
+    const g = importBBModel(m, {}).geometry;
+    const c = g.bones.find((b) => b.name === 'hands').cubes[0];
+    // 编辑器（spark）原点 = 镜像后的最小角 = (−to.x, from.y, from.z) = (8, 3, 7)
+    deepEq('导入 cube.origin = (−to.x, from.y, from.z)', r3(c.origin), [8, 3, 7]);
+    deepEq('导入 cube.size 不变', r3(c.size), [4, 12, 4]);
+    deepEq('导入 cube.pivot = flip(bb origin)', r3(c.pivot), [11, 3, 8]);
+    deepEq('导入 cube.rotation = flipRot', r3(c.rotation), [-90, 0, 0]);
+
+    // 再导出：from.x = −(o.x+s.x) = −12，to.x = −o.x = −8 → 与 Blockbench 实读一致
+    const out = JSON.parse(exportBBModel(g, { name: 'sword' }));
+    const e = out.elements.find((x) => x.type === 'cube');
+    deepEq('导出 from 回到 Blockbench 坐标', r3(e.from), [-12, 3, 7]);
+    deepEq('导出 to 回到 Blockbench 坐标', r3(e.to), [-8, 15, 11]);
+    deepEq('导出 origin', r3(e.origin), [-11, 3, 8]);
+
+    // 内嵌贴图（textures[].source dataURL）导入/导出各透传一次，Blockbench 才能看到贴图
+    const PNG_1PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const m2 = JSON.parse(JSON.stringify(m));
+    m2.textures = [{ name: 'sword.png', width: 32, height: 32, uuid: 'tx1', source: PNG_1PX }];
+    const r2 = importBBModel(m2, {});
+    check('导入内嵌贴图 dataURL', r2.texture && r2.texture.dataUrl === PNG_1PX && r2.texture.name === 'sword.png');
+    const out2 = JSON.parse(exportBBModel(r2.geometry, { name: 'sword', texture: r2.texture }));
+    check('导出贴图写回 textures[].source', out2.textures[0].source === PNG_1PX && out2.textures[0].name === 'sword.png');
+    const outNoTex = JSON.parse(exportBBModel(r2.geometry, { name: 'sword' }));
+    check('无贴图时不写 source', outNoTex.textures[0].source === undefined);
 }
 
 console.log(`\n结果: ${pass} passed, ${fail} failed`);

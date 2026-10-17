@@ -1137,6 +1137,10 @@
             doc.sourceFormat = 'bbmodel';
             applyLoadedModelCore(r.geometry, { displayName: name, sourcePath, statusMsg });
             r.warnings.forEach((w) => console.warn('[bbmodel] ' + w));
+            // bbmodel 工程常内嵌 PNG（textures[].source = dataURL）→ 自动贴到视口，与 Blockbench 所见一致
+            if (r.texture && r.texture.dataUrl) {
+                applyTextureFromDataUrl(r.texture.dataUrl, r.texture.name || 'bbmodel-texture.png');
+            }
             return;
         }
         if (fmt !== 'spark') throw new Error('无法识别的模型格式（需要 spark .json 或 Blockbench .bbmodel）');
@@ -1219,7 +1223,7 @@
         const isBb = doc.sourceFormat === 'bbmodel' || /\.bbmodel$/i.test(doc.sourceFile);
         let content;
         try {
-            content = isBb ? BB.exportBBModel(doc.model, { name: bbBaseName() }) : SC.exportModel(doc.model);
+            content = isBb ? BB.exportBBModel(doc.model, { name: bbBaseName(), texture: bbTextureOpt() }) : SC.exportModel(doc.model);
         } catch (e) {
             setStatus('✗ ' + e.message);
             return;
@@ -1260,12 +1264,17 @@
         return String(doc.model.identifier || '').replace(/^geometry\./, '') || 'model';
     }
 
+    /** 导出 bbmodel 时把当前贴图内嵌回去（Blockbench 才能看到贴图，而不是灰模） */
+    function bbTextureOpt() {
+        return doc.textureDataUrl ? { name: doc.textureName || 'texture.png', dataUrl: doc.textureDataUrl } : null;
+    }
+
     /** W4.4：导出 .bbmodel（v5）——浏览器下载（外部工程格式，不走包内保存面板） */
     function exportBbModel() {
         if (!doc.model) { setStatus('✗ 未加载模型'); return; }
         let text;
         try {
-            text = BB.exportBBModel(doc.model, { name: bbBaseName() });
+            text = BB.exportBBModel(doc.model, { name: bbBaseName(), texture: bbTextureOpt() });
         } catch (e) {
             setStatus('✗ ' + e.message);
             return;
@@ -1282,25 +1291,30 @@
     }
 
     // ---------- 贴图 ----------
-    function loadTextureFile(file) {
-        const reader = new FileReader();
-        reader.onload = async () => {
-            const tex = await vpModule.makeTextureFromDataUrl(reader.result);
-            if (!tex) { setStatus('贴图解码失败：' + file.name); return; }
-            doc.textureDataUrl = reader.result; // W4.7 UV 预览
+    /** 贴图 dataURL → 视口 + UV 面板（「贴图」按钮选文件 / bbmodel 内嵌贴图共用） */
+    function applyTextureFromDataUrl(dataUrl, name) {
+        return vpModule.makeTextureFromDataUrl(dataUrl).then((tex) => {
+            if (!tex) { setStatus('贴图解码失败：' + name); return false; }
+            doc.textureDataUrl = dataUrl; // W4.7 UV 预览
             requestUvRedraw(); // W5.6 常驻 UV 随贴图同步重绘
             const img = new Image();
             img.onload = () => {
-                doc.textureName = file.name;
+                doc.textureName = name;
                 vp.setTexture(tex);
                 const m = doc.model;
-                setStatus('贴图：' + file.name + '（' + img.width + '×' + img.height +
+                setStatus('贴图：' + name + '（' + img.width + '×' + img.height +
                     (m && (img.width !== m.textureWidth || img.height !== m.textureHeight)
                         ? `，模型声明 ${m.textureWidth}×${m.textureHeight} —— 尺寸不一致，UV 按声明尺寸归一，可能偏移`
                         : '，与模型声明一致') + '）');
             };
-            img.src = reader.result;
-        };
+            img.onerror = () => setStatus('贴图解码失败：' + name);
+            img.src = dataUrl;
+            return true;
+        });
+    }
+    function loadTextureFile(file) {
+        const reader = new FileReader();
+        reader.onload = () => applyTextureFromDataUrl(reader.result, file.name);
         reader.readAsDataURL(file);
     }
 

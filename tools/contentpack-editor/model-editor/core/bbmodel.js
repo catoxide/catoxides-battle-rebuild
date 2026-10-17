@@ -13,6 +13,17 @@
 //     旋转 (rx,ry,rz) → (−rx, −ry, rz)  flR(r)
 //   （= bedrock.js parseBone/compileGroup 的 `*[0]*=-1; *[1]*=-1` 规则，镜像为对合。）
 //
+// 【镜像只对"点"成立，盒要换成"镜像后的最小角"】
+//   Blockbench 侧权威规则（bedrock/bedrock.js#parseCube / #compileCube）：
+//     parse :  文本 from.x = −(geometry.origin.x + size.x)，to.x = −geometry.origin.x   （y/z 不变）
+//     compile:  geometry.origin.x = −to.x，size.x = to.x − from.x                        （y/z 不变）
+//   → 盒子的 X 镜像会交换两端：镜像后的最小角 = −to.x（不是 −from.x）。
+//   ⚠ 早期实现把 from/to 当点做 flip(from) 写到编辑器 origin，等于整体偏 −size.x
+//     （真机实测：Blockbench 里 x∈[−1.53,1.62] 的刀身被画到 x∈[−4.68,−1.53]，整模错位）。
+//   编辑器（spark）cube 以「最小角 + 正 size」存储，所以：
+//      导入  origin = (−to.x, from.y, from.z)
+//      导出  from   = (−(o.x+s.x), o.y, o.z)，to = (−o.x, o.y+s.y, o.z+s.z)
+//
 // 【绝对坐标】v5 中 group.origin、element.from/to、element.origin（旋转锚点）、
 //   locator.position 全部是模型根空间绝对值；three.js 层级用差值构建，但存储值是绝对值：
 //     group.js:657-661  bone.position = group.origin − parent.origin（有父时）
@@ -219,7 +230,7 @@
      * 导入 .bbmodel（v5；兼容无 outliner 的扁平旧形态）→ 编辑器几何。
      * @param {string|Object} source
      * @param {Object} [opts] {name?: 覆盖模型名}
-     * @returns {{geometry: Object, warnings: string[]}}
+     * @returns {{geometry: Object, warnings: string[], texture: ({name:string,dataUrl:string,width:?number,height:?number}|null)}}
      */
     function importBBModel(source, opts) {
         const obj = toObject(source, 'bbmodel');
@@ -321,8 +332,11 @@
             const effMirror = (typeof el.mirror_uv === 'boolean') ? el.mirror_uv : groupMirror;
             const uvInfo = facesToUv(el, size, groupMirror, warnings2, where);
             const hasRot = Array.isArray(el.rotation) && el.rotation.some((v) => isNum(v) && Math.abs(v) > EPS);
+            // 盒子的 X 镜像交换两端：编辑器最小角 = −to.x = flip(from).x − size.x（见文件头）
+            const origin3 = flip(from).map(round6);
+            origin3[0] = round6(origin3[0] - size[0]);
             const cube = {
-                origin: flip(from).map(round6),
+                origin: origin3,
                 size: size.map(round6),
                 uv: uvInfo.uv,
                 inflate: isNum(el.inflate) ? el.inflate : (isNum(bone._groupInflate) ? bone._groupInflate : 0),
@@ -428,9 +442,23 @@
         // 清理临时字段
         for (const b of bones) delete b._groupInflate;
 
+        // 内嵌贴图（Blockbench 工程常把 PNG 以 dataURL 存在 textures[].source）→ 交给调用方应用
+        let texture = null;
+        const texList = Array.isArray(model.textures) ? model.textures : [];
+        const embedded = texList.find((t) => t && typeof t.source === 'string' && /^data:image\//.test(t.source));
+        if (embedded) {
+            texture = {
+                name: embedded.name || 'bbmodel-texture.png',
+                dataUrl: embedded.source,
+                width: isNum(embedded.width) ? embedded.width : null,
+                height: isNum(embedded.height) ? embedded.height : null,
+            };
+        }
+        // 非内嵌贴图（外部 path / 仅名字）静默跳过：由「贴图」按钮或包契约补
+
         const { errors } = Model.validateGeometry(geometry);
         if (errors.length) throw new Error(`bbmodel 导入后结构非法: ${errors.join('; ')}`);
-        return { geometry, warnings };
+        return { geometry, warnings, texture };
     }
 
     // ---------- 导出 ----------
@@ -438,7 +466,7 @@
     /**
      * 编辑器几何 → .bbmodel v5 文本（可直接在 Blockbench 5.x 打开）。
      * @param {Object} geometry 规范形几何
-     * @param {Object} [opts] {name?: 覆盖文件模型名}
+     * @param {Object} [opts] {name?: 覆盖文件模型名, texture?: {name?:string, dataUrl?:string}}（texture 内嵌为 textures[].source）
      * @returns {string}
      */
     function exportBBModel(geometry, opts) {
@@ -472,12 +500,14 @@
 
             (b.cubes || []).forEach((c, i) => {
                 const elUuid = genUuid();
-                const from = flip(c.origin).map(round6);
+                // bedrock.js#compileCube：from.x = −(spark.x + s.x)，to.x = −spark.x（见文件头）
+                const mirrorOrigin = flip(c.origin).map(round6); // [−o.x, o.y, o.z]
+                const from = [round6(mirrorOrigin[0] - c.size[0]), mirrorOrigin[1], mirrorOrigin[2]];
                 const el = {
                     name: `${b.name}_${i + 1}`,
                     type: 'cube',
                     from,
-                    to: add3(from, c.size).map(round6),
+                    to: [mirrorOrigin[0], round6(mirrorOrigin[1] + c.size[1]), round6(mirrorOrigin[2] + c.size[2])],
                     uuid: elUuid,
                     export: true,
                     visibility: true,
@@ -558,6 +588,12 @@
         for (const g of groups) delete g._children;
 
         const allSimple = geometry.bones.every((b) => (b.cubes || []).every((c) => Array.isArray(c.uv)));
+        // 内嵌贴图（opts.texture.dataUrl）：Blockbench 工程靠 textures[].source 携带 PNG，
+        // 不写回的话导出的 .bbmodel 在 Blockbench 里是无贴图的灰模
+        const texIn = opts && opts.texture;
+        const texName = (texIn && texIn.name) ? String(texIn.name) : baseName;
+        const texEntry = { name: texName, width: geometry.textureWidth, height: geometry.textureHeight, uuid: genUuid() };
+        if (texIn && typeof texIn.dataUrl === 'string' && /^data:image\//.test(texIn.dataUrl)) texEntry.source = texIn.dataUrl;
         const model = {
             name: baseName,
             model_identifier: baseName,
@@ -570,7 +606,7 @@
             elements,
             groups,
             outliner,
-            textures: [{ name: baseName, width: geometry.textureWidth, height: geometry.textureHeight, uuid: genUuid() }],
+            textures: [texEntry],
         };
         return JSON.stringify(model, null, 2) + '\n';
     }
