@@ -117,21 +117,22 @@ function buildTemplateNbt(piece, namespace) {
         blocks.push({ pos: [x, y, z], state: idx, nbt: nbtMap.get(posStr) || null });
     }
     // jigsaw：palette minecraft:jigsaw[orientation=...]，实体数据放 block.nbt
-    // （1.21.1 JigsawBlockEntity.saveAdditional 字段：name/target/pool/joint/final_state/
-    //   placement_priority/selection_priority —— 直接位于 nbt 下，无 "jigsaw" 包装层）
+    // （1.21.1 JigsawBlockEntity.save 字段：id/name/target/pool/joint/final_state —— 直接位于 nbt 下）
+    // 注意必须写 id：StructureTemplate 加载方块实体时按 nbt.id 找 BlockEntityType，缺 id 直接返回 null
+    //（→ jigsaw 连接数据全丢、结构无法拼接）。placement/selection priority 在 1.21.1 已不属于方块实体，
+    // 仅作编辑器内部字段保留在蓝图里、不写入 NBT。
     for (const j of jigsaws) {
         const idx = addPalette('minecraft:jigsaw', { orientation: j.orientation });
         blocks.push({
             pos: [j.x, j.y, j.z],
             state: idx,
             nbt: {
+                id: NBT.str('minecraft:jigsaw'),
                 name: NBT.str(j.name || ''),
                 target: NBT.str(j.target || ''),
                 pool: NBT.str(S.resolveId(j.pool, namespace)),
                 joint: NBT.str(j.joint || 'rollable'),
                 final_state: NBT.str(j.finalState || 'minecraft:air'),
-                placement_priority: NBT.int(j.placementPriority != null ? j.placementPriority : 10),
-                selection_priority: NBT.int(j.selectionPriority != null ? j.selectionPriority : 10),
             },
         });
     }
@@ -173,6 +174,8 @@ function buildTemplateNbt(piece, namespace) {
 /** 生成全部原版文件（纯函数，不碰磁盘） */
 function exportBlueprint(bp) {
     const errors = [];
+    // 旧蓝图字段迁移（1.21.1 codec 不认识 project_to_surface/max_surface_level）
+    bp = S.migrateBlueprint(bp);
     const v = S.validateBlueprint(bp);
     if (!v.valid) return { files: [], errors: v.errors };
 
@@ -197,39 +200,64 @@ function exportBlueprint(bp) {
 
     // 2. 模板池
     for (const pool of bp.templatePools || []) {
-        const elements = (pool.elements || []).map((el) => ({
-            weight: el.weight,
-            element: {
-                element_type: 'minecraft:single_pool_element',
+        const elements = (pool.elements || []).map((el) => {
+            // feature 元素（原版 feature_pool_element：树/植被等）与模板元素走不同字段
+            if (!el.template && el.feature) {
+                return {
+                    weight: el.weight,
+                    element: {
+                        element_type: 'minecraft:feature_pool_element',
+                        feature: S.resolveId(el.feature, ns),
+                        projection: el.projection || 'rigid',
+                    },
+                };
+            }
+            const element = {
+                element_type: el.elementType || 'minecraft:single_pool_element',
                 location: S.resolveId(el.template, ns),
                 projection: el.projection,
-                processors: [],
-            },
-        }));
+            };
+            // 原版：processors 可省略；写了就必须是「处理器列表 id」或内联 {processors:[...]}。
+            // 绝不能再写 []（旧版导出器写 processors: [] → codec 拒绝 → 世界加载失败）
+            if (el.processors !== undefined && el.processors !== null) element.processors = el.processors;
+            return { weight: el.weight, element };
+        });
         files.push({
             relPath: `data/${ns}/worldgen/template_pool/${pool.name}.json`,
+            // fallback 是「池 ID」；原版默认 minecraft:empty（不是元素类型 empty_pool_element）
             content: JSON.stringify({
                 elements,
-                fallback: pool.fallback || S.EMPTY_POOL_ELEMENT,
+                fallback: pool.fallback || S.EMPTY_POOL,
             }, null, 2),
             kind: 'template_pool',
         });
     }
 
-    // 3. 结构定义
+    // 3. 结构定义（1.21.1 jigsaw codec：type/biomes/step/spawn_overrides/start_pool/
+    //    start_height/size/use_expansion_hack 均必填；terrain_adaptation 与
+    //    project_start_to_heightmap 可选）
+    const structJson = {
+        type: 'minecraft:jigsaw',
+        biomes: S.biomesForJson(st.biomes),
+        max_distance_from_center: st.maxDistanceFromCenter != null ? st.maxDistanceFromCenter : 80,
+        size: st.size != null ? st.size : S.JIGSAW_SIZE_MAX,
+        spawn_overrides: (st.spawnOverrides && typeof st.spawnOverrides === 'object') ? st.spawnOverrides : {},
+        start_height: (st.startHeight && typeof st.startHeight === 'object') ? st.startHeight : { absolute: 0 },
+        start_pool: S.resolveId(st.startPool, ns),
+        step: st.step || 'surface_structures',
+        use_expansion_hack: st.useExpansionHack !== false,
+    };
+    // 'none' 是 1.21.1 的默认值（可省略）→ 不写，保持与原版文件一致
+    if (st.terrainAdaptation && st.terrainAdaptation !== 'none') structJson.terrain_adaptation = st.terrainAdaptation;
+    if (st.projectStartToHeightmap) structJson.project_start_to_heightmap = st.projectStartToHeightmap;
+    if (st.startJigsawName) structJson.start_jigsaw_name = S.resolveId(st.startJigsawName, ns);
+    // 1.21.1 可选透传字段（试炼密室用到 dimension_padding / liquid_settings / pool_aliases）
+    if (Number.isInteger(st.dimensionPadding)) structJson.dimension_padding = st.dimensionPadding;
+    if (st.liquidSettings) structJson.liquid_settings = st.liquidSettings;
+    if (Array.isArray(st.poolAliases) && st.poolAliases.length) structJson.pool_aliases = st.poolAliases;
     files.push({
         relPath: `data/${ns}/worldgen/structure/${sid}.json`,
-        content: JSON.stringify({
-            type: 'minecraft:jigsaw',
-            biomes: st.biomes || ['#minecraft:is_overworld'],
-            spawn_overrides: { bonus_chests: 0, spawns: [] },
-            step: st.step || 'surface_structures',
-            terrain_adaptation: st.terrainAdaptation || 'beard_thin',
-            start_pool: S.resolveId(st.startPool, ns),
-            max_distance_from_center: st.maxDistanceFromCenter != null ? st.maxDistanceFromCenter : 80,
-            project_to_surface: st.projectToSurface !== false,
-            max_surface_level: st.maxSurfaceLevel || 0,
-        }, null, 2),
+        content: JSON.stringify(structJson, null, 2),
         kind: 'structure',
     });
 
@@ -280,10 +308,50 @@ function exportToPack(packDir, bp) {
     return { ok: true, files: written };
 }
 
+/**
+ * 一键导出整包：扫描包内所有 blueprint.json（正式蓝图，不含暂存草稿），
+ * 各自导出 4 类原版文件到包源码目录（data/<ns>/...，随打包进 jar）。
+ * @param {string} packDir
+ * @returns {{ok:boolean, structures:Array<{id:string, files:string[]}>, errors:string[]}}
+ */
+function exportPack(packDir) {
+    const structures = S.listStructures(packDir);
+    const out = { ok: true, structures: [], errors: [] };
+    if (!structures.length) {
+        out.ok = false;
+        out.errors.push('包内没有 blueprint.json（structures/<id>/blueprint.json）');
+        return out;
+    }
+    for (const s of structures) {
+        if (s.error) {
+            out.ok = false;
+            out.errors.push(`${s.structureId}: 蓝图 JSON 解析失败: ${s.error}`);
+            continue;
+        }
+        let bp;
+        try {
+            bp = S.readStructure(packDir, s.file);
+        } catch (e) {
+            out.ok = false;
+            out.errors.push(`${s.structureId}: 读取失败: ${e.message}`);
+            continue;
+        }
+        const r = exportToPack(packDir, bp);
+        if (!r.ok) {
+            out.ok = false;
+            out.errors.push(`${bp.structureId || s.structureId}: ` + (r.errors || []).join('; '));
+            continue;
+        }
+        out.structures.push({ id: bp.structureId || s.structureId, files: r.files });
+    }
+    return out;
+}
+
 module.exports = {
     parseBlockId,
     expandFills,
     buildTemplateNbt,
     exportBlueprint,
     exportToPack,
+    exportPack,
 };

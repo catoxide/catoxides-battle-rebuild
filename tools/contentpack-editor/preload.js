@@ -49,6 +49,11 @@ const api = {
     saveStructure: (packDir, blueprint) => ipcRenderer.invoke('structure:save', packDir, blueprint),
     deleteStructure: (packDir, relFile, structureId) => ipcRenderer.invoke('structure:delete', packDir, relFile, structureId),
     exportStructureVanilla: (packDir, blueprint) => ipcRenderer.invoke('structure:exportVanilla', packDir, blueprint),
+    // 一键导入原版（.nbt / 数据包 jar·zip）与一键导出整包原版数据
+    importStructureVanilla: (packDir) => ipcRenderer.invoke('structure:importVanilla', packDir),
+    importStructureVanillaDir: (packDir) => ipcRenderer.invoke('structure:importVanillaDir', packDir),
+    importStructureVanillaPath: (packDir, srcPath) => ipcRenderer.invoke('structure:importVanillaPath', packDir, srcPath),
+    exportStructureVanillaAll: (packDir) => ipcRenderer.invoke('structure:exportVanillaAll', packDir),
     getStructureDefaults: () => ipcRenderer.invoke('core:getStructureDefaults'),
 
     // 游戏资源（vanilla 方块贴图）
@@ -128,6 +133,8 @@ const api = {
     log: (level, scope, msg) => ipcRenderer.send('app:log', { level, scope, msg }),
     getLogInfo: () => ipcRenderer.invoke('app:getLogInfo'),
     openLogDir: () => ipcRenderer.invoke('app:openLogDir'),
+    // 0.2.1 诊断信息（反馈闭环：版本/项目根来源/路径/日志位置一键复制）
+    getDiagnostics: () => ipcRenderer.invoke('app:diagnostics'),
 
     // W5.3 渲染模式（软件渲染自愈）
     getSettings: () => ipcRenderer.invoke('settings:get'),

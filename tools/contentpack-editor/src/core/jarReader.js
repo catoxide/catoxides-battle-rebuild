@@ -75,6 +75,38 @@ function readEntry(jarPath, wanted) {
 }
 
 /**
+ * 打开一个 zip/jar 归档，返回随机访问接口（整文件读入一次 + 条目索引缓存）。
+ * 需要连续读几十~几千个条目时用它（readEntry 每次都重读整文件，批量场景是 O(n²)）。
+ * @returns {{kind:string, list():string[], has(name):boolean, read(name):Buffer|null, close():void}}
+ */
+function openArchive(jarPath) {
+    const stat = fs.statSync(jarPath);
+    if (stat.size > MAX_JAR_BYTES) {
+        throw new Error(`归档过大，超出只读读取器范围: ${stat.size} bytes`);
+    }
+    const { buf, entries } = readEntries(jarPath);
+    const byName = new Map(entries.map((e) => [e.name, e]));
+    return {
+        kind: /\.jar$/i.test(jarPath) ? 'jar' : 'zip',
+        list: () => entries.map((e) => e.name),
+        has: (name) => byName.has(name),
+        read(name) {
+            const e = byName.get(name);
+            if (!e) return null;
+            if (buf.readUInt32LE(e.localOff) !== LOC_SIG) throw new Error(`本地头损坏: ${name}`);
+            const nameLen = buf.readUInt16LE(e.localOff + 26);
+            const extraLen = buf.readUInt16LE(e.localOff + 28);
+            const dataOff = e.localOff + 30 + nameLen + extraLen;
+            const raw = buf.subarray(dataOff, dataOff + e.compSize);
+            if (e.method === 0) return Buffer.from(raw);
+            if (e.method === 8) return zlib.inflateRawSync(raw);
+            throw new Error(`不支持的压缩方式 ${e.method}: ${name}`);
+        },
+        close() { /* 无系统资源，整文件已在内存 */ },
+    };
+}
+
+/**
  * 读 jar 的 MANIFEST.MF 主属性 → 对象；无 MANIFEST 返回 null。
  * REVIEW-L8：支持 72 字节折行续行（行首单空格 = 续行，与 manifest.parseManifest 一致）。
  */
@@ -108,7 +140,7 @@ function isContentPack(jarPath) {
     return !!(m && m['Module-Type'] === 'contentpack');
 }
 
-const JarReaderAPI = { listEntries, readEntry, readManifest, isContentPack, MAX_JAR_BYTES };
+const JarReaderAPI = { listEntries, readEntry, readManifest, isContentPack, openArchive, MAX_JAR_BYTES };
 
 if (typeof module === 'object' && module.exports) module.exports = JarReaderAPI;
 if (typeof self !== 'undefined') self.JarReader = JarReaderAPI;

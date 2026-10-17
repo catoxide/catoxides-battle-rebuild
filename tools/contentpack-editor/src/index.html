@@ -13,11 +13,15 @@
   <span class="sub" id="headerPaths"></span>
   <!-- W6.1 包路径设置：包库目录 / 新建包目录（覆盖默认 <项目根>/contentpacks-source） -->
   <span id="packPathTools" style="display:flex; gap:4px; align-items:center">
-    <button class="btn ghost small" id="btnPickPacksRoot" title="包库目录（内容包列表来源）—— 点击选择目录">📦 包库</button>
-    <button class="btn ghost small" id="btnPickNewPackDir" title="新建包目录（新建内容包落在此）—— 点击选择目录">➕ 新建包</button>
-    <button class="btn ghost small" id="btnResetPackPaths" title="复位包路径为默认（<项目根>/contentpacks-source）" style="display:none">↺ 默认</button>
+    <button class="btn ghost small" id="btnPickPacksRoot" data-i18n="app.packRoot" title="包库目录（内容包列表来源）—— 点击选择目录">📦 包库</button>
+    <button class="btn ghost small" id="btnPickNewPackDir" data-i18n="app.newPackDir" title="新建包目录（新建内容包落在此）—— 点击选择目录">➕ 新建包</button>
+    <button class="btn ghost small" id="btnResetPackPaths" data-i18n="app.resetPaths" title="复位包路径为默认（<项目根>/contentpacks-source）" style="display:none">↺ 默认</button>
+    <!-- 0.2.1：无 mod 工程时自动落"独立工作区"，此处显示来源标记 + 一键连接真工程 -->
+    <span id="rootSourceChip" class="root-chip" style="display:none" title=""></span>
+    <button class="btn ghost small" id="btnConnectProject" data-i18n="app.connectProject" title="连接 mod 工程目录（含 contentpacks-source 的项目根）" style="display:none">📁 连接工程…</button>
   </span>
   <div style="margin-left:auto; display:flex; gap:4px; align-items:center">
+    <button class="btn ghost small" id="btnDiagnostics" data-i18n="app.diagnostics" title="复制诊断信息（版本 / 项目根来源 / 路径 / 日志位置）—— 反馈问题时粘贴给开发者">🩺 诊断</button>
     <button class="btn ghost small" id="btnDebugToggle" title="调试模式（W5.5）">🔍 调试</button>
     <button class="btn ghost small" id="btnGpuToggle" title="渲染模式（W5.3）">⚡ 硬件加速</button>
     <button class="btn ghost small" id="btnOpenModelEditor" title="打开 3D 模型编辑器（W2）">🧊 模型编辑器</button>
@@ -80,6 +84,13 @@
       <span id="packNameLabel" class="muted"></span>
       <button class="btn ghost small" id="btnNewEntity" disabled data-i18n="entity.new">+ 新建</button>
     </div>
+    <!-- 建筑结构专用工具条（仅内容类型 = 建筑结构 时显示）：一键导入原版 / 一键导出整包原版数据 -->
+    <div id="structTools" class="row" style="display:none; gap:6px; padding:6px 8px; border-bottom:1px solid var(--line, #2b2b2b); flex-wrap:wrap">
+      <button class="btn ghost small" id="btnStructImport" data-i18n="structure.importVanilla" data-i18n-title="structure.importVanillaTip">⬇ 导入原版</button>
+      <button class="btn ghost small" id="btnStructImportDir" data-i18n="structure.importVanillaDir" data-i18n-title="structure.importVanillaDirTip">🗂 导入文件夹</button>
+      <button class="btn ghost small" id="btnStructExportAll" data-i18n="structure.exportVanillaAll" data-i18n-title="structure.exportVanillaAllTip">⬆ 导出原版（全部）</button>
+    </div>
+    <pre id="structReport" class="out" style="display:none; margin:6px 8px"></pre>
     <div id="entityList" class="list"></div>
   </aside>
 
@@ -262,8 +273,19 @@
             <div><label data-i18n="structure.startPool">startPool（起始模板池）</label><input id="sStartPool" placeholder="如 start"></div>
             <div><label data-i18n="structure.maxDist">maxDistanceFromCenter（最大扩展半径，格）</label><input id="sMaxDist" type="number" min="1"></div>
             <div><label data-i18n="structure.biomes">biomes（生物群系 ID/tag，逗号分隔）</label><input id="sBiomes" placeholder="#minecraft:is_overworld"></div>
-            <div><label data-i18n="structure.maxLevel">maxSurfaceLevel（最大表面高度偏移）</label><input id="sMaxLevel" type="number"></div>
-            <div class="check"><label><input id="sProject" type="checkbox" checked> <span data-i18n="structure.project">projectToSurface（贴地投影）</span></label></div>
+            <div><label data-i18n="structure.size">size（最大扩展深度 1-128，必填）</label><input id="sSize" type="number" min="1" max="128" value="7"></div>
+            <div><label data-i18n="structure.startHeight">start_height（起始高度 absolute）</label><input id="sStartH" type="number" value="0"></div>
+            <div><label data-i18n="structure.projectHeightmap">project_start_to_heightmap（贴地投影，可选）</label>
+              <select id="sProjHm">
+                <option value="">（不投影）</option>
+                <option value="WORLD_SURFACE_WG">WORLD_SURFACE_WG</option>
+                <option value="OCEAN_FLOOR_WG">OCEAN_FLOOR_WG</option>
+                <option value="WORLD_SURFACE">WORLD_SURFACE</option>
+                <option value="OCEAN_FLOOR">OCEAN_FLOOR</option>
+                <option value="MOTION_BLOCKING">MOTION_BLOCKING</option>
+                <option value="MOTION_BLOCKING_NO_LEAVES">MOTION_BLOCKING_NO_LEAVES</option>
+              </select></div>
+            <div class="check"><label><input id="sUseExp" type="checkbox" checked> <span data-i18n="structure.useExpansionHack">use_expansion_hack（扩张修复，原版默认开）</span></label></div>
           </div>
         </div>
       </div>

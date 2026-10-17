@@ -112,6 +112,14 @@ function pickWeighted(elements, rng) {
 }
 
 /**
+ * 池里的「模板元素」（有几何、可生长）。feature 元素（原版 feature_pool_element：
+ * 树/植被等，导入原版村庄时会出现）没有模板与方块几何 → 生长/诊断时跳过。
+ */
+function templateElements(pool) {
+    return ((pool && pool.elements) || []).filter((e) => e && e.template);
+}
+
+/**
  * 模拟 jigsaw 生长
  * @param {Object} bp 通过 validateBlueprint 的蓝图
  * @param {{rng?:Function, maxPieces?:number}} opts
@@ -131,7 +139,7 @@ function growStructure(bp, opts = {}) {
     const st = bp.structure || {};
     const startPool = poolByName.get(st.startPool);
     if (!startPool) return { placements: [], deadEnds: [], error: 'startPool 不存在: ' + st.startPool };
-    const startEl = pickWeighted(startPool.elements, rng);
+    const startEl = pickWeighted(templateElements(startPool), rng);
     if (!startEl) return { placements: [], deadEnds: [], error: 'startPool 无元素' };
     if (!byName.has(startEl.template)) {
         return { placements: [], deadEnds: [], error: 'startPool 引用的片段不存在: ' + startEl.template };
@@ -200,7 +208,7 @@ function growStructure(bp, opts = {}) {
 
         const pool = poolByName.get(srcJg.pool);
         if (!pool) { pushDeadEnd(srcPl, srcJg, '池不存在' + srcJg.pool, cellGhost); continue; }
-        const el = pickWeighted(pool.elements, rng);
+        const el = pickWeighted(templateElements(pool), rng);
         if (!el) { pushDeadEnd(srcPl, srcJg, '池为空', cellGhost); continue; }
         const tpl = byName.get(el.template);
         if (!tpl) { pushDeadEnd(srcPl, srcJg, '片段不存在', cellGhost); continue; }

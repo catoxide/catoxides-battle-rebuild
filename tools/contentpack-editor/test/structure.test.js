@@ -103,7 +103,8 @@ const piece = {
 test('模板含 air + 填充 + jigsaw 调色板与 blocks（1.21.1 格式）', () => {
     const buf = V.buildTemplateNbt(piece, 'testns');
     const dec = NBT.decode(buf);
-    assert.strictEqual(dec.DataVersion, 3465);
+    // 1.21.1 数据版本 = 3955（1180/1180 个原版模板实测；3465 是 1.20.1，会被游戏 DataFixer 升级）
+    assert.strictEqual(dec.DataVersion, 3955);
     assert.deepStrictEqual(dec.size, [4, 3, 4]);
     // 1.21.1 顶层键：无旧格式的 author/nbtData/liquidBlocks/ui_data
     assert.strictEqual(dec.nbtData, undefined, '旧格式 nbtData 不应存在');
@@ -121,18 +122,22 @@ test('模板含 air + 填充 + jigsaw 调色板与 blocks（1.21.1 格式）', (
     assert.strictEqual(dec.blocks.length, 18);
     const normal = dec.blocks.find((b) => !b.nbt);
     assert.ok(Array.isArray(normal.pos) && normal.pos.length === 3 && Number.isInteger(normal.state));
-    // jigsaw 块：nbt 内为 JigsawBlockEntity 字段（无 id/包装层）
+    // jigsaw 块：nbt 内为 JigsawBlockEntity 字段（无包装层）
     const jb = dec.blocks.find((b) => b.nbt);
     assert.ok(jb, '应有 1 个带 nbt 的 jigsaw 块');
     assert.deepStrictEqual(jb.pos, [2, 2, 2]);
     assert.strictEqual(dec.palette[jb.state].Name, 'minecraft:jigsaw');
+    // id 必须写：StructureTemplate 按 nbt.id 找 BlockEntityType，缺 id → 方块实体不创建，
+    // jigsaw 的名字/目标池/关节全丢（结构无法拼接）
+    assert.strictEqual(jb.nbt.id, 'minecraft:jigsaw');
     assert.strictEqual(jb.nbt.name, 'top');
     assert.strictEqual(jb.nbt.target, 'bottom');
     assert.strictEqual(jb.nbt.pool, 'testns:tower');
     assert.strictEqual(jb.nbt.joint, 'rollable');
     assert.strictEqual(jb.nbt.final_state, 'minecraft:stone_bricks');
-    assert.strictEqual(jb.nbt.selection_priority, 10);
-    assert.strictEqual(jb.nbt.placement_priority, 10);
+    // 优先级是编辑器内部字段，1.21.1 的 JigsawBlockEntity 不保存它们
+    assert.strictEqual(jb.nbt.selection_priority, undefined);
+    assert.strictEqual(jb.nbt.placement_priority, undefined);
     // entities 空列表
     assert.deepStrictEqual(dec.entities, []);
 });
@@ -273,11 +278,14 @@ test('生成 10 个文件（3 模板 + 5 池 + 结构 + 集合）', () => {
 test('模板池 JSON 为原版字段（location/projection/fallback）', () => {
     const r = V.exportBlueprint(bp);
     const pool = JSON.parse(r.files.find((f) => f.relPath === 'data/example/worldgen/template_pool/start.json').content);
-    assert.strictEqual(pool.fallback, 'minecraft:empty_pool_element');
+    // 1.21.1 原版：fallback 是「池 ID」（5 个原版池 186/186 都是 minecraft:empty），不是元素类型 ID
+    assert.strictEqual(pool.fallback, 'minecraft:empty');
     assert.strictEqual(pool.elements[0].weight, 1);
     assert.strictEqual(pool.elements[0].element.element_type, 'minecraft:single_pool_element');
     assert.strictEqual(pool.elements[0].element.location, 'example:main_hall');
     assert.strictEqual(pool.elements[0].element.projection, 'rigid');
+    // 原版不写空 processors（旧导出器写 processors: [] 会被 codec 拒绝）
+    assert.ok(!('processors' in pool.elements[0].element));
 });
 test('结构定义 JSON 为原版字段', () => {
     const r = V.exportBlueprint(bp);
@@ -287,9 +295,61 @@ test('结构定义 JSON 为原版字段', () => {
     assert.strictEqual(st.terrain_adaptation, 'beard_thin');
     assert.strictEqual(st.start_pool, 'example:start');
     assert.strictEqual(st.max_distance_from_center, 80);
-    assert.strictEqual(st.project_to_surface, true);
-    assert.deepStrictEqual(st.biomes, ['#minecraft:is_overworld']);
-    assert.deepStrictEqual(st.spawn_overrides, { bonus_chests: 0, spawns: [] });
+    // 1.21.1 jigsaw codec 必填项（缺了世界加载失败）
+    assert.strictEqual(st.size, 7);
+    assert.deepStrictEqual(st.start_height, { absolute: 0 });
+    assert.strictEqual(st.use_expansion_hack, true);
+    // biomes：单个 tag 必须写标量字符串（数组里放 "#tag" 非法）
+    assert.strictEqual(st.biomes, '#minecraft:is_overworld');
+    assert.deepStrictEqual(st.spawn_overrides, {});
+    assert.strictEqual(st.project_start_to_heightmap, 'WORLD_SURFACE_WG');
+    // 1.21.1 不存在的自造字段
+    assert.ok(!('project_to_surface' in st));
+    assert.ok(!('max_surface_level' in st));
+});
+test('旧蓝图（projectToSurface/maxSurfaceLevel）导出时自动迁移', () => {
+    const legacy = S.defaultBlueprint();
+    legacy.formatVersion = 1;
+    legacy.structureId = 'legacy_one';
+    legacy.namespace = 'example';
+    legacy.structure = {
+        step: 'surface_structures',
+        terrainAdaptation: 'beard_thin',
+        startPool: 'start',
+        maxDistanceFromCenter: 80,
+        biomes: ['#minecraft:is_overworld'],
+        projectToSurface: true,
+        maxSurfaceLevel: 0,
+    };
+    legacy.pieces = [{ name: 'p', size: [2, 2, 2], boxFills: [], jigsaws: [] }];
+    legacy.templatePools = [{ name: 'start', elements: [{ template: 'p', weight: 1, projection: 'rigid' }] }];
+    const v = S.validateBlueprint(legacy);
+    assert.deepStrictEqual(v.errors, []);
+    const r = V.exportBlueprint(legacy);
+    assert.deepStrictEqual(r.errors, []);
+    const st = JSON.parse(r.files.find((f) => f.relPath === 'data/example/worldgen/structure/legacy_one.json').content);
+    assert.strictEqual(st.project_start_to_heightmap, 'WORLD_SURFACE_WG');
+    assert.strictEqual(st.size, 7);
+    assert.ok(!('project_to_surface' in st));
+});
+test('biomes 列表形式（多个 id）原样输出，tag 混用被拒', () => {
+    const bp2 = S.defaultBlueprint();
+    bp2.structureId = 'b1';
+    bp2.namespace = 'example';
+    bp2.structure.biomes = ['minecraft:plains', 'minecraft:sunflower_plains'];
+    bp2.pieces = [{ name: 'p', size: [2, 2, 2], boxFills: [], jigsaws: [] }];
+    bp2.templatePools = [{ name: 'start', elements: [{ template: 'p', weight: 1, projection: 'rigid' }] }];
+    const r = V.exportBlueprint(bp2);
+    assert.deepStrictEqual(r.errors, []);
+    const st = JSON.parse(r.files.find((f) => f.relPath === 'data/example/worldgen/structure/b1.json').content);
+    assert.deepStrictEqual(st.biomes, ['minecraft:plains', 'minecraft:sunflower_plains']);
+    // tag + id 混用非法
+    const bad = S.defaultBlueprint();
+    bad.structureId = 'b2';
+    bad.pieces = [{ name: 'p', size: [2, 2, 2], boxFills: [], jigsaws: [] }];
+    bad.templatePools = [{ name: 'start', elements: [{ template: 'p', weight: 1, projection: 'rigid' }] }];
+    bad.structure.biomes = ['#minecraft:is_overworld', 'minecraft:plains'];
+    assert.strictEqual(S.validateBlueprint(bad).valid, false);
 });
 test('结构集合 JSON 为原版字段（random_spread + salt）', () => {
     const r = V.exportBlueprint(bp);
@@ -463,6 +523,56 @@ test('L5: readStructure/deleteStructure 拒绝 structures/ 外路径', () => {
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
     }
+});
+
+console.log('=== O. 现代原版特性：feature 元素 / resolveStructureFile / 列表展开权重 ===');
+test('O1: pool 可含 feature_pool_element（原版村庄树木），校验通过且导出为 feature 元素', () => {
+    const b = mkBp({});
+    b.templatePools[0].elements.push({ feature: 'minecraft:oak', weight: 2, projection: 'rigid' });
+    const v = S.validateBlueprint(b);
+    assert.deepStrictEqual(v.errors, []);
+    const r = V.exportBlueprint(b);
+    assert.deepStrictEqual(r.errors, []);
+    const pool = JSON.parse(r.files.find((f) => f.relPath === 'data/t/worldgen/template_pool/start.json').content);
+    const feat = pool.elements.find((e) => e.element.element_type === 'minecraft:feature_pool_element');
+    assert.ok(feat, '应导出 feature_pool_element');
+    assert.strictEqual(feat.element.feature, 'minecraft:oak');
+    assert.strictEqual(feat.weight, 2);
+});
+test('O2: 元素 template/feature 二选一（都空或都给 → error）', () => {
+    const none = mkBp({});
+    none.templatePools[0].elements = [{ weight: 1, projection: 'rigid' }];
+    assert.ok(S.validateBlueprint(none).errors.some((e) => e.includes('template') || e.includes('feature')));
+    const both = mkBp({});
+    both.templatePools[0].elements = [{ template: 'p', feature: 'minecraft:oak', weight: 1, projection: 'rigid' }];
+    assert.ok(S.validateBlueprint(both).errors.some((e) => e.includes('二选一')));
+});
+test('O3: resolveStructureFile 已导出（此前 main.js 调不到 → 结构打不开编辑界面）', () => {
+    assert.strictEqual(typeof S.resolveStructureFile, 'function');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cped-rsf-'));
+    try {
+        fs.mkdirSync(path.join(tmp, 'structures', 'demo'), { recursive: true });
+        fs.writeFileSync(path.join(tmp, 'structures', 'demo', 'blueprint.json'), JSON.stringify({ structureId: 'demo' }));
+        const got = S.resolveStructureFile(tmp, 'structures/demo/blueprint.json');
+        assert.ok(got && got.endsWith(path.join('structures', 'demo', 'blueprint.json')), String(got));
+        assert.strictEqual(S.resolveStructureFile(tmp, '../escape.json'), null);
+        assert.throws(() => S.readStructure(tmp, 'structures/nope/blueprint.json'));
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+});
+test('O4: 结构定义导出现代字段（size/start_height/use_expansion_hack），无自造旧字段', () => {
+    const b = mkBp({});
+    b.structure.size = 20;
+    b.structure.startHeight = { absolute: -10 };
+    b.structure.useExpansionHack = false;
+    const r = V.exportBlueprint(b);
+    assert.deepStrictEqual(r.errors, []);
+    const st = JSON.parse(r.files.find((f) => f.relPath === 'data/t/worldgen/structure/t.json').content);
+    assert.strictEqual(st.size, 20);
+    assert.deepStrictEqual(st.start_height, { absolute: -10 });
+    assert.strictEqual(st.use_expansion_hack, false);
+    assert.ok(!('project_to_surface' in st) && !('max_surface_level' in st));
 });
 
 console.log(`\n结构模块测试: ${passed} 通过, ${failed} 失败`);

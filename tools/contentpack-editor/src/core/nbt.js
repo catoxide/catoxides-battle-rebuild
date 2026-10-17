@@ -23,7 +23,8 @@
 const zlib = require('zlib');
 
 // ===== 类型号 =====
-const T_END = 0, T_BYTE = 1, T_SHORT = 2, T_INT = 3, T_LONG = 4, T_FLOAT = 5, T_DOUBLE = 6, T_STRING = 8, T_LIST = 9, T_COMPOUND = 10;
+const T_END = 0, T_BYTE = 1, T_SHORT = 2, T_INT = 3, T_LONG = 4, T_FLOAT = 5, T_DOUBLE = 6,
+    T_BYTE_ARRAY = 7, T_STRING = 8, T_LIST = 9, T_COMPOUND = 10, T_INT_ARRAY = 11, T_LONG_ARRAY = 12;
 
 // ===== 构建器（与字节序无关） =====
 
@@ -34,6 +35,12 @@ function long(n) { return { $t: T_LONG, v: BigInt(n) }; }
 function flt(n) { return { $t: T_FLOAT, v: n }; }
 function dbl(n) { return { $t: T_DOUBLE, v: n }; }
 function list(elemType, items) { return { $t: T_LIST, elemType: elemType, v: items || [] }; }
+// 数组类型（7/11/12）：【不是 list】——长度 int32 后直接跟定长元素，无元素类型字节。
+// vanilla 结构模板里随处可见：实体 UUID（IntArray）、方块实体 bee 的 flower_pos 等。
+function byteArray(arr) { return { $t: T_BYTE_ARRAY, v: Array.from(arr || [], (n) => Number(n) & 0xff) }; }
+function intArray(arr) { return { $t: T_INT_ARRAY, v: Array.from(arr || [], (n) => Math.trunc(n)) }; }
+// long 用字符串存（JSON 安全；编码时 BigInt()），与 struct 约定一致
+function longArray(arr) { return { $t: T_LONG_ARRAY, v: Array.from(arr || [], (n) => String(n)) }; }
 
 // ===== 字节读写（按端序） =====
 
@@ -90,6 +97,21 @@ function writeBody(w, rd, tag) {
         }
         case T_COMPOUND:
             writeCompoundBody(w, rd, v);
+            break;
+        case T_BYTE_ARRAY: {
+            w.i32(v.length);
+            const buf = Buffer.alloc(v.length);
+            for (let i = 0; i < v.length; i++) buf[i] = Number(v[i]) & 0xff;
+            w.raw(buf);
+            break;
+        }
+        case T_INT_ARRAY:
+            w.i32(v.length);
+            for (const n of v) w.i32(Number(n));
+            break;
+        case T_LONG_ARRAY:
+            w.i32(v.length);
+            for (const n of v) w.big64(typeof n === 'bigint' ? n : BigInt(String(n)));
             break;
         default:
             throw new Error('NBT: 未实现的编码类型 ' + tag.$t);
@@ -151,6 +173,27 @@ function readValueOf(rd, type) {
         }
         case T_COMPOUND:
             return readCompoundBody(rd);
+        case T_BYTE_ARRAY: {
+            const n = rd.i32();
+            if (n < 0 || rd.o + n > rd.b.length) throw new Error('NBT: byte 数组长度越界 ' + n);
+            const arr = new Array(n);
+            for (let i = 0; i < n; i++) { const b = rd.u8(); arr[i] = b > 127 ? b - 256 : b; }
+            return arr;
+        }
+        case T_INT_ARRAY: {
+            const n = rd.i32();
+            if (n < 0 || rd.o + n * 4 > rd.b.length) throw new Error('NBT: int 数组长度越界 ' + n);
+            const arr = new Array(n);
+            for (let i = 0; i < n; i++) arr[i] = rd.i32();
+            return arr;
+        }
+        case T_LONG_ARRAY: {
+            const n = rd.i32();
+            if (n < 0 || rd.o + n * 8 > rd.b.length) throw new Error('NBT: long 数组长度越界 ' + n);
+            const arr = new Array(n);
+            for (let i = 0; i < n; i++) arr[i] = rd.big64().toString();
+            return arr;
+        }
         default:
             throw new Error('NBT: 未实现的解码类型 ' + type);
     }
@@ -212,9 +255,137 @@ function decode(input, endianness = 'LE') {
     return readCompoundBody(rd);
 }
 
+// ===== 精确解码（tagged，保留类型）=====
+//
+// 用途：结构模板导入 → 蓝图 → 导出的【往返】不能丢类型。plainToTagged 的推断对
+// IntArray（实体 UUID）、byte 字段、LongArray 会退化成 T_LIST(INT)，写回去字节不同。
+//
+// 表示法（与蓝图的 blockNbt 约定一致）：
+//   标量 {$t:1|2|3|4|5|6, v:number|string}   LONG 用字符串（JSON 安全）
+//   数组 {$t:7|11|12, v:[...]}               LONG_ARRAY 元素用字符串
+//   list  {$t:9, elemType:number, v:[tagged...]}
+//   复合  {$t:10, v:{ name: tagged }}
+function readTaggedValueOf(rd, type) {
+    switch (type) {
+        case T_BYTE: { const v = rd.u8(); return { $t: T_BYTE, v: v > 127 ? v - 256 : v }; }
+        case T_SHORT: return { $t: T_SHORT, v: rd.i16() };
+        case T_INT: return { $t: T_INT, v: rd.i32() };
+        case T_LONG: return { $t: T_LONG, v: rd.big64().toString() };
+        case T_FLOAT: return { $t: T_FLOAT, v: rd.f32() };
+        case T_DOUBLE: return { $t: T_DOUBLE, v: rd.f64() };
+        case T_BYTE_ARRAY: {
+            const n = rd.i32();
+            if (n < 0 || rd.o + n > rd.b.length) throw new Error('NBT: byte 数组长度越界 ' + n);
+            const arr = new Array(n);
+            for (let i = 0; i < n; i++) { const b = rd.u8(); arr[i] = b > 127 ? b - 256 : b; }
+            return { $t: T_BYTE_ARRAY, v: arr };
+        }
+        case T_STRING: {
+            const n = rd.i16();
+            if (n < 0 || rd.o + n > rd.b.length) throw new Error('NBT: 字符串长度越界 ' + n);
+            return { $t: T_STRING, v: rd.utf8(n) };
+        }
+        case T_LIST: {
+            const elemType = rd.u8();
+            const count = rd.i32();
+            if (count < 0 || count > 100000000) throw new Error('NBT: list 数量异常 ' + count);
+            const arr = [];
+            for (let i = 0; i < count; i++) arr.push(readTaggedValueOf(rd, elemType));
+            return { $t: T_LIST, elemType, v: arr };
+        }
+        case T_COMPOUND: return { $t: T_COMPOUND, v: readTaggedCompoundBody(rd) };
+        case T_INT_ARRAY: {
+            const n = rd.i32();
+            if (n < 0 || rd.o + n * 4 > rd.b.length) throw new Error('NBT: int 数组长度越界 ' + n);
+            const arr = new Array(n);
+            for (let i = 0; i < n; i++) arr[i] = rd.i32();
+            return { $t: T_INT_ARRAY, v: arr };
+        }
+        case T_LONG_ARRAY: {
+            const n = rd.i32();
+            if (n < 0 || rd.o + n * 8 > rd.b.length) throw new Error('NBT: long 数组长度越界 ' + n);
+            const arr = new Array(n);
+            for (let i = 0; i < n; i++) arr[i] = rd.big64().toString();
+            return { $t: T_LONG_ARRAY, v: arr };
+        }
+        default:
+            throw new Error('NBT: 未实现的解码类型 ' + type);
+    }
+}
+
+function readTaggedCompoundBody(rd) {
+    const obj = {};
+    let guard = 0;
+    for (;;) {
+        if (++guard > 10000000) throw new Error('NBT: compound 条目过多（疑似布局/字节序错误）');
+        const t = rd.u8();
+        if (t === 0) break;
+        const n = rd.i16();
+        if (n < 0 || rd.o + n > rd.b.length) throw new Error('NBT: 名字长度越界 ' + n + '（疑似字节序错误）');
+        const name = rd.utf8(n);
+        obj[name] = readTaggedValueOf(rd, t);
+    }
+    return obj;
+}
+
+/** 精确解码（保留 NBT 类型）。@returns {{$t:10, v:Object}} 根 compound 的 tagged 表示 */
+function decodeTagged(input, endianness = 'LE') {
+    let buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
+    if (buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b) buf = gunzipLimited(buf);
+    const rd = makeReader(buf, endianness !== 'BE');
+    const rootType = rd.u8();
+    if (rootType !== T_COMPOUND) throw new Error('NBT: 根必须是 compound（得到 ' + rootType + '）');
+    const rootNameLen = rd.i16();
+    if (rootNameLen > 0) rd.utf8(rootNameLen);
+    return { $t: T_COMPOUND, v: readTaggedCompoundBody(rd) };
+}
+
+/** 自动判别字节序的精确解码 */
+function decodeTaggedAuto(input) {
+    const results = [];
+    for (const eo of ['LE', 'BE']) {
+        try {
+            const root = decodeTagged(input, eo);
+            results.push({ root, endianness: eo, score: 1000 + printability(root.v) * 100 + Object.keys(root.v).length });
+        } catch (e) {
+            results.push({ error: e.message, endianness: eo, score: 0 });
+        }
+    }
+    results.sort((a, b) => b.score - a.score);
+    const best = results[0];
+    if (!best.root) {
+        throw new Error('NBT: 无法识别（LE: ' + (results.find(r => r.endianness === 'LE').error) + '；BE: ' + (results.find(r => r.endianness === 'BE').error) + '）');
+    }
+    return best;
+}
+
+/** tagged → plain（不保留类型；仅用于读取字段做逻辑判断，long 转 number） */
+function taggedToPlain(tag) {
+    if (!tag || typeof tag !== 'object' || !Number.isInteger(tag.$t)) return tag;
+    switch (tag.$t) {
+        case T_BYTE:
+        case T_SHORT:
+        case T_INT: return tag.v;
+        case T_LONG: return Number(tag.v);
+        case T_FLOAT:
+        case T_DOUBLE: return tag.v;
+        case T_STRING: return tag.v;
+        case T_BYTE_ARRAY:
+        case T_INT_ARRAY: return tag.v.slice();
+        case T_LONG_ARRAY: return tag.v.map((s) => Number(s));
+        case T_LIST: return (tag.v || []).map(taggedToPlain);
+        case T_COMPOUND: {
+            const o = {};
+            for (const [k, val] of Object.entries(tag.v || {})) o[k] = taggedToPlain(val);
+            return o;
+        }
+        default: return tag.v;
+    }
+}
+
 /** 根键名可打印比例（打分用） */
 function printability(root) {
-    const keys = Object.keys(root);
+    const keys = Object.keys(root || {});
     if (!keys.length) return 0;
     let ok = 0;
     for (const k of keys) {
@@ -317,11 +488,16 @@ function plainToTagged(v, fieldName) {
 
 module.exports = {
     // 构建器
-    str, byte, int, long, flt, dbl, list,
+    str, byte, int, long, flt, dbl, list, byteArray, intArray, longArray,
     // 编解码
     encode, gzip, decode, decodeAuto,
+    decodeTagged, decodeTaggedAuto, taggedToPlain,
     // plain ↔ tagged
     plainToTagged,
     // 类型号（调用方/测试用）
-    T: { END: T_END, BYTE: T_BYTE, SHORT: T_SHORT, INT: T_INT, LONG: T_LONG, FLOAT: T_FLOAT, DOUBLE: T_DOUBLE, STRING: T_STRING, LIST: T_LIST, COMPOUND: T_COMPOUND },
+    T: {
+        END: T_END, BYTE: T_BYTE, SHORT: T_SHORT, INT: T_INT, LONG: T_LONG, FLOAT: T_FLOAT, DOUBLE: T_DOUBLE,
+        BYTE_ARRAY: T_BYTE_ARRAY, STRING: T_STRING, LIST: T_LIST, COMPOUND: T_COMPOUND,
+        INT_ARRAY: T_INT_ARRAY, LONG_ARRAY: T_LONG_ARRAY,
+    },
 };

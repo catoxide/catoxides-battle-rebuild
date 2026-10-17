@@ -610,3 +610,20 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
   font-size: 11px; color: var(--fg-dim); background: var(--bg); border: 1px solid var(--border);
   border-radius: 4px; padding: 4px 8px;
 }
+
+/* 0.2.1：项目根来源标记（独立工作区 / 已连接工程提示） */
+.root-chip {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #313244;
+    color: #a6adc8;
+    border: 1px solid #45475a;
+    white-space: nowrap;
+    cursor: default;
+}
+.root-chip.warn {
+    background: #3a2f1f;
+    color: #f9c74f;
+    border-color: #6b5424;
+}

@@ -52,23 +52,47 @@ function blockIdStr(name, properties) {
  *            paletteCount:number}}
  */
 function parseRegionNbt(input) {
-    // 游戏产出 = 小端；部分工具/数据集 = 大端 → decodeAuto 自动判别
-    const root = (input && typeof input === 'object' && !Buffer.isBuffer(input)) ? input : NBT.decodeAuto(input).root;
+    // 游戏产出 = 小端；部分工具/数据集 = 大端 → decodeAuto 自动判别。
+    // 用 tagged 精确解码：保留 NBT 类型（实体 UUID 的 IntArray、byte 字段等），
+    // 否则 plainToTagged 的启发式推断会把 IntArray 写成 List<Int>，导出后字节不一致。
+    let plainRoot;
+    let taggedRoot = null; // {$t:10, v:{...}}
+    if (input && typeof input === 'object' && !Buffer.isBuffer(input) && !ArrayBuffer.isView(input)) {
+        plainRoot = input; // 调用方已解码的 plain 树（兼容旧调用/测试）
+    } else {
+        const d = NBT.decodeTaggedAuto(input);
+        taggedRoot = d.root;
+        plainRoot = NBT.taggedToPlain(d.root);
+    }
+    const root = plainRoot;
     const size = root.size || [1, 1, 1];
     const [w, h, d] = [size[0], size[1], size[2]];
 
     // ---- palette（现代格式）
     // 1.21.1 真实格式：Properties（大写 P，compound{prop:str}）——对照 1180 个 vanilla 模板实测 +
     // NbtUtils.readBlockState 反编译源码（只认 Properties）。小写 properties（字符串）为 ≤1.16 旧格式兜底。
+    // 1.20.5+ 多调色板：字段名 palettes（复数，20/1180 个 vanilla 模板，含沉船）。各调色板等长，
+    // blocks[].state 对每个调色板都成立 → 导入取第 1 个，并记录 multiPalette 供上层提示。
     let palette = null; // [{name, props}]
+    let multiPalette = false;
+    let paletteList = null;
     if (Array.isArray(root.palette)) {
-        palette = root.palette.map((e) => ({
+        paletteList = [root.palette];
+    } else if (Array.isArray(root.palettes) && root.palettes.length) {
+        paletteList = root.palettes;
+        multiPalette = true;
+    }
+    if (paletteList) {
+        palette = (paletteList[0] || []).map((e) => ({
             name: e.Name,
             props: (e.Properties && typeof e.Properties === 'object') ? { ...e.Properties } : parsePropertiesStr(e.properties),
         }));
     }
     const hasModernPalette = !!palette && palette.length > 0;
     const blocksRaw = root.blocks || [];
+    // tagged 侧：与 blocksRaw 同序，用来原样保留每个方块实体的 NBT（类型不丢）
+    const blocksTagged = (taggedRoot && taggedRoot.v && taggedRoot.v.blocks && taggedRoot.v.blocks.$t === NBT.T.LIST)
+        ? taggedRoot.v.blocks.v : null;
     const isLegacy = blocksRaw.length > 0 && Array.isArray(blocksRaw[0]);
 
     const blocks = [];   // {x,y,z,block,properties}
@@ -94,7 +118,8 @@ function parseRegionNbt(input) {
         // ---- 现代格式：blocks = [{pos, state, nbt?}]
         if (!hasModernPalette) throw new Error('无法识别的结构模板：缺 palette 且 blocks 非旧格式');
         const jigsawPos = new Set();
-        for (const b of blocksRaw) {
+        for (let bi = 0; bi < blocksRaw.length; bi++) {
+            const b = blocksRaw[bi];
             const pos = b.pos || [];
             const x = pos[0], y = pos[1], z = pos[2];
             if (x == null || y == null || z == null) continue;
@@ -118,7 +143,9 @@ function parseRegionNbt(input) {
             } else {
                 blocks.push({ x, y, z, block: entry.name, properties: entry.props });
                 if (b.nbt && entry.name !== 'minecraft:air') {
-                    blockNbts.push({ x, y, z, block: entry.name, nbt: b.nbt });
+                    // nbtTagged：精确类型（导回时字节一致）；nbt：plain（旧调用方兼容）
+                    const bt = blocksTagged && blocksTagged[bi] && blocksTagged[bi].v && blocksTagged[bi].v.nbt;
+                    blockNbts.push({ x, y, z, block: entry.name, nbt: b.nbt, nbtTagged: bt || null });
                 }
             }
         }
@@ -200,9 +227,14 @@ function parseRegionNbt(input) {
         jigsaws,
         blockNbts,
         entities: Array.isArray(root.entities) ? root.entities.length : 0,
+        entityList: Array.isArray(root.entities) ? root.entities : [],
         format: isLegacy ? 'legacy' : 'modern',
         dataVersion: root.DataVersion || null,
         paletteCount: palette ? palette.length : 0,
+        // 1.20.5+ palettes（复数）：只取第 1 个调色板，上层应提示用户变体丢失
+        multiPalette,
+        paletteAlternatives: paletteList ? paletteList.length : 0,
+        tagged: !!taggedRoot,
     };
 }
 
@@ -237,11 +269,16 @@ function regionToPiece(region, pieceName) {
             o.placementPriority = j.placementPriority;
             return o;
         });
-    // BE NBT（plain → tagged）：导入 = 读取游戏里现成的 NBT（箱子内容物等），可再经编辑器修改后导出
+    // BE NBT：导入 = 读取游戏里现成的 NBT（箱子内容物等），可再经编辑器修改后导出。
+    // 优先用 tagged 原样（类型不丢：UUID IntArray / byte 字段）；无 tagged 时退回 plain→tagged 推断。
     const blockNbt = (region.blockNbts || [])
         .filter((b) => b.x >= 0 && b.y >= 0 && b.z >= 0 && b.x < w && b.y < h && b.z < d)
-        .filter((b) => b.block && b.block !== 'minecraft:air' && b.nbt && typeof b.nbt === 'object')
-        .map((b) => ({ x: b.x, y: b.y, z: b.z, nbt: NBT.plainToTagged(b.nbt) }));
+        .filter((b) => b.block && b.block !== 'minecraft:air' &&
+            ((b.nbtTagged && b.nbtTagged.$t === NBT.T.COMPOUND) || (b.nbt && typeof b.nbt === 'object')))
+        .map((b) => ({
+            x: b.x, y: b.y, z: b.z,
+            nbt: (b.nbtTagged && b.nbtTagged.$t === NBT.T.COMPOUND) ? b.nbtTagged : NBT.plainToTagged(b.nbt),
+        }));
     const piece = { name: pieceName, size: [w, h, d], boxFills: [], fillBlocks, jigsaws };
     if (blockNbt.length) piece.blockNbt = blockNbt;
     return piece;

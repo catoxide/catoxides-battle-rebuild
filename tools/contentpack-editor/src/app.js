@@ -237,19 +237,31 @@
             langSel.style.display = 'none';
         }
 
-        // 显示路径信息
-        const pathsRes = await window.api.getPaths();
-        if (pathsRes.ok) {
-            const p = pathsRes.data;
-            if (p.needProjectRoot) {
-                await setupProjectRoot();
-                return;
+        // 显示路径信息 + 项目根来源（0.2.1：无论有无工程，这里都必须有输出，
+        // 且**绝不 return**——反馈机事故就是这里 return 导致后面所有按钮没绑定）
+        let rootSource = null;
+        try {
+            const pathsRes = await window.api.getPaths();
+            if (pathsRes && pathsRes.ok && pathsRes.data) {
+                const p = pathsRes.data;
+                rootSource = p.rootSource || null;
+                window.AppState.rootSource = rootSource;
+                if (p.needProjectRoot) {
+                    // 兜底分支：主进程连独立工作区都建不出来（极罕见）→ 引导选择，但继续初始化界面
+                    await setupProjectRoot();
+                } else {
+                    document.getElementById('headerPaths').textContent = `源码: ${p.packsSourceDir}`;
+                }
+            } else {
+                document.getElementById('headerPaths').textContent = '源码: （路径读取失败，仍可在下方操作）';
             }
-            document.getElementById('headerPaths').textContent = `源码: ${p.packsSourceDir}`;
+        } catch (e) {
+            document.getElementById('headerPaths').textContent = '源码: （路径读取异常: ' + String((e && e.message) || e) + '）';
+            if (window.api && window.api.log) window.api.log('error', 'init', 'getPaths 失败: ' + String((e && e.message) || e));
         }
 
-        // W6.1 包路径设置（包库 / 新建包目录）：顶栏按钮 + 路径显示
-        initPackPathTools();
+        // W6.1 包路径设置（包库 / 新建包目录）+ 0.2.1 连接工程 / 诊断（全部与项目根无关地绑定）
+        initPackPathTools(rootSource);
 
         // 初始化左栏（包列表）→ 选中包 → 加载当前类型列表
         window.PackList.init(async (pack) => {
@@ -296,6 +308,14 @@
             },
         });
 
+        // 一键导入原版 / 一键导出整包原版数据
+        const btnImport = document.getElementById('btnStructImport');
+        const btnImportDir = document.getElementById('btnStructImportDir');
+        const btnExportAll = document.getElementById('btnStructExportAll');
+        if (btnImport) btnImport.addEventListener('click', () => structImportVanilla(false));
+        if (btnImportDir) btnImportDir.addEventListener('click', () => structImportVanilla(true));
+        if (btnExportAll) btnExportAll.addEventListener('click', () => structExportVanillaAll());
+
         // 动画契约按钮（右栏框架）：刷新 = 重读契约 + 重盘点；打包 = 重建该包 jar
         document.getElementById('btnContractRefresh').addEventListener('click', () => window.ContractEditor.refresh());
         document.getElementById('btnContractBuild').addEventListener('click', () => window.ContractEditor.build());
@@ -304,6 +324,8 @@
         async function loadContentList() {
             const type = document.getElementById('contentTypeSelect').value;
             window.AppState.contentType = type;
+            const tools = document.getElementById('structTools');
+            if (tools) tools.style.display = (type === 'structure') ? 'flex' : 'none';
             const pack = window.AppState.pack;
             if (!pack) return;
             // 契约由包声明、编辑器不新建 → 该类型下禁用"+ 新建"
@@ -317,11 +339,196 @@
             }
         }
 
+        // ===== 一键导入原版 / 一键导出整包原版数据（结构类型工具条） =====
+        function structReport(lines) {
+            const box = document.getElementById('structReport');
+            if (!box) return;
+            box.style.display = 'block';
+            box.textContent = lines.join('\n');
+        }
+
+        async function structImportVanilla(dirMode) {
+            const t = window.I18n ? window.I18n.t : (k) => k;
+            const tf = window.I18n ? window.I18n.tf : (k) => k;
+            const pack = window.AppState.pack;
+            if (!pack) { window.showError(t('structure.needPack')); return; }
+            window.showStatus(t('structure.importing'), true);
+            const api = dirMode ? window.api.importStructureVanillaDir : window.api.importStructureVanilla;
+            let r;
+            try { r = await api(pack.dir); } catch (e) { r = { ok: false, error: String(e && e.message || e) }; }
+            const d = (r && r.data) || {};
+            if (d.canceled) { window.showStatus('已取消导入', false); return; }
+            if (!r || !r.ok) {
+                window.showError(t('structure.importDone').replace('{n}', '0').replace('{ns}', '-') + ' ' + ((r && r.error) || ''));
+                structReport([
+                    '=== 导入原版：失败 ===',
+                    '来源: ' + (d.source || '?') + (d.kind ? ' (' + d.kind + ')' : ''),
+                    (r && r.error) || '未知错误',
+                    ...((d.errors || []).map((x) => '  ✗ ' + x)),
+                ]);
+                return;
+            }
+            const written = d.written || [];
+            const skipped = d.skipped || [];
+            const warnings = d.warnings || [];
+            const lines = ['=== 导入原版：完成 ==='];
+            lines.push('来源: ' + (d.source || '?') + (d.kind ? ' (' + d.kind + ')' : '') + ' → 命名空间 ' + d.namespace);
+            lines.push('写入结构:');
+            for (const w of written) {
+                const st = w.stats || {};
+                lines.push(`  ✔ ${w.id}  · 片段 ${w.pieces} / 池 ${w.pools}` +
+                    (st.featureElements ? ` / feature 元素 ${st.featureElements}` : '') +
+                    (st.flattenedLists ? ` / 展开列表 ${st.flattenedLists}` : '') +
+                    (st.droppedEntities ? ` / 丢弃实体 ${st.droppedEntities}` : '') +
+                    (w.importFrom ? `  ← ${w.importFrom}` : '') +
+                    (w.warnings ? `  ⚠${w.warnings}` : ''));
+            }
+            if (skipped.length) {
+                lines.push(`跳过 ${skipped.length} 个（蓝图无法表达的非 jigsaw 结构）:`);
+                for (const s of skipped.slice(0, 40)) lines.push('  ✗ ' + s.id + '  [' + (s.type || '?') + ']');
+                if (skipped.length > 40) lines.push('  … 其余 ' + (skipped.length - 40) + ' 个');
+            }
+            if (warnings.length) {
+                lines.push(`警告 ${warnings.length} 条:`);
+                for (const w of warnings.slice(0, 60)) lines.push('  ! ' + w);
+                if (warnings.length > 60) lines.push('  … 其余 ' + (warnings.length - 60) + ' 条');
+            }
+            if ((d.errors || []).length) {
+                lines.push(`错误 ${d.errors.length} 条:`);
+                for (const e2 of d.errors.slice(0, 30)) lines.push('  ✗ ' + e2);
+            }
+            structReport(lines);
+            let msg = tf('structure.importDone', { n: written.length, ns: d.namespace });
+            if (skipped.length) msg += ' · ' + tf('structure.importSkip', { n: skipped.length });
+            if (warnings.length) msg += ' · ' + tf('structure.importWarn', { n: warnings.length });
+            window.showStatus(msg, true);
+            if (window.AppState.contentType === 'structure') {
+                await window.StructureList.loadStructures(pack.dir);
+            }
+        }
+
+        async function structExportVanillaAll() {
+            const t = window.I18n ? window.I18n.t : (k) => k;
+            const tf = window.I18n ? window.I18n.tf : (k) => k;
+            const pack = window.AppState.pack;
+            if (!pack) { window.showError(t('structure.needPack')); return; }
+            window.showStatus(t('structure.exportingAll'), true);
+            let r;
+            try { r = await window.api.exportStructureVanillaAll(pack.dir); } catch (e) { r = { ok: false, error: String(e && e.message || e) }; }
+            const d = (r && r.data) || {};
+            const structures = d.structures || [];
+            const fileCount = structures.reduce((a, s) => a + s.files.length, 0);
+            const lines = ['=== 导出原版数据（整包） ==='];
+            if (structures.length) {
+                for (const s of structures) {
+                    lines.push(`  ✔ ${s.id}  · ${s.files.length} 个文件`);
+                    for (const f of s.files) lines.push('      ' + f);
+                }
+            }
+            if ((d.errors || []).length) {
+                lines.push('错误:');
+                for (const e2 of d.errors) lines.push('  ✗ ' + e2);
+            }
+            structReport(lines);
+            if (!r || !r.ok) {
+                window.showError(tf('structure.exportAllFail', { msg: (r && r.error) || '?' }));
+                return;
+            }
+            window.showStatus(tf('structure.exportAllDone', { n: structures.length, f: fileCount }), true);
+        }
+
         // 自动加载包列表
         await window.PackList.loadPacks();
     }
 
     // ===== W6.1 包路径设置（包库 / 新建包目录；覆盖默认 <项目根>/contentpacks-source） =====
+    // 0.2.1：新增「项目根来源」标记 + 「连接工程…」+「🩺 诊断」。
+    // 这里的绑定必须**无条件执行**（不再依赖项目根是否就绪）——反馈机事故根因就是这些
+    // 绑定被一个 early return 跳过了，界面看起来正常但所有按钮都没反应。
+    function updateRootSourceChip(rootSource) {
+        const chip = document.getElementById('rootSourceChip');
+        const btn = document.getElementById('btnConnectProject');
+        if (!chip || !btn) return;
+        const ws = String(rootSource || '').startsWith('workspace');
+        if (ws) {
+            const t = window.I18n ? window.I18n.t : (k) => k;
+            chip.textContent = t('app.workspaceChip');
+            chip.className = 'root-chip warn';
+            chip.title = '当前没有检测到 mod 工程（含 contentpacks-source 的目录），已自动创建独立工作区，可直接新建/编辑内容包。\n要编辑 mod 里的内容包，点右侧「📁 连接工程…」选择项目根。';
+            chip.style.display = '';
+            btn.style.display = '';
+        } else {
+            chip.style.display = 'none';
+            btn.style.display = 'none';
+        }
+    }
+
+    async function copyTextToClipboard(text) {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch { /* 走下面的兜底 */ }
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.top = '-1000px';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            ta.remove();
+            return ok;
+        } catch { return false; }
+    }
+
+    function formatDiagnostics(d) {
+        const L = [
+            `=== ContentPack Editor 诊断信息（v${d.version}）===`,
+            `打包版: ${d.packaged ? '是' : '否'}  ·  Electron ${d.electron} / Chrome ${d.chrome}`,
+            `系统: ${d.os}`,
+            `项目根: ${d.root || '（未设置）'}`,
+            `项目根来源: ${d.rootSource || '（未知）'}${d.workspaceMode ? '  ← 独立工作区模式（未连接 mod 工程）' : ''}`,
+            `包库目录: ${d.packsRoot || '（未设置）'}`,
+            `新建包目录: ${d.newPackDir || '（未设置）'}`,
+            `配置文件: ${d.configPath}`,
+            `用户数据: ${d.userData}`,
+            `当前日志: ${d.logFile || '（未初始化）'}`,
+            `启动日志: ${d.bootstrapLogFile || '（未初始化）'}`,
+            `exe: ${d.executable}`,
+            `cwd: ${d.cwd}`,
+            `portable 目录: ${d.portableDir || '（非 portable 运行）'}`,
+        ];
+        return L.join('\n');
+    }
+
+    async function showDiagnostics() {
+        let d = null;
+        try {
+            const r = await window.api.getDiagnostics();
+            if (r && r.ok) d = r.data;
+        } catch (e) {
+            d = null;
+        }
+        if (!d) {
+            window.showError('诊断信息读取失败（主进程未响应）');
+            return;
+        }
+        const text = formatDiagnostics(d);
+        const ok = await copyTextToClipboard(text);
+        if (window.api && window.api.log) window.api.log('info', 'lifecycle', '诊断信息已生成\n' + text);
+        if (ok) {
+            window.showStatus('诊断信息已复制到剪贴板 —— 直接粘贴给开发者即可（日志: ' + (d.logFile || d.bootstrapLogFile || '?') + '）', true);
+            // 同时显示在状态栏下方，便于截图反馈
+            const box = document.getElementById('statusBar');
+            if (box) box.title = text;
+        } else {
+            window.showError('剪贴板不可用，请手动复制：' + text.replace(/\n/g, ' | '));
+        }
+    }
+
     async function updatePackPathHeader() {
         const el = document.getElementById('headerPaths');
         const btnRoot = document.getElementById('btnPickPacksRoot');
@@ -333,6 +540,8 @@
             if (r && r.ok) pp = r.data;
         } catch { /* 主进程未就绪（需项目根）时保持原显示 */ }
         if (!pp) return;
+        if (window.AppState) window.AppState.rootSource = pp.rootSource || null;
+        updateRootSourceChip(pp.rootSource);
         const overridden = !pp.isPacksRootDefault || !pp.isNewPackDirDefault;
         el.textContent = overridden
             ? `包库: ${pp.packsRoot} · 新建包: ${pp.newPackDir}`
@@ -347,11 +556,10 @@
         try { await window.PackList.loadPacks(); } catch { /* 包列表刷新失败不阻断 */ }
     }
 
-    function initPackPathTools() {
+    function initPackPathTools(rootSource) {
         const btnRoot = document.getElementById('btnPickPacksRoot');
         const btnNew = document.getElementById('btnPickNewPackDir');
         const btnReset = document.getElementById('btnResetPackPaths');
-        if (!btnRoot || !btnNew || !btnReset) return;
         const pick = (which, label) => async () => {
             const r = await window.api.pickPackDir(which);
             if (r && r.ok) {
@@ -361,9 +569,10 @@
                 window.showError(`设置${label}失败: ${r.error}`);
             }
         };
-        btnRoot.onclick = pick('packsRoot', '包库目录');
-        btnNew.onclick = pick('newPackDir', '新建包目录');
-        btnReset.onclick = async () => {
+        // 0.2.1：逐项绑定（缺元素只跳过自己，一个都不影响其它绑定）
+        if (btnRoot) btnRoot.onclick = pick('packsRoot', '包库目录');
+        if (btnNew) btnNew.onclick = pick('newPackDir', '新建包目录');
+        if (btnReset) btnReset.onclick = async () => {
             const r = await window.api.setPackPaths({ packsRoot: null, newPackDir: null });
             if (r && r.ok) {
                 window.showStatus('包路径已复位为默认（<项目根>/contentpacks-source）', true);
@@ -372,6 +581,21 @@
                 window.showError('复位失败: ' + r.error);
             }
         };
+        // 0.2.1：连接 mod 工程（独立工作区 → 真工程）
+        const btnConnect = document.getElementById('btnConnectProject');
+        if (btnConnect) btnConnect.onclick = async () => {
+            const r = await window.api.pickProjectRoot();
+            if (r && r.ok) {
+                window.showStatus('已连接工程: ' + r.data.root + '，正在重载…', true);
+                location.reload();
+            } else if (r && r.error !== 'cancelled') {
+                window.showError('连接工程失败: ' + r.error);
+            }
+        };
+        // 0.2.1：诊断信息（反馈闭环）
+        const btnDiag = document.getElementById('btnDiagnostics');
+        if (btnDiag) btnDiag.onclick = () => { showDiagnostics(); };
+        updateRootSourceChip(rootSource);
         updatePackPathHeader();
     }
 

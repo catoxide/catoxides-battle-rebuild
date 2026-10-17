@@ -40,8 +40,9 @@ window.StructureList = (function () {
                 </div>`;
             item.querySelector('.li-title').textContent = s.structureId;
             const ns = s.namespace || 'catoxidesbattlerebuild';
+            // 插值必须走 tf（t 不替换 {n} → 此前列表显示 "{n} 片段 / {n} 池"）
             item.querySelector('.li-sub').textContent =
-                `${ns}:${s.structureId} · ${t('dyn.piecesCount', { n: s.pieces < 0 ? '?' : s.pieces })} / ${t('dyn.poolsCount', { n: s.pools })}`;
+                `${ns}:${s.structureId} · ${tf('dyn.piecesCount', { n: s.pieces < 0 ? '?' : s.pieces })} / ${tf('dyn.poolsCount', { n: s.pools })}`;
             if (s.staged) {
                 const tag = document.createElement('span');
                 tag.className = 'li-tag';

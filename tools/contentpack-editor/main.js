@@ -6,10 +6,25 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const { spawn, execSync } = require('child_process');
+const os = require('os');
 const Logger = require('./logger');
+const ProjectRoot = require('./src/core/projectRoot');
 
 // 显式设置应用名：打包后 portable exe 的默认 userData 名可能退化为 "Electron"
 app.setName('ContentPack Editor');
+
+// ==================== 0.2.1：启动即落日志（userData） ====================
+// 反馈机事故复盘：日志原先在"项目根就绪"后才初始化（Logger.init(ROOT)），
+// 但反馈机恰恰死在项目根判定这一步 → 整个失败过程一行日志都没有，没法远程定位。
+// 现在启动第一秒就把日志写到 <userData>/logs/contentpack-editor/editor.log，
+// 项目根确定后再切换（切换原因/前后路径都记一条），失败也有证据。
+let BOOTSTRAP_LOG_FILE = null;
+try {
+    if (Logger.init(app.getPath('userData'))) {
+        BOOTSTRAP_LOG_FILE = Logger.getLogFile();
+        Logger.info('boot', `ContentPack Editor v${app.getVersion()} 启动 · 打包=${app.isPackaged ? '是' : '否'} · exe=${process.execPath} · userData=${app.getPath('userData')}`);
+    }
+} catch { /* 日志不可用绝不能阻断启动 */ }
 
 // W5.3: GPU 崩溃自愈——设置里启用「软件渲染」（用户手动切换，或 renderer 10 分钟内
 // 崩 2 次自动降级写入）→ 启动即强制软件渲染：--disable-gpu 让 WebGL 走 SwiftShader、
@@ -42,6 +57,7 @@ const StateMachine = require('./src/core/stateMachine');
 const Staging = require('./src/core/staging');
 const StructureSchema = require('./src/core/structureSchema');
 const VanillaExport = require('./src/core/vanillaExport');
+const VanillaImport = require('./src/core/vanillaImport');
 const RegionImport = require('./src/core/regionImport');
 const McAssets = require('./src/core/mcAssets');
 const McBlocks = require('./src/core/mcBlocks');
@@ -54,9 +70,12 @@ const SparkScaffold = require('./model-editor/core/sparkScaffold');
 
 // ==================== 项目根解析（支持打包后 exe 运行） ====================
 // 优先级：① 内部配置（userData/config.json）→ ② 自动向上探测 contentpacks-source/
-//        → ③ 均失败则窗口内弹对话框选择（app:setProjectRoot 保存）
+//        → ③ 独立工作区（0.2.1 新增：<文档>/Content Pack Editor，兜底 <userData>/…）
+//        → ④ 全失败才让窗口内引导选择（app:setProjectRoot 保存）
 // 打包为 portable 单文件 exe 后 __dirname 指向 asar 内部，不能用它定位项目根。
 let ROOT = null;
+/** 本次会话项目根来源：'config' | 'auto' | 'workspace-documents' | 'workspace-userdata' | null */
+let ROOT_SOURCE = null;
 let PACKS_SOURCE_DIR = null;
 let NEW_PACK_DIR = null; // W6.1：新建包目录（默认 = 包库目录；config.newPackDir 可覆盖）
 let MOD_RES_DIR = null; // 主 mod 资源目录（src/main/resources；仓库贴图浏览用）
@@ -129,12 +148,35 @@ function tryResolveProjectRoot() {
     return null;
 }
 
+/**
+ * 0.2.1：解析项目根并**保证有结果**（无工程 → 独立工作区）。
+ * 之前的失败形态：tryResolveProjectRoot() 返回 null → 渲染端引导选目录后 return，
+ * 后续所有按钮绑定被跳过 → 反馈机上「包库 / 新建包 / +新建」全死、顶栏连"源码: …"都没有。
+ * @returns {{root:string|null, source:string|null, created:string[], error?:string}}
+ */
+function resolveRootWithFallback() {
+    const r = ProjectRoot.resolveProjectRoot({
+        configRoot: (readConfig().projectRoot || null),
+        detectRoot: tryResolveProjectRoot,
+        documentsDir: app.getPath('documents'),
+        userDataDir: app.getPath('userData'),
+    });
+    if (r && r.root) return r;
+    // 极少数情况（文档目录与 userData 都不可写）：退到临时目录，仍然保证有根
+    try {
+        const tmpWs = ProjectRoot.ensureWorkspace(fs, os.tmpdir());
+        if (tmpWs) return { root: tmpWs.root, source: 'workspace-temp', created: tmpWs.created };
+    } catch { /* 忽略 */ }
+    return r || { root: null, source: null, created: [], error: '项目根解析失败' };
+}
+
 /** W6.1：配置里的包路径覆盖值是否可用（存在且是目录；否则回退默认） */
 function validOverrideDir(p) {
     return !!(p && typeof p === 'string' && fs.existsSync(p) && fs.statSync(p).isDirectory());
 }
 
-function applyProjectRoot(root) {
+function applyProjectRoot(root, source) {
+    if (source) ROOT_SOURCE = source;
     ROOT = root;
     // W6.1：包库/新建包目录可被配置覆盖（默认 <项目根>/contentpacks-source）
     const cfg = readConfig();
@@ -144,7 +186,16 @@ function applyProjectRoot(root) {
     PACKS_OUT_DIR = path.join(ROOT, 'contentpacks');
     BUILD_SCRIPT = path.join(ROOT, 'contentpacks-source', 'build-pack.ps1');
     MOD_RES_DIR = path.join(ROOT, 'src', 'main', 'resources');
-    if (Logger.init(root)) Logger.info('config', `项目根就绪: ${root}（日志: ${Logger.getLogFile()}）`);
+    if (Logger.init(root)) {
+        Logger.info('config', `项目根就绪: ${root} · 来源=${ROOT_SOURCE || '?'}（日志: ${Logger.getLogFile()}）`);
+        if (BOOTSTRAP_LOG_FILE && BOOTSTRAP_LOG_FILE !== Logger.getLogFile()) {
+            Logger.info('config', `日志已从启动日志切换过来（启动日志: ${BOOTSTRAP_LOG_FILE}）`);
+        }
+    }
+    if (String(ROOT_SOURCE || '').startsWith('workspace')) {
+        Logger.warn('config', '未找到 mod 工程（含 contentpacks-source 的目录）→ 已启用独立工作区；' +
+            '可正常新建/编辑内容包，顶栏「连接工程…」可随时切到真工程');
+    }
     startEditorApi(); // 项目根就绪后自动开启 AI API 监听
 }
 
@@ -187,15 +238,53 @@ ipcMain.on('app:log', (event, p) => {
     } catch { /* 日志路径自身容错 */ }
 });
 ipcMain.handle('app:getLogInfo', () => {
-    return { ok: true, data: { dir: Logger.getLogDir(), file: Logger.getLogFile() } };
+    return { ok: true, data: { dir: Logger.getLogDir(), file: Logger.getLogFile(), bootstrapFile: BOOTSTRAP_LOG_FILE } };
 });
 ipcMain.handle('app:openLogDir', async () => {
-    const dir = Logger.getLogDir();
-    if (!dir) return { ok: false, error: '日志未初始化（项目根未设置）' };
+    // 0.2.1：项目根解析失败时日志仍在启动位置（userData）——打开它而不是报"未初始化"
+    const dir = Logger.getLogDir() || path.join(app.getPath('userData'), 'logs', 'contentpack-editor');
+    if (!fs.existsSync(dir)) {
+        try { fs.mkdirSync(dir, { recursive: true }); } catch { /* 建不出来由 openPath 报错 */ }
+    }
     try {
         const err = await shell.openPath(dir);
         if (err) return { ok: false, error: err };
         return { ok: true };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+// ==================== 0.2.1：诊断信息（反馈闭环用） ====================
+// 反馈同学点顶栏「🩺 诊断」→ 复制这段文本发过来，即可判断是工程根/工作区、日志在哪、
+// 是否打包版，省去反复猜测（本次事故就是"没有日志也没有路径信息"才绕了远路）。
+ipcMain.handle('app:diagnostics', () => {
+    try {
+        return {
+            ok: true,
+            data: {
+                name: 'ContentPack Editor',
+                version: app.getVersion(),
+                packaged: app.isPackaged,
+                electron: process.versions.electron,
+                chrome: process.versions.chrome,
+                node: process.versions.node,
+                os: `${os.type()} ${os.release()} ${process.arch}`,
+                root: ROOT,
+                rootSource: ROOT_SOURCE,
+                workspaceMode: String(ROOT_SOURCE || '').startsWith('workspace'),
+                packsRoot: PACKS_SOURCE_DIR,
+                newPackDir: NEW_PACK_DIR,
+                packsOutDir: PACKS_OUT_DIR,
+                configPath: configFilePath(),
+                userData: app.getPath('userData'),
+                logFile: Logger.getLogFile(),
+                bootstrapLogFile: BOOTSTRAP_LOG_FILE,
+                executable: process.execPath,
+                cwd: process.cwd(),
+                portableDir: process.env.PORTABLE_EXECUTABLE_DIR || null,
+            },
+        };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
     }
@@ -1155,11 +1244,14 @@ ipcMain.handle('modelEditor:deleteAnimFile', async (event, p) => {
 
 ipcMain.handle('app:getPaths', () => {
     if (!ROOT) {
-        return { ok: true, data: { needProjectRoot: true, packsSourceDir: null, packsOutDir: null, root: null } };
+        return { ok: true, data: { needProjectRoot: true, packsSourceDir: null, packsOutDir: null, root: null, rootSource: null } };
     }
     return {
         ok: true,
-        data: { packsSourceDir: PACKS_SOURCE_DIR, packsOutDir: PACKS_OUT_DIR, root: ROOT, packPaths: getPackPathsState() },
+        data: {
+            packsSourceDir: PACKS_SOURCE_DIR, packsOutDir: PACKS_OUT_DIR, root: ROOT,
+            rootSource: ROOT_SOURCE, packPaths: getPackPathsState(),
+        },
     };
 });
 
@@ -1169,7 +1261,7 @@ ipcMain.handle('app:setProjectRoot', async (event, rootDir) => {
         if (!rootDir || !fs.existsSync(path.join(rootDir, 'contentpacks-source'))) {
             return { ok: false, error: '所选目录不是有效的项目根（缺少 contentpacks-source）' };
         }
-        applyProjectRoot(rootDir);
+        applyProjectRoot(rootDir, 'config');
         saveConfig({ projectRoot: rootDir });
         return { ok: true, data: { packsSourceDir: PACKS_SOURCE_DIR, packsOutDir: PACKS_OUT_DIR, root: ROOT } };
     } catch (e) {
@@ -1188,7 +1280,7 @@ ipcMain.handle('app:pickProjectRoot', async () => {
     if (!fs.existsSync(path.join(dir, 'contentpacks-source'))) {
         return { ok: false, error: '所选目录不是有效的项目根（缺少 contentpacks-source）' };
     }
-    applyProjectRoot(dir);
+    applyProjectRoot(dir, 'config');
     saveConfig({ projectRoot: dir });
     return { ok: true, data: { packsSourceDir: PACKS_SOURCE_DIR, packsOutDir: PACKS_OUT_DIR, root: ROOT } };
 });
@@ -1199,6 +1291,8 @@ ipcMain.handle('app:pickProjectRoot', async () => {
 function getPackPathsState() {
     const defaultPacksRoot = ROOT ? path.join(ROOT, 'contentpacks-source') : null;
     return {
+        root: ROOT,
+        rootSource: ROOT_SOURCE,
         packsRoot: PACKS_SOURCE_DIR,
         newPackDir: NEW_PACK_DIR,
         defaultPacksRoot,
@@ -1676,6 +1770,126 @@ ipcMain.handle('structure:exportVanilla', async (event, packDir, blueprint) => {
         const result = VanillaExport.exportToPack(packDir, blueprint);
         if (!result.ok) return { ok: false, error: result.errors.join('\n') };
         return { ok: true, data: { files: result.files } };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+// --- 一键导入原版（.nbt 模板 / 原版数据包 jar·zip / 数据包文件夹） ---
+//
+// 导入产物直接写成正式的 structures/<id>/blueprint.json（不是草稿），
+// 之后就能在结构编辑器里改，再点「导出原版数据」写回 data/<ns>/... 的 4 类文件。
+// 命名空间：默认取包目录名（如 structure-example-pack → structure_example_pack），
+// 避免直接覆盖 data/minecraft（那会顶掉原版结构）。
+function importVanillaInto(packDir, srcPath) {
+    const rawNs = path.basename(packDir).toLowerCase().replace(/[^a-z0-9_.-]/g, '_');
+    const namespace = /^[a-z0-9_.-]+$/.test(rawNs) && rawNs !== '.' && rawNs !== '..' ? rawNs : 'imported';
+    const r = VanillaImport.importVanilla(srcPath, { namespace });
+    const data = {
+        source: srcPath,
+        kind: r.kind,
+        namespace,
+        written: [],
+        skipped: r.skipped || [],
+        warnings: r.warnings || [],
+        errors: r.errors || [],
+    };
+    if (!r.ok) {
+        return { ok: false, error: data.errors.join('\n') || '导入失败', data };
+    }
+    const existing = new Set(StructureSchema.listStructures(packDir).map((s) => s.structureId));
+    for (const b of r.blueprints) {
+        const bp = b.blueprint;
+        // structureId 冲突（重复导入同一个结构）→ 加 _2/_3 后缀，绝不覆盖已有蓝图
+        let sid = bp.structureId;
+        if (existing.has(sid)) {
+            let k = 2;
+            while (existing.has(sid + '_' + k)) k++;
+            sid = sid + '_' + k;
+        }
+        bp.structureId = sid;
+        existing.add(sid);
+        const v = StructureSchema.validateBlueprint(bp);
+        if (!v.valid) {
+            data.errors.push(`${sid}: 蓝图校验失败: ${v.errors.slice(0, 3).join('; ')}`);
+            continue;
+        }
+        try {
+            StructureSchema.writeStructure(packDir, bp);
+            data.written.push({
+                id: sid,
+                pieces: bp.pieces.length,
+                pools: bp.templatePools.length,
+                warnings: b.warnings.length,
+                stats: b.stats || null,
+                importFrom: (bp.importInfo && bp.importInfo.from) || '',
+            });
+        } catch (e) {
+            data.errors.push(`${sid}: 写入失败: ${e.message}`);
+        }
+    }
+    return { ok: data.written.length > 0, data, error: data.written.length ? undefined : (data.errors.join('\n') || '没有可写入的结构') };
+}
+
+ipcMain.handle('structure:importVanilla', async (event, packDir) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        const result = await dialog.showOpenDialog(mainWindow, {
+            title: '导入原版结构（.nbt 模板 / 数据包 .jar·.zip）',
+            filters: [
+                { name: '结构模板 / 数据包', extensions: ['nbt', 'jar', 'zip'] },
+                { name: '全部文件', extensions: ['*'] },
+            ],
+            properties: ['openFile'],
+        });
+        if (result.canceled || !result.filePaths.length) return { ok: true, data: { canceled: true } };
+        return importVanillaInto(packDir, result.filePaths[0]);
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('structure:importVanillaDir', async (event, packDir) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        const result = await dialog.showOpenDialog(mainWindow, {
+            title: '导入原版数据包文件夹（含 data/<命名空间>/worldgen）',
+            properties: ['openDirectory'],
+        });
+        if (result.canceled || !result.filePaths.length) return { ok: true, data: { canceled: true } };
+        return importVanillaInto(packDir, result.filePaths[0]);
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+/** 测试/自动化入口：直接给来源路径（不弹对话框） */
+ipcMain.handle('structure:importVanillaPath', async (event, packDir, srcPath) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        if (!srcPath || typeof srcPath !== 'string' || !fs.existsSync(srcPath)) {
+            return { ok: false, error: '来源不存在: ' + srcPath };
+        }
+        return importVanillaInto(packDir, srcPath);
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+/** 一键导出整包：所有蓝图 → 原版 4 类数据文件 */
+ipcMain.handle('structure:exportVanillaAll', async (event, packDir) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        const r = VanillaExport.exportPack(packDir);
+        return {
+            ok: r.ok,
+            data: r,
+            error: r.ok ? undefined : (r.errors || []).join('\n'),
+        };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
     }
@@ -2312,9 +2526,19 @@ app.whenReady().then(() => {
     if (!gotInstanceLock) return; // 第二实例自行退出（second-instance 会聚焦已有窗口）
     // 初始化暂存区（app 私有目录，独立运行）
     Staging.initStaging(app.getPath('userData'));
-    // 尝试解析项目根（配置优先 → 自动探测）；失败时窗口内引导用户选择
-    const root = tryResolveProjectRoot();
-    if (root) applyProjectRoot(root);
+    // 0.2.1：项目根解析（配置 → 探测 → 独立工作区），**保证有结果**，
+    // 不再出现"无工程 → 渲染端引导后 return → 按钮全死"的反馈机事故。
+    const decided = resolveRootWithFallback();
+    if (decided && decided.root) {
+        applyProjectRoot(decided.root, decided.source);
+        Logger.info('config', `项目根来源: ${decided.source}${decided.created && decided.created.length ? '（新建目录 ' + decided.created.length + ' 个）' : ''}`);
+        if (String(decided.source || '').startsWith('workspace')) {
+            Logger.warn('config', `独立工作区模式：${decided.root}（未连接 mod 工程；顶栏「连接工程…」可切换）`);
+        }
+    } else {
+        Logger.error('config', '项目根解析与工作区创建均失败: ' + ((decided && decided.error) || '未知原因') +
+            '（界面会提示选择项目目录，其余功能保持可点击）');
+    }
     // W5.3: 启动诊断——记录当前渲染模式与 GPU 型号（日后排查驱动级崩溃用）
     if (readConfig().softwareRendering) {
         Logger.info('config', '当前为软件渲染模式（--disable-gpu，绕过 GPU 驱动）');

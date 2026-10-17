@@ -40,18 +40,36 @@ const ORIENTATIONS = [
     'west_up',
 ];
 
-/** 空池元素 ID（终止连接/兜底） */
+/** 空池元素 ID（终止连接/兜底用的元素类型） */
 const EMPTY_POOL_ELEMENT = 'minecraft:empty_pool_element';
 
-/** 1.21.1 数据版本（结构模板 NBT 的 DataVersion） */
-const DATA_VERSION_1_21_1 = 3465;
+/** fallback 默认值：原版空池 id（1.21.1 原版池文件的 fallback 都是池 id，如 "minecraft:empty"） */
+const EMPTY_POOL = 'minecraft:empty';
+
+/** jigsaw 池元素类型（1.21.1 只有这两种能放在池里做“模板”元素；feature/list 无法用蓝图表达） */
+const ELEMENT_TYPES = ['minecraft:single_pool_element', 'minecraft:legacy_single_pool_element'];
+
+/** 结构最大扩展深度 size（1.21.1 codec 限 1-128；村庄 6 / 远古城市 7 / 试炼密室 20） */
+const JIGSAW_SIZE_MIN = 1;
+const JIGSAW_SIZE_MAX = 128;
+
+/** project_start_to_heightmap 取值（Heightmap.Types 名，1.21.1 原版只用到前两个） */
+const HEIGHTMAPS = [
+    'WORLD_SURFACE_WG', 'OCEAN_FLOOR_WG', 'WORLD_SURFACE', 'OCEAN_FLOOR',
+    'MOTION_BLOCKING', 'MOTION_BLOCKING_NO_LEAVES',
+];
+
+/** 1.21.1 数据版本（结构模板 NBT 的 DataVersion）
+ *  实测 1180/1180 个原版模板都是 3955；此前写 3465（=1.20.1）会让游戏跑 DataFixer，
+ *  导出的模板被当作旧版本数据升级（有被改写/丢字段的风险）。 */
+const DATA_VERSION_1_21_1 = 3955;
 
 // ===== 默认值 =====
 
 /** 新建结构的默认蓝图（对齐原版村庄类结构常用参数） */
 function defaultBlueprint() {
     return {
-        formatVersion: 1,
+        formatVersion: 2,
         structureId: '',
         namespace: '',
         structure: {
@@ -60,8 +78,15 @@ function defaultBlueprint() {
             startPool: 'start',
             maxDistanceFromCenter: 80,
             biomes: ['#minecraft:is_overworld'],
-            projectToSurface: true,
-            maxSurfaceLevel: 0,
+            // 1.21.1 jigsaw 结构定义的必填项（此前缺失 → worldgen JSON 不被 codec 接受，世界加载失败）
+            // 默认 7：与原版村庄一致（可调到 128）；导入原版时按源文件覆盖
+            size: 7,
+            startHeight: { absolute: 0 },
+            useExpansionHack: true,
+            // 可选：贴地投影（原版 7/10 个 jigsaw 结构用 WORLD_SURFACE_WG）
+            projectStartToHeightmap: 'WORLD_SURFACE_WG',
+            // 可选：spawn_overrides 原样透传（{mobCategory: {bounding_box, spawns}}）
+            spawnOverrides: null,
         },
         pieces: [],
         templatePools: [],
@@ -73,6 +98,56 @@ function defaultBlueprint() {
             exclusionZone: null,
         },
     };
+}
+
+/** 旧蓝图（formatVersion 1）→ 新字段迁移；无副作用的浅拷贝 */
+function migrateBlueprint(bp) {
+    if (!bp || typeof bp !== 'object') return bp;
+    const out = Object.assign({}, bp, { structure: Object.assign({}, bp.structure || {}) });
+    const st = out.structure;
+    // 旧字段 projectToSurface / maxSurfaceLevel 在 1.21.1 里根本不存在（编辑器早期自造）。
+    // projectToSurface=true ⇒ project_start_to_heightmap = WORLD_SURFACE_WG；maxSurfaceLevel 丢弃。
+    if (st.projectStartToHeightmap === undefined) {
+        if (st.projectToSurface === true) st.projectStartToHeightmap = 'WORLD_SURFACE_WG';
+        else if (st.projectToSurface === false) st.projectStartToHeightmap = null;
+    }
+    delete st.projectToSurface;
+    delete st.maxSurfaceLevel;
+    // 1.21.1 起 size 必填；旧蓝图/缺省值 → 7（与原版村庄一致，编辑器"新建结构"也是 7）
+    st.size = (st.size === 0 || st.size === undefined) ? 7 : st.size;
+    if (!st.startHeight || typeof st.startHeight !== 'object') st.startHeight = { absolute: 0 };
+    if (st.useExpansionHack === undefined) st.useExpansionHack = true;
+    if (st.projectStartToHeightmap === undefined) st.projectStartToHeightmap = null;
+    out.formatVersion = Math.max(2, out.formatVersion || 0);
+    return out;
+}
+
+/**
+ * biomes 归一化为数组（导入/编辑内部表示）。原版允许：
+ *   "biomes": "#minecraft:has_structure/village_plains"（单个 tag）
+ *   "biomes": ["minecraft:plains", "minecraft:sunflower_plains"]
+ * @returns {string[]}
+ */
+function normalizeBiomes(b) {
+    if (b == null) return [];
+    if (typeof b === 'string') return [b];
+    if (Array.isArray(b)) return b.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim());
+    return [];
+}
+
+/**
+ * 数组 → worldgen JSON 的 biomes 取值。
+ * 单个 tag（#...）必须写成标量字符串；列表里放 "#tag" 是非法的（HolderSet codec 只接受
+ * 标量 tag 或 id 列表）——此前导出的 ["#minecraft:is_overworld"] 就是非法形状。
+ */
+function biomesForJson(b) {
+    const arr = normalizeBiomes(b);
+    if (!arr.length) return ['#minecraft:is_overworld'];
+    if (arr.length === 1) return arr[0]; // 标量（tag 或单个 id）
+    return arr.map((s) => {
+        if (s.startsWith('#')) throw new Error('biomes 混用 tag 与 id（tag "' + s + '" 只能单独出现）');
+        return s;
+    });
 }
 
 /** 新建片段的默认对象 */
@@ -124,6 +199,8 @@ function resolveId(name, namespace) {
 function validateBlueprint(bp) {
     const errors = [];
     if (!bp || typeof bp !== 'object') return { valid: false, errors: ['蓝图不是对象'] };
+    // 旧蓝图（projectToSurface/maxSurfaceLevel 等 1.21.1 不存在的字段）先就地迁移再校验
+    bp = migrateBlueprint(bp);
 
     // 标识
     if (!bp.structureId || !/^[a-z0-9_.-]+$/.test(bp.structureId)) {
@@ -151,9 +228,62 @@ function validateBlueprint(bp) {
     if (st.maxDistanceFromCenter !== undefined && (!Number.isInteger(st.maxDistanceFromCenter) || st.maxDistanceFromCenter <= 0)) {
         errors.push('structure.maxDistanceFromCenter 应为正整数');
     }
-    if (st.projectToSurface !== undefined && typeof st.projectToSurface !== 'boolean') {
-        errors.push('structure.projectToSurface 应为布尔值');
+    // 1.21.1 jigsaw codec 必填/有约束的字段
+    if (st.size !== undefined && (!Number.isInteger(st.size) || st.size < JIGSAW_SIZE_MIN || st.size > JIGSAW_SIZE_MAX)) {
+        errors.push('structure.size 应为 ' + JIGSAW_SIZE_MIN + '-' + JIGSAW_SIZE_MAX + ' 的整数（最大扩展深度）');
     }
+    if (st.startHeight !== undefined) {
+        // 1.21.1 是 HeightProvider：{absolute:n} / {above_bottom:n}（常数），
+        // 或 {type:"minecraft:uniform"|"trapezoid"|"weighted_list", ...} 等组合类型
+        const sh = st.startHeight;
+        const isObj = sh && typeof sh === 'object' && !Array.isArray(sh);
+        if (!isObj) {
+            errors.push('structure.startHeight 应为 HeightProvider 对象（{absolute:n} / {above_bottom:n} / {type:...}）');
+        } else if (sh.type === undefined) {
+            const hasAbs = Number.isInteger(sh.absolute);
+            const hasBottom = Number.isInteger(sh.above_bottom);
+            if (!(hasAbs !== hasBottom)) { // 恰好一个
+                errors.push('structure.startHeight 应为 { absolute: 整数 } 或 { above_bottom: 整数 }（二选一）');
+            }
+        }
+    }
+    if (st.useExpansionHack !== undefined && typeof st.useExpansionHack !== 'boolean') {
+        errors.push('structure.useExpansionHack 应为布尔值');
+    }
+    if (st.projectStartToHeightmap !== undefined && st.projectStartToHeightmap !== null &&
+        !HEIGHTMAPS.includes(st.projectStartToHeightmap)) {
+        errors.push('structure.projectStartToHeightmap 非法（取值: ' + HEIGHTMAPS.join('/') + '）: ' + st.projectStartToHeightmap);
+    }
+    if (st.spawnOverrides !== undefined && st.spawnOverrides !== null &&
+        (typeof st.spawnOverrides !== 'object' || Array.isArray(st.spawnOverrides))) {
+        errors.push('structure.spawnOverrides 应为对象（{ mobCategory: { bounding_box, spawns } }）');
+    }
+    if (st.dimensionPadding !== undefined && st.dimensionPadding !== null &&
+        (!Number.isInteger(st.dimensionPadding) || st.dimensionPadding < 0)) {
+        errors.push('structure.dimensionPadding 应为非负整数');
+    }
+    if (st.liquidSettings !== undefined && st.liquidSettings !== null && typeof st.liquidSettings !== 'string') {
+        errors.push('structure.liquidSettings 应为字符串（如 ignore_waterlogging / apply_waterlogging）');
+    }
+    if (st.poolAliases !== undefined && st.poolAliases !== null && !Array.isArray(st.poolAliases)) {
+        errors.push('structure.poolAliases 应为数组（原样透传 1.21.1 的 pool_aliases）');
+    }
+    if (st.biomes !== undefined) {
+        const bs = normalizeBiomes(st.biomes);
+        if (!bs.length) errors.push('structure.biomes 至少需要一个生物群系/tag');
+        for (const b of bs) {
+            const isTag = b.startsWith('#');
+            const body = isTag ? b.slice(1) : b;
+            if (!/^[a-z0-9_.-]+(:[a-z0-9_./-]+)?$/.test(body)) {
+                errors.push('structure.biomes 含非法 ID: ' + b);
+            }
+            if (isTag && bs.length > 1) {
+                errors.push('structure.biomes 里 tag 只能单独使用（当前与其它条目混用）: ' + b);
+            }
+        }
+    }
+    // 旧字段 projectToSurface/maxSurfaceLevel 已在函数开头经 migrateBlueprint 迁移
+    // （1.21.1 的 jigsaw codec 里没有这两个字段，写出去会让世界加载失败）
 
     const ns = bp.namespace || '';
     const pieceNames = new Set();
@@ -241,16 +371,45 @@ function validateBlueprint(bp) {
         const els = pl.elements || [];
         if (!els.length) errors.push(tag + ': 至少需要一个元素');
         els.forEach((el, j) => {
-            if (!el.template) {
-                errors.push(tag + ' 元素#' + j + ': template 必填');
-            } else if (ns && !el.template.includes(':') && !pieceNames.has(el.template)) {
-                errors.push(tag + ' 元素#' + j + ': template "' + el.template + '" 不存在于片段列表');
+            const hasTpl = !!el.template;
+            const hasFeature = !!el.feature;
+            if (hasTpl && hasFeature) {
+                errors.push(tag + ' 元素#' + j + ': template 与 feature 只能二选一');
+            } else if (!hasTpl && !hasFeature) {
+                errors.push(tag + ' 元素#' + j + ': template 或 feature 必填（原版 feature_pool_element 用 feature）');
+            }
+            if (hasTpl) {
+                if (ns && !el.template.includes(':') && !pieceNames.has(el.template)) {
+                    errors.push(tag + ' 元素#' + j + ': template "' + el.template + '" 不存在于片段列表');
+                }
+            }
+            if (hasFeature && !/^[a-z0-9_.-]+(:[a-z0-9_./-]+)?$/.test(el.feature)) {
+                errors.push(tag + ' 元素#' + j + ': feature 不是合法的已配置特征 ID: ' + el.feature);
             }
             if (!Number.isInteger(el.weight) || el.weight < 1 || el.weight > 150) {
                 errors.push(tag + ' 元素#' + j + ': weight 应为 1-150 的整数');
             }
             if (!PROJECTIONS.includes(el.projection)) errors.push(tag + ' 元素#' + j + ': projection 非法: ' + el.projection);
+            // 1.21.1 池元素类型（可选，缺省 single_pool_element）
+            if (el.elementType !== undefined && !ELEMENT_TYPES.includes(el.elementType)) {
+                errors.push(tag + ' 元素#' + j + ': elementType 非法（' + ELEMENT_TYPES.join('/') + '）: ' + el.elementType);
+            }
+            // processors：原版允许 "处理器列表 id" 或内联 {processors:[...]}；
+            // 绝不能导出空数组 []（codec 只接受 id 字符串或 compound）
+            if (el.processors !== undefined && el.processors !== null) {
+                if (typeof el.processors === 'string') {
+                    if (!/^[a-z0-9_.-]+(:[a-z0-9_./-]+)?$/.test(el.processors)) {
+                        errors.push(tag + ' 元素#' + j + ': processors 不是合法的处理器列表 ID: ' + el.processors);
+                    }
+                } else if (typeof el.processors !== 'object' || Array.isArray(el.processors)) {
+                    errors.push(tag + ' 元素#' + j + ': processors 应为处理器列表 ID 字符串或内联对象 {processors:[...]}');
+                }
+            }
         });
+        // fallback：原版是「池 ID」（如 minecraft:empty），不是元素类型 ID
+        if (pl.fallback !== undefined && pl.fallback !== null && typeof pl.fallback !== 'string') {
+            errors.push(tag + ': fallback 应为池 ID 字符串（如 minecraft:empty）');
+        }
     });
 
     // jigsaw 引用的池必须存在（完整 ID 除外）
@@ -359,7 +518,8 @@ function readStructure(packDir, relFile) {
     const fs = require('fs');
     const p = resolveStructureFile(packDir, relFile);
     if (!p) throw new Error('非法蓝图路径: ' + relFile);
-    return JSON.parse(fs.readFileSync(p, 'utf-8'));
+    // 读入即迁移旧蓝图（1.21.1 不存在的 projectToSurface/maxSurfaceLevel 等字段）
+    return migrateBlueprint(JSON.parse(fs.readFileSync(p, 'utf-8')));
 }
 
 /**
@@ -406,14 +566,26 @@ module.exports = {
     JOINTS,
     ORIENTATIONS,
     EMPTY_POOL_ELEMENT,
+    EMPTY_POOL,
+    ELEMENT_TYPES,
+    HEIGHTMAPS,
+    JIGSAW_SIZE_MIN,
+    JIGSAW_SIZE_MAX,
     DATA_VERSION_1_21_1,
     defaultBlueprint,
+    migrateBlueprint,
+    normalizeBiomes,
+    biomesForJson,
     defaultPiece,
     defaultJigsaw,
     defaultPoolElement,
     resolveId,
     validateBlueprint,
     listStructures,
+    // REVIEW-P0：main.js 的 structure:read / structure:delete 用它做路径边界校验，
+    // 但此前未导出 → 编辑器里所有「打开结构/删除结构」都抛
+    // "StructureSchema.resolveStructureFile is not a function"（结构编辑功能整体不可用）。
+    resolveStructureFile,
     readStructure,
     writeStructure,
     deleteStructure,

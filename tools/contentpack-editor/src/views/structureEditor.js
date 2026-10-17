@@ -165,8 +165,11 @@ window.StructureEditor = (function () {
         document.getElementById('sBiomes').value = Array.isArray(bp.structure && bp.structure.biomes)
             ? bp.structure.biomes.join(', ')
             : ((bp.structure && bp.structure.biomes) || '');
-        document.getElementById('sMaxLevel').value = (bp.structure && bp.structure.maxSurfaceLevel) || 0;
-        document.getElementById('sProject').checked = (bp.structure ? bp.structure.projectToSurface !== false : true);
+        document.getElementById('sSize').value = (bp.structure && bp.structure.size != null) ? bp.structure.size : 7;
+        const sh = (bp.structure && bp.structure.startHeight) || {};
+        document.getElementById('sStartH').value = Number.isInteger(sh.absolute) ? sh.absolute : 0;
+        document.getElementById('sProjHm').value = (bp.structure && bp.structure.projectStartToHeightmap) || '';
+        document.getElementById('sUseExp').checked = !bp.structure || bp.structure.useExpansionHack !== false;
         const ss = bp.structureSet || {};
         document.getElementById('ssSpacing').value = ss.spacing != null ? ss.spacing : 32;
         document.getElementById('ssSeparation').value = ss.separation != null ? ss.separation : 12;
@@ -496,9 +499,11 @@ window.StructureEditor = (function () {
                             (add3) => {
                                 for (let i = 0; i < els.length; i++) {
                                     const el = els[i];
-                                    const missing = !(bp.pieces || []).some((p) => p.name === el.template);
+                                    const isFeat = !el.template && !!el.feature;
+                                    const missing = isFeat ? false : !(bp.pieces || []).some((p) => p.name === el.template);
                                     add3(row('el:' + pl.name + ':' + i, 3, '',
-                                        `→ ${esc(el.template)} <span class="note">w${el.weight || 1} · ${esc(el.projection || 'rigid')}</span>` +
+                                        (isFeat ? `🌿 ${esc(el.feature)}` : `→ ${esc(el.template)}`) +
+                                        ` <span class="note">w${el.weight || 1} · ${esc(el.projection || 'rigid')}</span>` +
                                         (missing ? ' <span style="color:var(--err)">✗</span>' : ''),
                                         false, null));
                                 }
@@ -525,7 +530,7 @@ window.StructureEditor = (function () {
                     <button class="btn ghost small pl-del" style="color:var(--err)">${t('dyn.delete')}</button>
                 </div>
                 <table class="mini-table" style="margin-top:10px"><thead><tr>
-                    <th>${t('structure.template')}</th><th>weight (1-150)</th><th>projection</th><th></th>
+                    <th>类型</th><th>${t('structure.template')} / 特征 ID</th><th>weight (1-150)</th><th>projection</th><th></th>
                 </tr></thead><tbody class="pl-elements"></tbody></table>
                 <button class="btn ghost small pl-addelem">+ ${t('structure.element')}</button>
                 <div class="row" style="margin-top:8px">
@@ -559,13 +564,29 @@ window.StructureEditor = (function () {
     function poolElemRow(el, pieceNames, c) {
         const tr = document.createElement('tr');
         tr.className = 'el-row';
+        const isFeat = !el.template && !!el.feature;
         const opts = (pieceNames.length ? pieceNames : ['<无片段>']).map((n) => `<option value="${esc(n)}"${el.template === n ? ' selected' : ''}>${esc(n)}</option>`).join('');
         const projOpts = (c.projections || ['rigid', 'terrain_matching']).map((v) => `<option value="${v}"${el.projection === v ? ' selected' : ''}>${v}</option>`).join('');
         tr.innerHTML = `
-            <td><select class="el-template" style="width:200px">${opts}</select></td>
+            <td><select class="el-kind" style="width:80px">
+                <option value="template"${isFeat ? '' : ' selected'}>模板</option>
+                <option value="feature"${isFeat ? ' selected' : ''}>特征</option>
+            </select></td>
+            <td class="el-tpl-cell"><select class="el-template" style="width:200px">${opts}</select></td>
+            <td class="el-feat-cell" style="display:none"><input class="el-feature" style="width:200px" value="${esc(el.feature || '')}" placeholder="minecraft:oak"></td>
             <td><input class="el-weight" type="number" min="1" max="150" style="width:80px" value="${el.weight != null ? el.weight : 1}"></td>
             <td><select class="el-proj" style="width:150px">${projOpts}</select></td>
             <td><button class="btn ghost small fr-del">×</button></td>`;
+        const kind = tr.querySelector('.el-kind');
+        const tplCell = tr.querySelector('.el-tpl-cell');
+        const featCell = tr.querySelector('.el-feat-cell');
+        const sync = () => {
+            const f = kind.value === 'feature';
+            tplCell.style.display = f ? 'none' : '';
+            featCell.style.display = f ? '' : 'none';
+        };
+        kind.addEventListener('change', sync);
+        sync();
         return tr;
     }
     function wireElemRow(tr, onChange) {
@@ -586,8 +607,13 @@ window.StructureEditor = (function () {
         tab.bp.structure.maxDistanceFromCenter = parseInt(document.getElementById('sMaxDist').value, 10) || 80;
         tab.bp.structure.biomes = document.getElementById('sBiomes').value
             .split(',').map((s) => s.trim()).filter(Boolean);
-        tab.bp.structure.maxSurfaceLevel = parseInt(document.getElementById('sMaxLevel').value, 10) || 0;
-        tab.bp.structure.projectToSurface = document.getElementById('sProject').checked;
+        const sizeV = parseInt(document.getElementById('sSize').value, 10);
+        tab.bp.structure.size = (Number.isInteger(sizeV) && sizeV >= 1 && sizeV <= 128) ? sizeV : 7;
+        tab.bp.structure.startHeight = { absolute: parseInt(document.getElementById('sStartH').value, 10) || 0 };
+        const hm = document.getElementById('sProjHm').value;
+        if (hm) tab.bp.structure.projectStartToHeightmap = hm;
+        else delete tab.bp.structure.projectStartToHeightmap;
+        tab.bp.structure.useExpansionHack = document.getElementById('sUseExp').checked;
         tab.bp.structureSet = tab.bp.structureSet || {};
         tab.bp.structureSet.spacing = parseInt(document.getElementById('ssSpacing').value, 10) || 32;
         tab.bp.structureSet.separation = parseInt(document.getElementById('ssSeparation').value, 10) || 12;
@@ -658,11 +684,22 @@ window.StructureEditor = (function () {
                 fallback: card.querySelector('.pl-fallback').value.trim() || 'minecraft:empty_pool_element',
             };
             card.querySelectorAll('.pl-elements .el-row').forEach((tr) => {
-                pl.elements.push({
-                    template: tr.querySelector('.el-template').value,
-                    weight: num(tr.querySelector('.el-weight')) || 1,
-                    projection: tr.querySelector('.el-proj').value,
-                });
+                const isFeature = tr.querySelector('.el-kind').value === 'feature';
+                if (isFeature) {
+                    const feature = tr.querySelector('.el-feature').value.trim();
+                    if (!feature) return;
+                    pl.elements.push({
+                        feature,
+                        weight: num(tr.querySelector('.el-weight')) || 1,
+                        projection: tr.querySelector('.el-proj').value,
+                    });
+                } else {
+                    pl.elements.push({
+                        template: tr.querySelector('.el-template').value,
+                        weight: num(tr.querySelector('.el-weight')) || 1,
+                        projection: tr.querySelector('.el-proj').value,
+                    });
+                }
             });
             if (pl.name) tab.bp.templatePools.push(pl);
         });

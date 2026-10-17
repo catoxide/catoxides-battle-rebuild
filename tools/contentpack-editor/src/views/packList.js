@@ -60,11 +60,13 @@ window.PackList = (function () {
         const res = await window.api.createPack(data);
         if (!res.ok) { window.showError(t('dyn.createPackFail') + res.error); return; }
         const d = res.data || {};
+        const ws = String((window.AppState && window.AppState.rootSource) || '').startsWith('workspace');
         window.showStatus(tf('dyn.packCreatedFiles', {
             name,
             files: (d.written || []).join(' / '),
             cmd: d.gradleCommand || '',
-        }) + (d.outsideLibrary ? '（建在「新建包目录」—— 与包库不同目录，列表已合并显示）' : ''), true);
+        }) + (ws ? '（独立工作区：无 gradlew，构建需先点顶栏「📁 连接工程…」选择 mod 工程）' : '')
+            + (d.outsideLibrary ? '（建在「新建包目录」—— 与包库不同目录，列表已合并显示）' : ''), true);
         toggleNewPackForm(false);
         ['npName', 'npVersion', 'npRequires', 'npEntry', 'npDeps', 'npDepsOpt',
             'npLibReq', 'npModReq', 'npModOpt', 'npExtraDeps'].forEach((id) => {
