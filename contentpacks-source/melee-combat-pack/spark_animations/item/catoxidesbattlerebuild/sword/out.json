@@ -2,7 +2,7 @@
   "animations": {
     "out": {
       "loop": "once",
-      "animation_length": 0.33333,
+      "animation_length": 0.3333,
       "bones": {
         "main": {
           "rotation": {
