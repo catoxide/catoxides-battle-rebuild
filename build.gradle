@@ -120,16 +120,33 @@ runs {
 
 // Copy ContentPack JARs to each run configuration's contentpacks directory before launch
 // This ensures the correct manifest (with Module-Type: contentpack) is preserved
+// 注意：run 任务由 NeoGradle 延迟注册（此处 tasks.findByName 为 null，旧写法导致
+// dependsOn 从未挂上、run/<name>/contentpacks 不会被创建）。改用
+// matching/configureEach 延迟挂载，run 任务出现后自动建立依赖。
 ['client', 'server', 'gameTestServer', 'data'].each { runName ->
-    tasks.register("copyContentPacksTo${runName.capitalize()}", Copy) {
+    def copyName = "copyContentPacksTo${runName.capitalize()}"
+    tasks.register(copyName, Copy) {
         from 'contentpacks'
         into "run/${runName}/contentpacks"
         include '*.jar'
     }
-    def runTask = tasks.findByName("run${runName.capitalize()}")
-    if (runTask != null) {
-        runTask.dependsOn "copyContentPacksTo${runName.capitalize()}"
+    tasks.matching { it.name == "run${runName.capitalize()}" }.configureEach {
+        dependsOn copyName
     }
+}
+
+// NeoGradle 7.1.26 缺陷修正：DownloadAssets.assetIndex 约定值恒为 "asset-index"，
+// 而版本 JSON 里资源索引的真实 id 是另一个值（1.21.1 → "17"，URL 即 …/17.json）。
+// 离线模式下 indexes/asset-index.json 不存在 → 任务直接失败。
+// 把 assetIndex 指回 versionJson.assetIndex.id，使 assetIndexFile 指向已缓存的
+// indexes/17.json（sha1 与版本 JSON 一致时离线校验通过）。
+tasks.matching { it.name.toLowerCase().endsWith("downloadassets") }.configureEach { t ->
+    t.assetIndex.convention(t.versionJson.map { it.assetIndex.id })
+    // isOffline 也是 @Input：true/false 会产生两套不同的任务哈希 → 两套独立的
+    // ng_execute 缓存（在线跑过的缓存离线用不上，反之亦然）。固定为 false，
+    // 让 `--offline` 与否共用同一份缓存。缓存未命中时的行为差异可忽略
+    // （无网络则下载失败，与原来一致）。
+    t.isOffline.convention(false)
 }
 
 // Sets up a dependency configuration called 'localRuntime'.

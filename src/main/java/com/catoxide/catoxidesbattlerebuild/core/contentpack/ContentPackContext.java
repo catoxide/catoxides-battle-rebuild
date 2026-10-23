@@ -3,6 +3,11 @@ package com.catoxide.catoxidesbattlerebuild.core.contentpack;
 import com.catoxide.catoxidesbattlerebuild.core.mob.DataDrivenMob;
 import com.catoxide.catoxidesbattlerebuild.core.mob.MobDefinition;
 import com.catoxide.catoxidesbattlerebuild.core.mob.MobDefinitionRegistry;
+import com.catoxide.catoxidesbattlerebuild.core.registry.BatchContentRegistrar;
+import com.catoxide.catoxidesbattlerebuild.core.registry.BlockDefinition;
+import com.catoxide.catoxidesbattlerebuild.core.registry.BlockPropertySpec;
+import com.catoxide.catoxidesbattlerebuild.core.registry.ItemBlockParser;
+import com.catoxide.catoxidesbattlerebuild.core.registry.ItemDefinition;
 import com.catoxide.catoxidesbattlerebuild.core.sound.MobSoundProfile;
 import com.catoxide.catoxidesbattlerebuild.core.sound.MobSoundRegistry;
 import com.catoxide.catoxidesbattlerebuild.core.structure.blueprint.StructureBlueprint;
@@ -98,6 +103,44 @@ public final class ContentPackContext {
      */
     public void registerServerConfig(net.neoforged.neoforge.common.ModConfigSpec spec, String fileName) {
         registerConfig(net.neoforged.fml.config.ModConfig.Type.SERVER, spec, fileName);
+    }
+
+    /**
+     * 注册配置并绑定「只属于本配置」的加载/重载回调（推荐用法）。
+     * <p>为什么需要它：内容包不是 mod，所有包的配置都挂在主 mod 的 ModContainer 上，
+     * 因此 {@code ModConfigEvent} 会广播给主 mod 总线上的<b>每一个</b>监听器。
+     * 包若自己写 {@code addListener((ModConfigEvent.Loading e) -> 自己的Config.load())}
+     * 而不看事件里的配置是谁的，就会在别人（尤其是加载得更早）的配置触发 Loading 时
+     * 读自己尚未加载的 spec —— 直接 {@code IllegalStateException:
+     * Cannot get config value before config is loaded}，整个 mod 启动失败。
+     * <p>本方法按 spec 过滤，回调只在本包配置 Loading/Reloading 时执行。
+     *
+     * @param type     配置类型（COMMON/SERVER/CLIENT）
+     * @param spec     本包的 ModConfigSpec
+     * @param fileName 配置文件唯一名（不含扩展名）
+     * @param onLoad   加载/重载回调（可为 null，等价于三参重载）
+     */
+    public void registerConfig(net.neoforged.fml.config.ModConfig.Type type,
+                               net.neoforged.neoforge.common.ModConfigSpec spec,
+                               String fileName,
+                               Runnable onLoad) {
+        registerConfig(type, spec, fileName);
+        if (onLoad == null) {
+            return;
+        }
+        modEventBus.addListener((net.neoforged.fml.event.config.ModConfigEvent event) -> {
+            if (event.getConfig().getSpec() != spec) {
+                return; // 不是本包的配置：绝不碰本包的 ConfigValue
+            }
+            onLoad.run();
+        });
+    }
+
+    /** {@link #registerConfig(ModConfig.Type, ModConfigSpec, String, Runnable)} 的 SERVER 糖。 */
+    public void registerServerConfig(net.neoforged.neoforge.common.ModConfigSpec spec,
+                                     String fileName,
+                                     Runnable onLoad) {
+        registerConfig(net.neoforged.fml.config.ModConfig.Type.SERVER, spec, fileName, onLoad);
     }
 
     public String getModId() {
@@ -422,6 +465,97 @@ public final class ContentPackContext {
         } catch (IOException e) {
             LogManager.serverError("ContentPackContext", "Failed to scan structures directory: %s", e.getMessage());
         }
+    }
+
+    // ==================== 物品/方块批量注册（基座接口）====================
+
+    /**
+     * 注册一个方块状态参数（自定义参数）。
+     * <p>
+     * 注册后参数名进入「已知参数」全集（{@code BlockPropertyRegistry.knownNames()}），
+     * 本包及拓扑序上后续包的 {@code blocks/*.json} 都可以引用它。
+     * <p>
+     * 要让该参数出现在编辑器的「可选参数」下拉里，请把它加进目录文件
+     * {@code assets/catoxidesbattlerebuild/editor/block_properties.json}
+     * （Java 与编辑器共读的单一真源）。
+     *
+     * @param spec 参数声明（name/type/values/min/max/default）
+     * @return 构建出的 {@code Property} 实例（包代码可直接用于自己的 Block）
+     */
+    public net.minecraft.world.level.block.state.properties.Property<?> registerBlockProperty(BlockPropertySpec spec) {
+        return com.catoxide.catoxidesbattlerebuild.core.registry.BlockPropertyRegistry.registerCustom(spec);
+    }
+
+    /**
+     * 批量注册物品 + 方块（含完整 blockstate 状态空间与自定义参数、方块物品、
+     * 方块实体（generic/custom）、按包创造栏）。
+     * <p>
+     * 必须在 {@code register()} 阶段调用（DeferredRegister 要求）。
+     * 单个定义非法只隔离该定义（见返回的 problems），不拖垮整包。
+     *
+     * @param items  物品定义列表（可空）
+     * @param blocks 方块定义列表（可空）
+     * @return 注册结果摘要
+     */
+    public BatchContentRegistrar.Result registerItemsAndBlocks(List<ItemDefinition> items, List<BlockDefinition> blocks) {
+        return BatchContentRegistrar.registerAll(this, items, blocks);
+    }
+
+    /**
+     * 扫描<b>当前包 jar</b> 里的 {@code items/*.json} + {@code blocks/*.json}（仅一级目录）
+     * 并批量注册 —— 编辑器生成的入口类就调这一行。
+     * <p>
+     * 纯数据包（无 Module-Entry）没有 register() 阶段，因此纯 JSON 物品/方块
+     * 仍需一个入口类调用本方法（与 entities/*.json 同构：JSON 是数据，注册是代码的事）。
+     *
+     * @return 注册结果摘要
+     */
+    public BatchContentRegistrar.Result registerItemsAndBlocksFromJar() {
+        String packId = this.currentPackId;
+        if (packId == null) {
+            throw new IllegalStateException("registerItemsAndBlocksFromJar 必须在 register() 阶段调用（当前无包作用域）");
+        }
+        Optional<ContentPackRegistry.LoadedPack> loaded = ContentPackRegistry.getPack(packId);
+        if (loaded.isEmpty()) {
+            throw new IllegalStateException("找不到已加载包 " + packId + "（registerItemsAndBlocksFromJar）");
+        }
+        List<ItemDefinition> items = new ArrayList<>();
+        List<BlockDefinition> blocks = new ArrayList<>();
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(loaded.get().jarFile())) {
+            java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                java.util.zip.ZipEntry entry = entries.nextElement();
+                String name = entry.getName();
+                String kind = null;
+                if (name.startsWith("items/") && name.endsWith(".json")
+                        && name.indexOf('/', "items/".length()) == -1) {
+                    kind = "item";
+                } else if (name.startsWith("blocks/") && name.endsWith(".json")
+                        && name.indexOf('/', "blocks/".length()) == -1) {
+                    kind = "block";
+                }
+                if (kind == null) {
+                    continue;
+                }
+                try (java.io.InputStream in = zip.getInputStream(entry)) {
+                    String json = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    if ("item".equals(kind)) {
+                        items.add(ItemBlockParser.parseItem(json));
+                    } else {
+                        blocks.add(ItemBlockParser.parseBlock(json));
+                    }
+                } catch (Exception ex) {
+                    LogManager.serverError("ContentPackContext", "Failed to parse %s in %s: %s",
+                            name, loaded.get().sourceJar(), ex.getMessage());
+                }
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("无法扫描包 jar " + loaded.get().sourceJar() + ": " + e.getMessage(), e);
+        }
+        LogManager.serverInfo("ContentPackContext",
+                "Scanned pack jar %s for items/blocks: items=%d blocks=%d",
+                loaded.get().sourceJar(), items.size(), blocks.size());
+        return BatchContentRegistrar.registerAll(this, items, blocks);
     }
 
     // ==================== 跨包能力（Capability）====================

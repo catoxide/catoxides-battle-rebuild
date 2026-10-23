@@ -43,10 +43,10 @@ public class DurabilityPack implements ContentPack {
     public void register(ContentPackContext context) {
         this.context = context;
         // 注册配置（ModConfigSpec → toml，游戏内可编辑 + reload 生效）
+        // 回调由 core 按 spec 过滤：包自己监听 ModConfigEvent 会在别的包配置加载时
+        // 读自己尚未加载的 spec，抛 "Cannot get config value before config is loaded"。
         context.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON,
-                DurabilityConfig.SPEC, "durability-pack-common");
-        context.getModEventBus().addListener(
-                (net.neoforged.fml.event.config.ModConfigEvent.Loading e) -> DurabilityConfig.load());
+                DurabilityConfig.SPEC, "durability-pack-common", DurabilityConfig::load);
 
         // 通过 mod 总线注册 RegisterCapabilitiesEvent（mod 加载阶段）
         context.getModEventBus().addListener((RegisterCapabilitiesEvent event) -> {

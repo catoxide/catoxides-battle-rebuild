@@ -412,15 +412,20 @@ public abstract class AnimatedMob<T extends AnimatedMob<T>> extends PathfinderMo
                 return null;
             }
             try {
-                // 约定：裸名（无 /）→ data/<ns>/state_machines/<name>.json；含 / → data/<ns>/<path>.json
-                String subPath = rl.getPath().contains("/")
-                        ? "data/" + rl.getNamespace()
-                        : "data/" + rl.getNamespace() + "/state_machines";
+                // ResourceManager 已经按 data/<ns>/… 解析，所以这里只能造「命名空间=实体 ns」的
+                // ResourceLocation：裸名（无 /）→ data/<ns>/state_machines/<name>.json；
+                // 含 / → data/<ns>/<path>.json。
+                // （旧写法把 "data/<ns>/state_machines" 整体当命名空间传入，'/' 不是合法字符，
+                //   fromNamespaceAndPath 直接抛 "Non [a-z0-9_.-] character in namespace"，
+                //   状态机永远加载不到 —— 2026-10-24 修正。）
+                ResourceLocation file = rl.getPath().contains("/")
+                        ? rl
+                        : ResourceLocation.fromNamespaceAndPath(rl.getNamespace(),
+                                "state_machines/" + rl.getPath());
                 net.minecraft.server.packs.resources.ResourceManager rm = this.level().isClientSide
                         ? net.minecraft.client.Minecraft.getInstance().getResourceManager()
                         : this.level().getServer().getResourceManager();
-                var res = rm.getResource(
-                        ResourceLocation.fromNamespaceAndPath(subPath, rl.getPath() + ".json"));
+                var res = rm.getResource(file);
                 if (res.isPresent()) {
                     try (var in = res.get().open()) {
                         String json = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);

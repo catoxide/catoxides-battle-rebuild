@@ -2,6 +2,10 @@ Manifest-Version: 1.0
 Module-Name: modular-zombie-4
 Module-Version: 1.0.0
 Module-Requires: catoxidesbattlerebuild>=0.2.0
+# 硬依赖：本包实体定义复用 modular-zombie-3 的模型与贴图
+# （entities/modular_zombie_4.json → zombie3pack:modular_zombie_3）。
+# 不声明时缺包只表现为「僵尸 4 全身不可见」，声明后由加载器直接隔离并说明原因。
+Module-Dependencies: modular-zombie-3
 Module-Type: contentpack
 Module-Entry: example.contentpack.zombie4.Zombie4Pack
 Module-Editor-Schema: editor/animation-contract.json
