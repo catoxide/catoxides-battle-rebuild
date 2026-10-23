@@ -60,6 +60,7 @@ openclaude_config.json
 tools/_spark_src/
 tools/_spark_core/
 tools/_spark_core_src/
+tools/spark-core-fork/
 tools/jvavtest/
 tools/*.class
 1/
@@ -69,3 +70,21 @@ contentpacks-source/*/runs/
 contentpacks-source/*/build/
 contentpacks-source/*/bin/
 contentpacks-source/*/out/
+
+### Local working junk (not for repo) ###
+tmp/
+logs/
+scratch/
+runclient_decomp/
+META-INF/
+example/
+.contentpack-editor/
+.playwright-cli/
+contentpacks_staging/
+compass_rebuild.log
+find_classes.ps1
+tools/spark-core-original.jar.bak
+
+### 调研文档 / 个人任务清单（2026-10 决定不入库） ###
+docs/
+TASKS.md
