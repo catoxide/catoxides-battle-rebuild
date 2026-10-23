@@ -5,10 +5,8 @@
       "element": {
         "element_type": "minecraft:single_pool_element",
         "location": "structure_example:main_hall",
-        "projection": "rigid",
-        "processors": {
-          "processors": []
-        }
+        "processors": "minecraft:empty",
+        "projection": "rigid"
       }
     }
   ],
