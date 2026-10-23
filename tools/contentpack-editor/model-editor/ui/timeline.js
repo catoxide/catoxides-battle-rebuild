@@ -13,6 +13,9 @@
 //   onNotifyAdd(animName, t, script) / onNotifyEdit(animName, t, index, script) / onNotifyRemove(animName, t, index)
 //   onChainTailToHead(src, dst) / onChainHeadToTail(src, dst)
 //   onSim(on) / onSimSpeed(v) / onSimDir(d)
+//   onParamsChange(animName, params) -> null|错误文案   参数声明（增删改，undo 可回退）
+//   onParamPreview(animName, name, value)              仅预览用的参数测试值（不写盘）
+// getState 附带 paramPreview（{name: 测试值}）。
 // 返回：{ refresh(), onTime(t), onPlaying(b), refreshDirty() }
 (function (globalScope) {
     'use strict';
@@ -68,6 +71,9 @@
                         <option value="true">true</option>
                     </select>
                 </label>
+                <!-- 运行时参数（params）：声明即同步契约（见 core/animParams.js / fork docs/RUNTIME_ANIM_PARAMS.md） -->
+                <button class="btn ghost small" id="tlParamsBtn"
+                        title="运行时参数声明（params）：只有声明过的参数才会被收集并同步到客户端；Molang 里用 v.名字 读取">🔧 参数 <span id="tlParamCount">0</span></button>
                 <span class="tl-opt" title="时间线缩放（= 标尺/轨道像素密度；也可在标尺/轨道上 Ctrl+滚轮）">🔍
                     <button class="btn ghost small" id="tlZoomOut" title="缩小">−</button>
                     <span class="tl-zoomval" id="tlZoomVal"></span>
@@ -93,6 +99,18 @@
                     </select>
                     <button class="btn ghost small" id="tlSimDir" title="前/反向">前</button>
                 </span>
+            </div>
+            <!-- 运行时参数面板（🔧 参数 展开；声明 = 名字 + 默认值 + 相位 + 仅预览用的测试值） -->
+            <div class="tl-params" id="tlParams" hidden>
+                <div class="tl-params-head">
+                    <span class="tl-params-title">🔧 运行时参数</span>
+                    <span class="note" id="tlParamsHint" style="font-size:10px"></span>
+                    <span class="ed-spacer"></span>
+                    <button class="btn ghost small" id="tlParamAdd" title="添加一条参数声明">＋ 参数</button>
+                    <button class="btn ghost small" id="tlParamsClose" title="收起面板">✕</button>
+                </div>
+                <datalist id="tlParamNames"></datalist>
+                <div class="tl-params-rows" id="tlParamRows"></div>
             </div>
             <div class="tl-body">
                 <div class="tl-list" id="tlList"></div>
@@ -507,12 +525,130 @@
             });
         }
 
+        // ---------- 运行时参数（params）面板 ----------
+        // 声明即同步契约：只有这里列出的参数才会被服务端收集/同步（见 fork docs/RUNTIME_ANIM_PARAMS.md）。
+        const P = globalScope.AnimParams;
+        const PARAMS_OPEN_KEY = 'me.tlParamsOpen';
+        const escHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const paramsOf = (anim) => (anim && anim.params) || {};
+        let paramsOpen = false;
+        try { paramsOpen = localStorage.getItem(PARAMS_OPEN_KEY) === '1'; } catch (e) { paramsOpen = false; }
+
+        function renderParamCount() {
+            const n = Object.keys(paramsOf(curAnim())).length;
+            $('tlParamCount').textContent = String(n);
+            $('tlParamsBtn').classList.toggle('on', !$('tlParams').hidden);
+        }
+
+        function setParamsOpen(open) {
+            paramsOpen = !!open;
+            $('tlParams').hidden = !paramsOpen;
+            try { localStorage.setItem(PARAMS_OPEN_KEY, paramsOpen ? '1' : '0'); } catch (e) { /* 隐私模式忽略 */ }
+            renderParams();
+        }
+
+        /** 默认值输入 → { value, warning? }（数字串转 number；内建数值参数给非数字时警告） */
+        function parseDefaultInput(raw, meta) {
+            const s = String(raw).trim();
+            if (s === '') return { value: 0, warning: '默认值为空 → 0' };
+            if (/^-?(?:\d+(?:\.\d+)?|\.\d+)$/.test(s)) return { value: Number(s) };
+            if (meta && meta.kind === 'num') {
+                return { value: s, warning: `内置参数 ${meta.name} 是数值型，"${s}" 不是数字（引擎按 0 读）` };
+            }
+            return { value: s };
+        }
+
+        function renderParams() {
+            renderParamCount();
+            const anim = curAnim();
+            const box = $('tlParamRows');
+            if ($('tlParams').hidden) return;
+            const s = state();
+            if (!anim) { box.innerHTML = '<div class="note" style="padding:6px 8px">先选一个动画</div>'; return; }
+            const params = paramsOf(anim);
+            const entries = Object.entries(params);
+            const preview = s.paramPreview || {};
+            $('tlParamsHint').textContent = entries.length
+                ? `已声明 ${entries.length} 个（只有声明的参数会收集/同步；默认值仅在运行时缺值时兜底）`
+                : '还没有声明参数（动画表达式里可读内置参数，见名字下拉）';
+            let html = '';
+            if (entries.length) {
+                html += '<div class="tl-prow tl-phead">' +
+                    '<span>名字</span><span>默认值</span><span>相位</span><span>预览值</span><span>说明</span><span></span>' +
+                    '</div>';
+            }
+            for (const [name, decl] of entries) {
+                const meta = P.builtin(name);
+                const previewRaw = preview[name] == null ? '' : String(preview[name]);
+                html += '<div class="tl-prow" data-name="' + escHtml(name) + '">' +
+                    '<input class="tl-pname" list="tlParamNames" value="' + escHtml(name) + '" spellcheck="false">' +
+                    '<input class="tl-pdef" value="' + escHtml(String(decl.default)) + '">' +
+                    '<select class="tl-pphase">' +
+                    '<option value="tick"' + (decl.phase === 'tick' ? ' selected' : '') + '>tick 20Hz</option>' +
+                    '<option value="substep"' + (decl.phase === 'substep' ? ' selected' : '') + '>substep 60Hz</option>' +
+                    '</select>' +
+                    '<input class="tl-pprev" value="' + escHtml(previewRaw) + '" placeholder="' + escHtml(String(decl.default)) + '" title="仅编辑器预览用，不写盘">' +
+                    '<span class="tl-pdesc" title="' + escHtml(meta ? meta.desc : '自定义参数：需要在业务侧注册 provider，否则运行时一直是默认值') + '">' +
+                    escHtml(meta ? meta.desc : '自定义（需业务 provider）') + '</span>' +
+                    '<button class="btn ghost small tl-pdel" title="删除该参数声明">✕</button>' +
+                    '</div>';
+            }
+            box.innerHTML = html;
+
+            const commit = (mutate) => {
+                const next = mutate(params);
+                const err = api.onParamsChange ? api.onParamsChange(anim.name, next) : '编辑器未接线 onParamsChange';
+                if (err) { setStatus('✗ ' + err); renderParams(); }
+            };
+            box.querySelectorAll('.tl-prow[data-name]').forEach((row) => {
+                const oldName = row.dataset.name;
+                const meta = P.builtin(oldName);
+                const nameInput = row.querySelector('.tl-pname');
+                nameInput.addEventListener('change', (e) => {
+                    const newName = e.target.value.trim();
+                    if (newName === oldName) return;
+                    const r = P.renameDecl(params, oldName, newName);
+                    if (r.error) { setStatus('✗ ' + r.error); renderParams(); return; }
+                    const newMeta = P.builtin(newName);
+                    if (newMeta) r.params[newName] = { default: r.params[newName].default, phase: newMeta.phase };
+                    commit(() => r.params);
+                });
+                row.querySelector('.tl-pdef').addEventListener('change', (e) => {
+                    const parsed = parseDefaultInput(e.target.value, meta);
+                    if (parsed.warning) setStatus('⚠ ' + parsed.warning);
+                    commit((p) => P.withDecl(p, oldName, { default: parsed.value, phase: params[oldName].phase }));
+                });
+                row.querySelector('.tl-pphase').addEventListener('change', (e) => {
+                    commit((p) => P.withDecl(p, oldName, { default: params[oldName].default, phase: e.target.value }));
+                });
+                row.querySelector('.tl-pprev').addEventListener('change', (e) => {
+                    if (api.onParamPreview) api.onParamPreview(anim.name, oldName, e.target.value);
+                });
+                row.querySelector('.tl-pdel').addEventListener('click', () => {
+                    commit((p) => P.withoutDecl(p, oldName));
+                });
+            });
+        }
+
+        function addParam() {
+            const anim = curAnim();
+            if (!anim) { setStatus('✗ 先选一个动画'); return; }
+            const params = paramsOf(anim);
+            let n = 1;
+            while (params['param_' + n] != null) n++;
+            const next = P.withDecl(params, 'param_' + n, { default: 0, phase: 'tick' });
+            const err = api.onParamsChange ? api.onParamsChange(anim.name, next) : '编辑器未接线 onParamsChange';
+            if (err) setStatus('✗ ' + err);
+            else if ($('tlParams').hidden) setParamsOpen(true);
+        }
+
         // ---------- 刷新 ----------
         function refresh() {
             renderList();
             renderRuler();
             renderTracks();
             updateTransport();
+            renderParams();
         }
         // 时间输入框：只在未聚焦时写入（不打断输入）
         function setTimeDisplay(t) {
@@ -558,6 +694,7 @@
         function refreshDirty() {
             renderList();
             updateTransport();
+            renderParams();
         }
 
         // ---------- 事件 ----------
@@ -613,6 +750,13 @@
         $('tlSimToggle').onclick = () => api.onSim(!state().simOn);
         $('tlSimSpeed').onchange = (e) => api.onSimSpeed(parseFloat(e.target.value) || 4.3);
         $('tlSimDir').onclick = () => api.onSimDir(-state().simDir);
+        // 运行时参数面板（声明即同步契约）
+        $('tlParamsBtn').onclick = () => setParamsOpen($('tlParams').hidden);
+        $('tlParamsClose').onclick = () => setParamsOpen(false);
+        $('tlParamAdd').onclick = addParam;
+        $('tlParamNames').innerHTML = P.BUILTIN.map((e) =>
+            `<option value="${e.name}" label="${e.phase} · ${escHtml(e.desc)}"></option>`).join('');
+        setParamsOpen(paramsOpen);
 
         return { refresh, onTime, onPlaying, refreshDirty };
     }

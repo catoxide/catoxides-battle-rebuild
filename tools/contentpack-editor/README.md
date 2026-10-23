@@ -1,7 +1,7 @@
 # ContentPack Editor — 使用手册
 
-> Catoxide's Battle Rebuild 的 ContentPack 可视化编辑器（实体模块 v0.2）。
-> 面向**不会写 Java 的内容创作者**：可视化编辑实体 → 生成 JSON → 一键打包，全程不碰代码。
+> Catoxide's Battle Rebuild 的 ContentPack 可视化编辑器（当前 **v0.2.2**，发布说明见 [RELEASE-0.2.2.md](RELEASE-0.2.2.md)）。
+> 面向**不会写 Java 的内容创作者**：可视化编辑实体/物品/方块 → 生成 JSON → 一键打包，全程不碰代码。
 >
 > **v0.2 起，它是内容包「生成器」**：新建包会一次产出 **MANIFEST 全属性 + `build.gradle`（Gradle 子项目骨架）
 > + 入口类骨架**，并在打包前跑一次**预检**（把「构建成功但加载不了」的坑拦在构建之前）。
@@ -183,6 +183,41 @@ npm start
 
 ---
 
+## 3d. 物品/方块工作流（items/ + blocks/，0.5 新增）
+
+中栏顶部下拉切换到 **物品** 或 **方块**（与实体/结构共用中栏/右栏，页签独立）：
+
+1. **选包 → 选条目 / + 新建**（`items/<id>.json` / `blocks/<id>.json`）
+2. **右栏表单**：
+    - **基本信息**：id / namespace / 中英显示名；物品 = 堆叠上限(1-99)/稀有度/创造栏/防火；
+      方块 = 材质物理（硬度/抗爆/声音/自发光 0-15/摩擦 + 透明/随机刻/需工具/碰撞 开关）、
+      **方块实体**（无 / generic / custom 类名）、掉落 selfDrop、原版数据标签、创造栏、blockItem
+    - **形态与参数**（方块）：**自定义参数**编辑（direction/axis/boolean/int/enum，
+      可「从目录添加」——目录 = 主 mod `block_properties.json`，Java 与编辑器共读同一份；
+      也可自定义新参数）+ 状态组合计数（>4096 拦截）+ **完整方块形态定义**：
+      variants（全部状态组合 → 模型/旋转，表格自动生成，漏组合报错）或
+      multipart（基础层 + when 条件层）
+    - **模型**：cube_all / cube（上侧下可分）/ generated / raw（手写 JSON）+ 实时预览
+    - **预览**：全部导出文件的 JSON 实时预览 + **与基座注册器（BatchContentRegistrar）一致的校验结果**
+3. **保存**（前端同规则校验 → 暂存草稿）→ **导出**（草稿并入正式包 + 该条目原版文件）
+   → **导出原版（全部）**（整包，中栏工具条按钮，含创造栏语言）→ **打包**
+4. **「导出原版」产物**（1.21.1 原版文件，写入包目录，由主 mod 随 jar 挂进资源树）：
+    - `assets/<ns>/models/item/<id>.json`（物品模型 / 方块物品模型）
+    - `assets/<ns>/models/block/<file>.json`（方块模型；variants/multipart 引用的附加模型自动兜底生成）
+    - **`assets/<ns>/blockstate/<id>.json`（完整方块形态：全部状态组合 → 模型，含自定义参数）**
+    - `assets/<ns>/lang/en_us.json` / `zh_cn.json`（**合并写**）
+    - `data/<ns>/loot_table/blocks/<id>.json`（挖掉掉自己）
+    - `data/<ns|minecraft>/tags/block/...json`（原版数据标签，同包合并写）
+5. 注册在 Java 侧：入口类 `register()` 调 `context.registerItemsAndBlocksFromJar()`
+   （「补齐骨架」自动生成/修复该调用；有 items/blocks 但入口类缺调用 → 预检 `E-IB-NO-REGISTER` 拦截）。
+
+> 契约单一真源：主 mod `core/registry/BatchContentRegistrar.java` + `ItemBlockParser.java`；
+> 前端镜像 `src/core/itemBlockSchema.js`（单测 `test/itemBlock.test.js` 32 项覆盖）。
+> 完整规范：`design/ITEM_BLOCK_REGISTRATION.md`。示例包：`contentpacks-source/item-block-test-pack/`
+>（12 组合 variants / multipart / 发光 + generic 方块实体 / 附加模型引用）。
+
+---
+
 ## 4. 文件产出对照（编辑器 → 游戏侧）
 
 | 编辑器产出 | 路径 | 游戏侧解析 |
@@ -192,6 +227,8 @@ npm start
 | 结构蓝图（源格式） | `structures/<structureId>/blueprint.json` | 编辑器「导出原版数据」的输入 |
 | 结构模板 | `data/<ns>/structure/<piece>.nbt` | 原版结构模板加载器 |
 | 模板池 / 结构 / 结构集合 | `data/<ns>/worldgen/...` | 原版 worldgen 注册表（jigsaw 引擎） |
+| 物品/方块定义（源格式） | `items/<id>.json`、`blocks/<id>.json` | `BatchContentRegistrar`（`registerItemsAndBlocksFromJar()`） |
+| 物品/方块原版文件 | `assets/<ns>/models/...`、`assets/<ns>/blockstate/<id>.json`、`lang`、`loot_table`、`tags` | 原版模型/blockstate/语言/掉落/标签加载器 |
 | 打包产物 | `contentpacks/<Module-Name>.jar` | `ContentPackLoader` |
 | 包声明 + 构建骨架 | `MANIFEST.MF`、`build.gradle`、`java/<入口类>.java` | 前者被 `ContentPackManifest` 解析；后两者供 `gradlew :packs:<目录>:contentpackJar` 构建 |
 
@@ -217,7 +254,8 @@ npm start
 
 - 技术栈：Electron（Node + 原生 JS，无框架）+ Three.js（3D 预览，本地捆绑 `src/lib/three.module.js`）
 - 与主 mod 通信：纯文件契约（JSON/NBT），语言完全解耦
-- 已内置内容类型：实体（4 页签）、建筑结构（5 页签，含 3D 体素预览 / 体素编辑 / 拼合诊断 / 结构导航 / 圈地读取）
+- 已内置内容类型：实体（4 页签）、建筑结构（5 页签，含 3D 体素预览 / 体素编辑 / 拼合诊断 / 结构导航 / 圈地读取）、
+  物品 / 方块（基本信息 / 形态与参数（自定义参数 + blockstate）/ 模型 / 预览，含原版文件导出）
 - 后续规划：拖拽分配骨骼、schema 驱动（内容包贡献编辑页面）、loottable 模块、游戏内圈地桥接（见 `design/STRUCTURE_BRIDGE_FEASIBILITY.md`）
 
 ---

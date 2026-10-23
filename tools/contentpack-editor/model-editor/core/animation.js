@@ -4,7 +4,8 @@
 // Animation { name, loop: 'once'|'hold_on_last_frame'|'true',
 //             durationSec,                    // 永远显式 = max 关键帧时间（导出时重算）
 //             tracks: BoneTrack[],
-//             timeline?: [{ timeSec, scripts: [String] }] }  // W7：过点 MoLang 脚本（OAnimation.timeline）
+//             timeline?: [{ timeSec, scripts: [String] }],  // W7：过点 MoLang 脚本（OAnimation.timeline）
+//             params?: { [name]: { default, phase } } }     // 运行时参数声明（见 animParams.js）
 // BoneTrack { bone, rotation?: Keyframe[], position?: Keyframe[], scale?: Keyframe[] }
 // Keyframe  { timeSec, post: Vec3|String|Number, pre?: Vec3|String|Number,
 //             lerpMode: 'linear'|'catmullrom'|<未知值透传> }
@@ -17,17 +18,23 @@
 
 // 双模式：node（require/module.exports）+ 浏览器经典 script（self.Animation）
 (function (globalScope) {
+const isNode = typeof module === 'object' && module.exports;
+const P = isNode ? require('./animParams') : globalScope.AnimParams;
 const LOOPS = ['once', 'hold_on_last_frame', 'true'];
 const CHANNELS = ['rotation', 'position', 'scale'];
 const LERP_MODES = ['linear', 'catmullrom'];
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const isVec3 = (v) => Array.isArray(v) && v.length === 3 && v.every(isNum);
-/** 关键帧值形态（Vec3 / 单值 / MoLang 字符串）。 */
-const isValue = (v) => isVec3(v) || typeof v === 'string' || isNum(v);
+/** 每分量数值或 MoLang（引擎 Vector3js = 三分量各可为数值或 MoLang；运行时参数常用 `["v.pitch * -0.5", 0, 0]`）。 */
+const isMolangVec = (v) => Array.isArray(v) && v.length === 3
+    && v.every((x) => isNum(x) || typeof x === 'string');
+/** 关键帧值形态（Vec3 / 分量含 MoLang 的三元组 / 单值 / MoLang 字符串）。 */
+const isValue = (v) => isVec3(v) || typeof v === 'string' || isNum(v) || isMolangVec(v);
 /** 值形态是否一致（pre 与 post 必须同形态；引擎 Vector3js = 三分量各可为数值或 MoLang）。 */
 function valueKind(v) {
     if (isVec3(v)) return 'vec3';
+    if (isMolangVec(v)) return 'molangVec';
     if (typeof v === 'string') return 'string';
     if (isNum(v)) return 'num';
     return null;
@@ -52,12 +59,18 @@ function createKeyframe(timeSec, post, lerpMode = 'linear', pre = null) {
 }
 
 /** 建动画。durationSec 缺省时按 max 关键帧时间计算。
- *  W7：timeline 可选 = [{ timeSec, scripts: [String] }]（过点 MoLang 脚本）。 */
-function createAnimation(name, loop = 'once', tracks = [], timeline = null) {
+ *  W7：timeline 可选 = [{ timeSec, scripts: [String] }]（过点 MoLang 脚本）。
+ *  params 可选 = 运行时参数声明 { name: {default, phase} }（见 animParams.js）。 */
+function createAnimation(name, loop = 'once', tracks = [], timeline = null, params = null) {
     if (!name || typeof name !== 'string') throw new Error('动画名缺失');
     if (!LOOPS.includes(loop)) throw new Error(`loop 非法: ${loop}`);
     const anim = { name, loop, durationSec: 0, tracks: tracks.slice() };
     if (timeline != null) anim.timeline = normalizeTimeline(timeline);
+    if (params != null) {
+        const { params: normalized, errors } = P.normalizeParams(params);
+        if (errors.length) throw new Error(`params 非法: ${errors.join('; ')}`);
+        if (Object.keys(normalized).length) anim.params = normalized;
+    }
     anim.durationSec = computeDuration(anim);
     return anim;
 }
@@ -115,6 +128,7 @@ function cloneKeyframe(k) {
 function normalizeAnimation(anim) {
     const out = { name: anim.name, loop: anim.loop, durationSec: 0, tracks: [] };
     if (anim.override === true) out.override = true; // override_previous_animation 透传
+    if (anim.params && Object.keys(anim.params).length > 0) out.params = P.cloneParams(anim.params);
     for (const track of anim.tracks || []) {
         const newTrack = { bone: track.bone };
         let hasKey = false;
@@ -157,6 +171,12 @@ function validateAnimation(anim, modelBoneNames) {
     if (!anim || typeof anim !== 'object') return { errors: ['动画为空'], warnings };
     if (!anim.name || typeof anim.name !== 'string') errors.push('动画名缺失');
     if (!LOOPS.includes(anim.loop)) errors.push(`loop 非法: ${anim.loop}`);
+    // 运行时参数声明（声明即契约；非法名字/相位导出会被拦截）
+    if (anim.params != null) {
+        const pv = P.validateParams(anim.params);
+        errors.push(...pv.errors);
+        warnings.push(...pv.warnings);
+    }
 
     let maxTime = 0;
     const seenBones = new Set();
@@ -177,7 +197,10 @@ function validateAnimation(anim, modelBoneNames) {
                 prev = k.timeSec;
                 if (isNum(k.timeSec) && k.timeSec > maxTime) maxTime = k.timeSec;
                 if (!isValue(k.post)) errors.push(`骨骼 ${track.bone} ${ch}: post 非法`);
-                else if (typeof k.post === 'string') warnings.push(`骨骼 ${track.bone} ${ch} t=${k.timeSec}: MoLang 表达式（v1 只读）`);
+                else if (typeof k.post === 'string') warnings.push(`骨骼 ${track.bone} ${ch} t=${k.timeSec}: MoLang 表达式（只读透传，游戏内由引擎求值）`);
+                else if (Array.isArray(k.post) && k.post.some((x) => typeof x === 'string')) {
+                    warnings.push(`骨骼 ${track.bone} ${ch} t=${k.timeSec}: 含 MoLang 分量的三元组（只读透传，游戏内由引擎求值）`);
+                }
                 // W7：pre 必须是合法值（引擎不要求 pre/post 同形态，各自都是 Vector3js；
                 // 形态不一致只影响插值，evaluate 按不插值容错）
                 if (k.pre != null && valueKind(k.pre) == null) {

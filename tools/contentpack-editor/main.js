@@ -58,12 +58,17 @@ const Staging = require('./src/core/staging');
 const StructureSchema = require('./src/core/structureSchema');
 const VanillaExport = require('./src/core/vanillaExport');
 const VanillaImport = require('./src/core/vanillaImport');
+const ItemBlockSchema = require('./src/core/itemBlockSchema');
+const ItemBlockExport = require('./src/core/itemBlockExport');
 const RegionImport = require('./src/core/regionImport');
 const McAssets = require('./src/core/mcAssets');
 const McBlocks = require('./src/core/mcBlocks');
 const Scaffold = require('./src/core/packScaffold');
 const Preflight = require('./src/core/packPreflight');
 const JarReader = require('./src/core/jarReader');
+const PackStatus = require('./src/core/packStatus');
+const GitHistory = require('./src/core/gitHistory');
+const CommandRunner = require('./src/core/commandRunner');
 const EditorContract = require('./src/core/editorContract');
 const EditorApi = require('./src/core/editorApi');
 const SparkScaffold = require('./model-editor/core/sparkScaffold');
@@ -178,6 +183,7 @@ function validOverrideDir(p) {
 function applyProjectRoot(root, source) {
     if (source) ROOT_SOURCE = source;
     ROOT = root;
+    try { GitHistory.resetRepoCache(); } catch { /* 换根后 git 快照作废 */ }
     // W6.1：包库/新建包目录可被配置覆盖（默认 <项目根>/contentpacks-source）
     const cfg = readConfig();
     const defaultPacksRoot = path.join(root, 'contentpacks-source');
@@ -1499,6 +1505,8 @@ ipcMain.handle('pack:create', async (event, payload = {}) => {
             extraDeps,
         });
         fs.mkdirSync(path.join(dir, 'entities'), { recursive: true });
+        fs.mkdirSync(path.join(dir, 'items'), { recursive: true });
+        fs.mkdirSync(path.join(dir, 'blocks'), { recursive: true });
         const written = [];
         for (const [rel, content] of Object.entries(files)) {
             const full = path.join(dir, rel);
@@ -1598,20 +1606,28 @@ ipcMain.handle('pack:ensureScaffold', async (event, packDir, opts = {}) => {
         const entry = (manifest['Module-Entry'] || '').trim();
         if (entry) {
             const loc = Scaffold.entryLocation(entry);
-            if (loc && !fs.existsSync(path.join(packDir, loc.path))) {
-                const entityIds = listEntityIds(packDir);
-                const src = Scaffold.renderEntryClass({
-                    moduleEntry: entry,
-                    packId: manifest['Module-Name'].replace(/-/g, '_'),
-                    displayName: manifest['Module-Name'],
-                    version: manifest['Module-Version'] || '1.0.0',
-                    entityIds,
-                });
-                if (src) {
-                    const full = path.join(packDir, loc.path);
-                    fs.mkdirSync(path.dirname(full), { recursive: true });
-                    fs.writeFileSync(full, src, 'utf-8');
-                    created.push(loc.path);
+            if (loc) {
+                const full = path.join(packDir, loc.path);
+                const ib = listItemBlockIds(packDir);
+                const hasItemBlocks = ib.itemIds.length + ib.blockIds.length > 0;
+                const srcText = fs.existsSync(full) ? fs.readFileSync(full, 'utf-8') : null;
+                // 重生成条件：不存在，或 有 items/blocks 但旧骨架没有批量注册调用（死数据修复）
+                const needsRegen = !srcText || (hasItemBlocks && !srcText.includes('registerItemsAndBlocksFromJar'));
+                if (needsRegen) {
+                    const src = Scaffold.renderEntryClass({
+                        moduleEntry: entry,
+                        packId: manifest['Module-Name'].replace(/-/g, '_'),
+                        displayName: manifest['Module-Name'],
+                        version: manifest['Module-Version'] || '1.0.0',
+                        entityIds: listEntityIds(packDir),
+                        itemIds: ib.itemIds,
+                        blockIds: ib.blockIds,
+                    });
+                    if (src) {
+                        fs.mkdirSync(path.dirname(full), { recursive: true });
+                        fs.writeFileSync(full, src, 'utf-8');
+                        created.push(loc.path);
+                    }
                 }
             }
         }
@@ -1623,6 +1639,24 @@ ipcMain.handle('pack:ensureScaffold', async (event, packDir, opts = {}) => {
         return { ok: false, error: String(e.message || e) };
     }
 });
+
+/** 包内 items/*.json + blocks/*.json 的 id 列表 */
+function listItemBlockIds(packDir) {
+    const res = { itemIds: [], blockIds: [] };
+    const scan = (dirName, out) => {
+        const dir = path.join(packDir, dirName);
+        if (!fs.existsSync(dir)) return;
+        for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.json'))) {
+            try {
+                const obj = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf-8'));
+                if (obj && obj.id) out.push(String(obj.id));
+            } catch { /* 坏 JSON 由预检报告 */ }
+        }
+    };
+    scan('items', res.itemIds);
+    scan('blocks', res.blockIds);
+    return res;
+}
 
 /** 包内 entities/*.json 的 id 列表 */
 function listEntityIds(packDir) {
@@ -2103,6 +2137,211 @@ ipcMain.handle('structure:exportVanillaAll', async (event, packDir) => {
     }
 });
 
+// --- 物品/方块（items/*.json + blocks/*.json → 基座批量注册 + 原版导出）---
+// 契约：src/main/java/.../core/registry/（BatchContentRegistrar 等）
+//       src/main/resources/assets/catoxidesbattlerebuild/editor/block_properties.json（参数目录单一真源）
+
+const ITEM_BLOCK_CATALOG_REL = path.join('src', 'main', 'resources', 'assets', 'catoxidesbattlerebuild', 'editor', 'block_properties.json');
+
+/** 读主 mod 资源里的参数目录（项目根就绪时；失败回退编辑器内置副本） */
+function readBlockPropertyCatalog() {
+    try {
+        const root = PACKS_SOURCE_DIR ? path.dirname(PACKS_SOURCE_DIR) : null;
+        if (root) {
+            const file = path.join(root, ITEM_BLOCK_CATALOG_REL);
+            if (fs.existsSync(file)) {
+                const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
+                if (Array.isArray(parsed.properties)) return parsed.properties;
+            }
+        }
+    } catch (e) {
+        Logger.warn('itemblock', '参数目录读取失败，回退内置副本: ' + (e.message || e));
+    }
+    return ItemBlockSchema.BUILTIN_CATALOG;
+}
+
+/** 扫描包目录 items/*.json + blocks/*.json（仅一级）→ [{kind, id, namespace, displayName, file}] */
+function listItemBlockDefs(packDir) {
+    const out = [];
+    for (const [kind, dirName] of [['item', 'items'], ['block', 'blocks']]) {
+        const dir = path.join(packDir, dirName);
+        if (!fs.existsSync(dir)) continue;
+        for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+            const file = path.join(dir, f);
+            let def = null;
+            try { def = JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { continue; }
+            if (!def || !def.id) continue;
+            const lang = def.lang && typeof def.lang === 'object' ? def.lang : {};
+            out.push({
+                kind,
+                id: def.id,
+                namespace: def.namespace || '',
+                displayName: lang.zh_cn || lang.en_us || def.id,
+                file: path.relative(packDir, file),
+            });
+        }
+    }
+    return out;
+}
+
+/** 读包内某个物品/方块定义 */
+function readItemBlockDef(packDir, kind, id) {
+    const dirName = kind === 'item' ? 'items' : 'blocks';
+    const file = path.join(packDir, dirName, id + '.json');
+    if (!fs.existsSync(file)) return null;
+    const def = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    return def && typeof def === 'object' ? def : null;
+}
+
+/** 删包内某个物品/方块定义 */
+function deleteItemBlockDef(packDir, kind, id) {
+    const dirName = kind === 'item' ? 'items' : 'blocks';
+    const file = path.join(packDir, dirName, id + '.json');
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+    return { deleted: file };
+}
+
+ipcMain.handle('itemblock:catalog', async () => {
+    try {
+        return { ok: true, data: readBlockPropertyCatalog() };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('itemblock:list', async (event, packDir) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        const items = listItemBlockDefs(packDir);
+        const staged = Staging.listStaged(packNameOf(packDir)).filter((i) => i.kind === 'item' || i.kind === 'block');
+        for (const s of staged) {
+            const key = s.kind + ':' + s.id;
+            const existing = items.find((x) => x.kind === s.kind && x.id === s.id);
+            if (existing) {
+                existing.staged = true;
+            } else {
+                const def = Staging.readStagedItemBlock(packNameOf(packDir), s.kind, s.id);
+                if (def) {
+                    const lang = def.lang && typeof def.lang === 'object' ? def.lang : {};
+                    items.push({ kind: s.kind, id: s.id, namespace: def.namespace || '', displayName: lang.zh_cn || lang.en_us || s.id, file: '(staged)', staged: true });
+                }
+            }
+        }
+        return { ok: true, data: items };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('itemblock:read', async (event, packDir, kind, id) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        const staged = Staging.readStagedItemBlock(packNameOf(packDir), kind, id);
+        if (staged) {
+            return { ok: true, data: Object.assign({}, staged, { _staged: true }) };
+        }
+        return { ok: true, data: readItemBlockDef(packDir, kind, id) };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('itemblock:save', async (event, packDir, kind, def) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        if (kind !== 'item' && kind !== 'block') return { ok: false, error: 'kind 必须是 item 或 block' };
+        const check = kind === 'item' ? ItemBlockSchema.validateItem(def) : ItemBlockSchema.validateBlock(def);
+        if (!check.valid) {
+            return { ok: false, error: (kind === 'item' ? '物品' : '方块') + '校验失败:\n' + check.errors.join('\n') };
+        }
+        const clean = {};
+        for (const [k, v] of Object.entries(def || {})) {
+            if (!k.startsWith('_')) clean[k] = v;
+        }
+        const result = Staging.stageItemBlock(packNameOf(packDir), kind, clean);
+        return { ok: true, data: Object.assign({}, result, { staged: true }) };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('itemblock:delete', async (event, packDir, kind, id) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        const result = deleteItemBlockDef(packDir, kind, id);
+        Staging.removeStagedItemBlock(packNameOf(packDir), kind, id);
+        return { ok: true, data: result };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('itemblock:exportVanilla', async (event, packDir, kind, id) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        // 暂存优先：草稿未导出时以草稿内容为准
+        const def = Staging.readStagedItemBlock(packNameOf(packDir), kind, id) || readItemBlockDef(packDir, kind, id);
+        if (!def) return { ok: false, error: '找不到 ' + kind + ' ' + id + '（草稿与正式包都没有）' };
+        // 标签与同包其它方块合并写
+        const allBlocks = listItemBlockDefs(packDir).filter((x) => x.kind === 'block')
+            .map((x) => Staging.readStagedItemBlock(packNameOf(packDir), 'block', x.id) || readItemBlockDef(packDir, 'block', x.id))
+            .filter(Boolean);
+        const r = kind === 'item'
+            ? ItemBlockExport.exportItem(packDir, def)
+            : ItemBlockExport.exportBlock(packDir, def, allBlocks);
+        return { ok: r.ok, data: r, error: r.ok ? undefined : r.error };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('itemblock:exportVanillaAll', async (event, packDir) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        // 草稿先并入正式包（与结构 build() 的串联一致：stagingExport → exportVanillaAll）
+        const stagedCount = Staging.listStaged(packNameOf(packDir))
+            .filter((i) => i.kind === 'item' || i.kind === 'block').length;
+        let stagedExported = 0;
+        if (stagedCount > 0) {
+            const r = Staging.exportStaged(packNameOf(packDir), packDir);
+            stagedExported = r.exported;
+        }
+        const items = listItemBlockDefs(packDir).filter((x) => x.kind === 'item')
+            .map((x) => readItemBlockDef(packDir, 'item', x.id)).filter(Boolean);
+        const blocks = listItemBlockDefs(packDir).filter((x) => x.kind === 'block')
+            .map((x) => readItemBlockDef(packDir, 'block', x.id)).filter(Boolean);
+        if (!items.length && !blocks.length) {
+            return { ok: true, data: { items: [], blocks: [], files: [], problems: [], stagedExported } };
+        }
+        let packName = null;
+        try {
+            const mf = path.join(packDir, 'MANIFEST.MF');
+            if (fs.existsSync(mf)) {
+                const m = fs.readFileSync(mf, 'utf-8').match(/^Module-Name:\s*(.+)$/m);
+                if (m) packName = m[1].trim();
+            }
+        } catch { /* 包名缺失时创造栏语言用目录名兜底 */ }
+        const r = ItemBlockExport.exportAll(packDir, {
+            items, blocks,
+            packId: packName || path.basename(packDir),
+            packDisplayName: packName || path.basename(packDir),
+        });
+        return {
+            ok: r.ok,
+            data: Object.assign({}, r.report, { stagedExported }),
+            error: r.ok ? undefined : r.report.problems.join('\n'),
+        };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
 // --- 部位配置 ---
 ipcMain.handle('health:read', async (event, packDir, namespace, entityId) => {
     try {
@@ -2448,15 +2687,25 @@ ipcMain.handle('pack:build', async (event, { packDir, outJarName, extraDeps } = 
             };
         }
 
+        // 0.2.2：Gradle 输出实时推给渲染端（'pack:output'）。
+        // 只发原文，不加工、不截断；渲染端自己封顶。
+        const emit = (kind, text) => {
+            try {
+                const wc = event.sender;
+                if (wc && !wc.isDestroyed()) wc.send('pack:output', { kind, text, packDir: dirName, at: new Date().toISOString() });
+            } catch { /* 窗口已关等情形：静默，绝不影响构建 */ }
+        };
+
         // ③ Gradle 优先
         let mode = 'gradle';
         let stdout = '';
         let stderr = '';
         const task = `${Scaffold.gradleProjectPath(dirName)}:contentpackJar`;
         const gradlew = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
+        emit('stdout', `$ ${gradlew} ${task} --console=plain\n（工作目录 ${ROOT}）\n`);
         if (hasGradlew) {
             try {
-                const r = await runCommand(gradlew, [task, '--console=plain'], { cwd: ROOT });
+                const r = await runCommand(gradlew, [task, '--console=plain'], { cwd: ROOT, onOutput: emit });
                 stdout = r.stdout;
                 stderr = r.stderr;
             } catch (e) {
@@ -2472,7 +2721,7 @@ ipcMain.handle('pack:build', async (event, { packDir, outJarName, extraDeps } = 
                 mode = 'ps1-fallback';
                 stderr = `Gradle 构建失败，回退到 build-pack.ps1：\n${e.message}\n`;
                 const outJar = path.join('contentpacks', outJarName || (preflight.manifest['Module-Name'] + '.jar'));
-                const r = await runBuildScript(path.relative(ROOT, packDir), outJar);
+                const r = await runBuildScript(path.relative(ROOT, packDir), outJar, { onOutput: emit });
                 stdout = r.stdout;
                 stderr += r.stderr;
             }
@@ -2480,7 +2729,7 @@ ipcMain.handle('pack:build', async (event, { packDir, outJarName, extraDeps } = 
             mode = 'ps1-fallback';
             stderr = '未找到 gradlew，使用 build-pack.ps1。\n';
             const outJar = path.join('contentpacks', outJarName || (preflight.manifest['Module-Name'] + '.jar'));
-            const r = await runBuildScript(path.relative(ROOT, packDir), outJar);
+            const r = await runBuildScript(path.relative(ROOT, packDir), outJar, { onOutput: emit });
             stdout = r.stdout;
             stderr += r.stderr;
         }
@@ -2526,48 +2775,165 @@ ipcMain.handle('pack:build', async (event, { packDir, outJarName, extraDeps } = 
     }
 });
 
-/** 通用命令执行：捕获 stdout/stderr，非 0 退出即 reject */
-function runCommand(cmd, args, opts = {}) {
-    return new Promise((resolve, reject) => {
-        // REVIEW-S7：去掉 Windows 的 shell:true —— 经 cmd.exe 解析时参数中的 & | ^ < >
-        // 均可注入（已实证：包目录名 'x & calc' 点打包即执行任意命令）。
-        // 直接 spawn 无需 shell：Windows 的 CreateProcess 对 .bat/.cmd 自带 cmd 包装，
-        // 参数由 Node 以独立 argv 传入并整体加引号，元字符保持字面量。
-        const child = spawn(cmd, args, Object.assign({ windowsHide: true }, opts));
-        let stdout = '';
-        let stderr = '';
-        child.stdout.on('data', (d) => { stdout += d.toString(); });
-        child.stderr.on('data', (d) => { stderr += d.toString(); });
-        child.on('close', (code) => {
-            if (code === 0) resolve({ code, stdout, stderr });
-            else reject(new Error(`${cmd} 退出码 ${code}\n${stdout}\n${stderr}`));
-        });
-        child.on('error', (err) => reject(err));
-    });
+// ==================== 0.2.2 部署四态核对 + 内容包 on/off ====================
+// 由来：10/24 的三个症状（启动崩溃 / 挥剑没变 / zombie4 整个看不见）复盘出同一根因家族 ——
+// 「源码、产物 jar、运行目录副本、spark 磁盘缓存」四件事各说各话，而编辑器只看得见第一件。
+// 这里把四态一次测平（md5 / mtime / 条目数全部读盘算出，不做推算），并提供基于
+// loader 既有目录规则的开关（jar 移进 contentpacks/disabled/ = 关；顶层 *.jar 才被发现）。
+function packStatusCtx() {
+    return {
+        root: ROOT,
+        packsSourceDir: PACKS_SOURCE_DIR,
+        packsOutDir: PACKS_OUT_DIR,
+        newPackDir: NEW_PACK_DIR,
+    };
 }
 
-function runBuildScript(sourceDir, outJar) {
-    return new Promise((resolve, reject) => {
-        const args = [
-            '-ExecutionPolicy', 'Bypass',
-            '-File', BUILD_SCRIPT,
-            '-SourceDir', sourceDir,
-            '-OutJar', outJar,
-        ];
-        const child = spawn('powershell', args, { cwd: ROOT, windowsHide: true });
-        let stdout = '';
-        let stderr = '';
-        child.stdout.on('data', (d) => { stdout += d.toString(); });
-        child.stderr.on('data', (d) => { stderr += d.toString(); });
-        child.on('close', (code) => {
-            if (code === 0) {
-                resolve({ code, stdout, stderr });
-            } else {
-                reject(new Error(`打包失败 (exit ${code})\n${stdout}\n${stderr}`));
-            }
-        });
-        child.on('error', (err) => reject(err));
-    });
+ipcMain.handle('packStatus:inspect', async (event, opts = {}) => {
+    try {
+        if (!ROOT || !PACKS_SOURCE_DIR) return { ok: false, error: '尚未设置项目根目录（顶栏「📁 连接工程…」）' };
+        const only = Array.isArray(opts && opts.only) ? opts.only.filter((s) => typeof s === 'string' && /^[A-Za-z0-9._-]+$/.test(s)) : null;
+        const data = PackStatus.inspectAll(packStatusCtx(), { only });
+        return { ok: true, data };
+    } catch (e) {
+        Logger.error('packStatus', `inspect 失败: ${e && e.stack ? e.stack : e}`);
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('packStatus:setEnabled', async (event, { jarName, enabled } = {}) => {
+    try {
+        if (!ROOT || !PACKS_OUT_DIR) return { ok: false, error: '尚未设置项目根目录' };
+        const data = PackStatus.setEnabled(packStatusCtx(), jarName, !!enabled);
+        Logger.info('packStatus', `on/off ${jarName} → ${enabled ? '开' : '关'}：${(data.actions || []).join(' / ')}`);
+        return { ok: data.ok, data, error: data.error };
+    } catch (e) {
+        Logger.error('packStatus', `setEnabled(${jarName}) 失败: ${e && e.stack ? e.stack : e}`);
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('packStatus:install', async (event, { jarName } = {}) => {
+    try {
+        if (!ROOT || !PACKS_OUT_DIR) return { ok: false, error: '尚未设置项目根目录' };
+        const data = PackStatus.installToRun(packStatusCtx(), jarName);
+        Logger.info('packStatus', `安装 ${jarName}：写入 ${(data.written || []).length} 处，跳过 ${(data.skipped || []).length} 处`);
+        return { ok: data.ok, data, error: data.error };
+    } catch (e) {
+        Logger.error('packStatus', `install(${jarName}) 失败: ${e && e.stack ? e.stack : e}`);
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('packStatus:clearCache', async (event, { jarName, labels } = {}) => {
+    try {
+        if (!ROOT) return { ok: false, error: '尚未设置项目根目录' };
+        const data = PackStatus.clearSparkCache(packStatusCtx(), jarName, Array.isArray(labels) ? labels : null);
+        Logger.info('packStatus', `清缓存 ${jarName}：删 ${((data.deleted || []).length)} 个，冲突 ${((data.conflicts || []).length)} 个`);
+        return { ok: data.ok, data, error: data.error };
+    } catch (e) {
+        Logger.error('packStatus', `clearCache(${jarName}) 失败: ${e && e.stack ? e.stack : e}`);
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+// ==================== 0.2.2 第 2 步：提交回溯（只读 git） ====================
+// 边界（刻意的）：本组通道只会跑 rev-parse / log / show / diff / status / ls-files / check-ignore。
+// core/gitHistory.js 里没有、也不允许有 commit / checkout / restore / reset / clean ——
+// 回溯「动作」属于第 3 步，且按用户定的规则必须先把当前状态归档或强制 checkpoint 提交。
+function gitCtx() { return { root: ROOT }; }
+
+/** 绝对路径 → 仓库内相对路径；仓库外/换算失败时给可读原因（不抛） */
+function relForGit(abs) {
+    if (!ROOT) return { ok: false, reason: '尚未设置项目根目录（顶栏「📁 连接工程…」）' };
+    if (!abs || typeof abs !== 'string') return { ok: false, reason: '路径为空' };
+    try { return GitHistory.toRepoRel(gitCtx(), abs); }
+    catch (e) { return { ok: false, reason: `${abs}：${String(e.message || e)}` }; }
+}
+
+/** 从渲染端传来的绝对路径（包目录 + 产物 jar）算出 git 路径集合 */
+function gitPathsFor(payload = {}) {
+    const rels = [];
+    const notes = [];
+    for (const abs of [payload.packDir, payload.jarPath]) {
+        if (!abs) continue;
+        const r = relForGit(abs);
+        if (r.ok && r.rel) { if (!rels.includes(r.rel)) rels.push(r.rel); }
+        else if (r.ok) notes.push(`${abs} 就是仓库根，未纳入核对`);
+        else notes.push(r.reason || `${abs} 无法换算为仓库内路径`);
+    }
+    return { rels, notes };
+}
+
+ipcMain.handle('git:info', async () => {
+    try {
+        if (!ROOT) return { ok: false, error: '尚未设置项目根目录（顶栏「📁 连接工程…」）' };
+        return { ok: true, data: GitHistory.repoInfo(gitCtx()) };
+    } catch (e) {
+        Logger.error('git', `info 失败: ${e && e.stack ? e.stack : e}`);
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('git:history', async (event, payload = {}) => {
+    try {
+        if (!ROOT) return { ok: false, error: '尚未设置项目根目录（顶栏「📁 连接工程…」）' };
+        const { rels, notes } = gitPathsFor(payload);
+        if (!rels.length) return { ok: false, error: '该包没有可核对的 git 路径：' + (notes.join('；') || '未知原因') };
+        const data = GitHistory.history(gitCtx(), { paths: rels, limit: payload.limit });
+        data.notes = notes;
+        data.pathsRequested = rels;
+        Logger.info('git', `history(${rels.join(', ')}) → ${data.ok ? (data.commits || []).length + ' 条' : '失败：' + (data.note || '')}`);
+        return { ok: data.ok, data, error: data.ok ? null : (data.note || 'git log 失败') };
+    } catch (e) {
+        Logger.error('git', `history 失败: ${e && e.stack ? e.stack : e}`);
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('git:commit', async (event, payload = {}) => {
+    try {
+        if (!ROOT) return { ok: false, error: '尚未设置项目根目录（顶栏「📁 连接工程…」）' };
+        const { rels, notes } = gitPathsFor(payload);
+        if (!rels.length) return { ok: false, error: '该包没有可核对的 git 路径：' + (notes.join('；') || '未知原因') };
+        const data = GitHistory.commitDetail(gitCtx(), { paths: rels, sha: payload.sha, maxBytes: payload.maxBytes });
+        data.notes = notes;
+        return { ok: data.ok, data, error: data.ok ? null : (data.note || 'git show 失败') };
+    } catch (e) {
+        Logger.error('git', `commit(${payload && payload.sha}) 失败: ${e && e.stack ? e.stack : e}`);
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('git:workingTree', async (event, payload = {}) => {
+    try {
+        if (!ROOT) return { ok: false, error: '尚未设置项目根目录' };
+        const { rels, notes } = gitPathsFor(payload);
+        if (!rels.length) return { ok: false, error: '该包没有可核对的 git 路径：' + (notes.join('；') || '未知原因') };
+        const data = GitHistory.workingTree(gitCtx(), { paths: rels });
+        data.notes = notes;
+        return { ok: data.ok, data, error: data.ok ? null : (data.note || 'git status 失败') };
+    } catch (e) {
+        Logger.error('git', `workingTree 失败: ${e && e.stack ? e.stack : e}`);
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+/** 通用命令执行：实现搬到 core/commandRunner.js（那里可被单测覆盖，含实时输出回调）。
+ *  0.2.2：opts.onOutput(kind, text) 把 Gradle 输出实时推给渲染进程 —— 构建是分钟级的事，
+ *  只给终态输出的话用户会以为按钮坏了。 */
+function runCommand(cmd, args, opts = {}) {
+    return CommandRunner.runCommand(cmd, args, opts);
+}
+
+/** 回退打包脚本（build-pack.ps1）；同样支持 opts.onOutput 流式输出 */
+function runBuildScript(sourceDir, outJar, opts = {}) {
+    return CommandRunner.runCommand('powershell', [
+        '-ExecutionPolicy', 'Bypass',
+        '-File', BUILD_SCRIPT,
+        '-SourceDir', sourceDir,
+        '-OutJar', outJar,
+    ], Object.assign({ cwd: ROOT, failPrefix: '打包失败' }, opts));
 }
 
 // 暴露核心库给渲染进程（元数据/模板，无文件操作的部分）

@@ -7,6 +7,7 @@
     const $ = (id) => document.getElementById(id);
     const M = self.Model, U = self.Undo, SC = self.SparkCodec, SS = self.SparkScaffold, BB = self.BBModel;
     const Ev = self.Evaluate, Kf = self.KeyframeOps, Ch = self.Chaining, Tk = self.Tick, AN = self.Animation;
+    const AP = self.AnimParams; // 运行时参数声明（params）模型/校验
 
     // ---------- 视口 + gizmo ----------
     let gizmo = null;
@@ -60,6 +61,7 @@
         simOn: false,        // 移动视觉模拟（跑步机）
         simSpeed: 4.3,       // blocks/s（走路 4.3 / 疾跑 5.6）
         simDir: 1,           // 1 = 前向（网格向后流）/ -1 = 反向
+        paramPreview: {},    // 运行时参数预览测试值 {name: 数字/字符串}（会话级不落盘；覆盖动画 params 默认值）
     };
 
     /** W3.5-②：打开已有模型时，从包契约读取 model.texture 并应用（无契约/无贴图 = 静默跳过） */
@@ -691,7 +693,7 @@
         let t = doc.animTime;
         if (a.loop === 'true' && a.durationSec > 0) t = t % a.durationSec;
         else if (a.durationSec > 0) t = Math.min(t, a.durationSec);
-        vp.setAttachmentPose(Ev.evaluatePose(ins.geo, a, t));
+        vp.setAttachmentPose(evalAnimPose(ins.geo, a, t));
     }
 
     /** 左栏 🧲 接口面板：locator 清单（含"模型根"伪项）+ 选中态 + 插入/移除按钮 */
@@ -1980,6 +1982,7 @@
         doc.animRel = null;
         doc.animDirty = new Set();
         doc.animDeleted = new Set();
+        doc.paramPreview = {};
         virtualGeoCache = null; // 换模型：虚拟几何缓存失效（骨集合变了）
         const cur = doc.currentAnim;
         doc.currentAnim = null;
@@ -2031,12 +2034,17 @@
         setStatus(`动画: ${name}（${anim.loop} · ${Tk.formatTime(anim.durationSec)}s）`);
     }
 
+    /** 动画姿态求值（带运行时参数预览：动画 params 默认值 + doc.paramPreview 覆盖值） */
+    function evalAnimPose(model, anim, t) {
+        return Ev.evaluatePose(model, anim, t, { paramValues: doc.paramPreview || {} });
+    }
+
     /** 姿态显示：动画模式 = evaluatePose 绝对姿态；否则 = 静态模型 */
     function applyAnimDisplay() {
         if (!doc.animMode || !doc.model) return;
         const anim = currentAnimObject();
         if (anim) {
-            vp.setPose(Ev.evaluatePose(doc.model, anim, doc.animTime));
+            vp.setPose(evalAnimPose(doc.model, anim, doc.animTime));
             gizmo.rebuild();
         }
         applyInsertedDisplay(); // 2026-10-14：插入模型同名状态同步（同一播放头 t）
@@ -2187,7 +2195,7 @@
         }
         if (!virtualGeoCache) return null;
         const anim = currentAnimObject();
-        const pose = (anim && doc.model) ? Ev.evaluatePose(doc.model, anim, doc.animTime) : null;
+        const pose = (anim && doc.model) ? evalAnimPose(doc.model, anim, doc.animTime) : null;
         for (const b of virtualGeoCache.bones) {
             const sb = doc.model.bones && doc.model.bones.find((x) => x.name === b.name);
             const p = pose && pose.get(b.name);
@@ -2476,6 +2484,7 @@
             timeGrid: doc.timeGrid, animMode: doc.animMode, dirty: doc.animDirty, deleted: doc.animDeleted,
             animFiles: doc.animFiles, animFileNames: doc.animFileNames,
             simOn: doc.simOn, simSpeed: doc.simSpeed, simDir: doc.simDir,
+            paramPreview: doc.paramPreview,
         }),
         onSelectAnim: selectAnim,
         onNewAnim: newAnim,
@@ -2510,6 +2519,24 @@
         onSim: setSim,
         onSimSpeed: (v) => { doc.simSpeed = v; updateSimTreadmill(); },
         onSimDir: (d) => { doc.simDir = d; updateSimTreadmill(); },
+        // 运行时参数声明（params）：改声明 = 改动画数据（标脏 + undo）；预览值只影响视口，不写盘
+        onParamsChange: (animName, params) => {
+            const errs = AP.validateParams(params).errors;
+            if (errs.length) return errs[0];
+            const r = withAnimMutation(animName, (anim) => {
+                const out = Kf.cloneAnimation(anim);
+                if (Object.keys(params).length) out.params = params;
+                else delete out.params;
+                return out;
+            }, `参数声明 ${animName}`);
+            return r ? null : '动画不存在';
+        },
+        onParamPreview: (animName, name, rawValue) => {
+            const v = String(rawValue == null ? '' : rawValue).trim();
+            if (v === '') delete doc.paramPreview[name];
+            else doc.paramPreview[name] = v;
+            if (doc.animMode) applyAnimDisplay();
+        },
         onStatus: setStatus,
     });
     // W7：🎬 动画 = 视图模式按钮（meViewModes 内 data-mode="anim"，点击接线在上方 setViewMode 循环）
@@ -2525,5 +2552,8 @@
         chainTailToHead, chainHeadToTail, chainStateToPlayhead, withAnimMutation, setSim,
         openRepoModel, simAutoKeyDrag, setAnimPage,
         insertRepoModel, removeInserted, renderInsertPanel, applyInsertedDisplay,
+        // 运行时参数（params）验收钩子
+        evalAnimPose, setParamPreview: (name, value) => { doc.paramPreview[name] = value; applyAnimDisplay(); },
+        getParamPreview: () => doc.paramPreview,
     };
 })();

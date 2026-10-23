@@ -88,6 +88,42 @@ function stageStructure(packName, blueprint) {
 }
 
 /**
+ * 写物品/方块草稿：暂存 items/<id>.json 或 blocks/<id>.json
+ * @param {string} packName
+ * @param {'item'|'block'} kind
+ * @param {Object} def 已通过校验的定义对象
+ * @returns {{file:string, staged:boolean}}
+ */
+function stageItemBlock(packName, kind, def) {
+    const dirName = kind === 'item' ? 'items' : 'blocks';
+    const dir = path.join(packStagingDir(packName), dirName);
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, sanitize(def.id) + '.json');
+    fs.writeFileSync(file, JSON.stringify(stripInternal(def), null, 2), 'utf-8');
+    return { file: path.relative(getStagingRoot(), file), staged: true };
+}
+
+/**
+ * 读物品/方块草稿（存在则优先于正式包）
+ * @param {string} packName
+ * @param {'item'|'block'} kind
+ * @param {string} id
+ * @returns {Object|null}
+ */
+function readStagedItemBlock(packName, kind, id) {
+    const dirName = kind === 'item' ? 'items' : 'blocks';
+    const file = path.join(packStagingDir(packName), dirName, sanitize(id) + '.json');
+    if (!fs.existsSync(file)) return null;
+    try {
+        const v = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        return v && typeof v === 'object' ? v : null;
+    } catch (e) {
+        console.error('[staging] 物品/方块草稿损坏: ' + file + ' — ' + (e.message || e));
+        return null;
+    }
+}
+
+/**
  * 读结构蓝图草稿
  * @param {string} packName
  * @param {string} structureId
@@ -176,6 +212,16 @@ function listStaged(packName) {
             items.push({ kind: 'structure', id: dir.name, namespace: null, file: path.relative(base, p), mtime: fs.statSync(p).mtime.toISOString() });
         }
     }
+    // 物品/方块草稿
+    for (const kind of ['item', 'block']) {
+        const dir = path.join(base, kind === 'item' ? 'items' : 'blocks');
+        if (!fs.existsSync(dir)) continue;
+        for (const f of fs.readdirSync(dir)) {
+            if (!f.endsWith('.json')) continue;
+            const p = path.join(dir, f);
+            items.push({ kind, id: f.slice(0, -5), namespace: null, file: path.relative(base, p), mtime: fs.statSync(p).mtime.toISOString() });
+        }
+    }
     return items;
 }
 
@@ -238,6 +284,13 @@ function exportStaged(packName, packSourceDir) {
         } else if (item.kind === 'structure') {
             const src = path.join(base, 'structures', item.id, 'blueprint.json');
             const dest = path.join(packSourceDir, 'structures', item.id, 'blueprint.json');
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.copyFileSync(src, dest);
+            exported.push(path.relative(packSourceDir, dest));
+        } else if (item.kind === 'item' || item.kind === 'block') {
+            const dirName = item.kind === 'item' ? 'items' : 'blocks';
+            const src = path.join(base, dirName, item.id + '.json');
+            const dest = path.join(packSourceDir, dirName, item.id + '.json');
             fs.mkdirSync(path.dirname(dest), { recursive: true });
             fs.copyFileSync(src, dest);
             exported.push(path.relative(packSourceDir, dest));
@@ -318,6 +371,19 @@ function removeStagedStructure(packName, structureId) {
     return true;
 }
 
+/**
+ * 删除单个物品/方块的暂存（删除时联动）
+ * @param {string} packName
+ * @param {'item'|'block'} kind
+ * @param {string} id
+ */
+function removeStagedItemBlock(packName, kind, id) {
+    const dirName = kind === 'item' ? 'items' : 'blocks';
+    const f = path.join(packStagingDir(packName), dirName, sanitize(id) + '.json');
+    if (fs.existsSync(f)) fs.unlinkSync(f);
+    return true;
+}
+
 module.exports = {
     initStaging,
     getStagingRoot,
@@ -327,6 +393,8 @@ module.exports = {
     readStagedHealthConfig,
     stageStructure,
     readStagedStructure,
+    stageItemBlock,
+    readStagedItemBlock,
     listStaged,
     hasStaged,
     listAllStagedPacks,
@@ -335,4 +403,5 @@ module.exports = {
     removeStagedEntity,
     removeStagedHealthConfig,
     removeStagedStructure,
+    removeStagedItemBlock,
 };

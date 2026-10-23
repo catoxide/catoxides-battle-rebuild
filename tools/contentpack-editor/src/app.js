@@ -38,6 +38,7 @@
         try { if (window.StructureEditor && window.StructureEditor.closeAll) window.StructureEditor.closeAll(); } catch { /* 忽略 */ }
         try { if (window.ContractEditor) window.ContractEditor.close(); } catch { /* 忽略 */ }
         try { if (window.TapeEditor) window.TapeEditor.close(); } catch { /* 忽略 */ }
+        try { if (window.ItemBlockEditor) window.ItemBlockEditor.close(); } catch { /* 忽略 */ }
         window.AppState.entity = null;
         window.AppState.healthConfig = { parts: [] };
         window.AppState.model = null;
@@ -51,13 +52,16 @@
         const entityActive = window.EntityEditor && window.EntityEditor.hasActiveTab();
         const contractActive = window.ContractEditor && window.ContractEditor.hasActiveTab();
         const tapeActive = window.TapeEditor && window.TapeEditor.hasActiveTab();
+        const itemBlockActive = window.ItemBlockEditor && window.ItemBlockEditor.hasActiveTab();
         const frame = window.AppState && window.AppState.activeFrame;
         let show = null;
         if (frame === 'tape' && tapeActive) show = 'tape';
         else if (frame === 'contract' && contractActive) show = 'contract';
+        else if (frame === 'itemblock' && itemBlockActive) show = 'itemblock';
         else if (frame === 'structure' && structActive) show = 'structure';
         else if (frame === 'entity' && entityActive) show = 'entity';
         else if (structActive) show = 'structure';
+        else if (itemBlockActive) show = 'itemblock';
         else if (entityActive) show = 'entity';
         else if (contractActive) show = 'contract';
         else if (tapeActive) show = 'tape';
@@ -67,11 +71,13 @@
         const str = document.getElementById('structureEditorContent');
         const ctr = document.getElementById('contractEditorContent');
         const tape = document.getElementById('tapeEditorContent');
+        const ib = document.getElementById('itemBlockEditorContent');
         if (show) empty.classList.add('hidden'); else empty.classList.remove('hidden');
         ent.classList.toggle('hidden', show !== 'entity');
         if (str) str.classList.toggle('hidden', show !== 'structure');
         if (ctr) ctr.classList.toggle('hidden', show !== 'contract');
         if (tape) tape.classList.toggle('hidden', show !== 'tape');
+        if (ib) ib.classList.toggle('hidden', show !== 'itemblock');
     };
 
     // ===== 布局交互：可拖拽分隔条 + 左栏收起/展开 =====
@@ -268,6 +274,8 @@
                 try { if (window.ContractEditor && window.ContractEditor.rerender) window.ContractEditor.rerender(); } catch { /* 忽略 */ }
                 try { if (window.StructureEditor && window.StructureEditor.rerender) window.StructureEditor.rerender(); } catch { /* 忽略 */ }
                 try { if (window.TapeEditor && window.TapeEditor.rerender) window.TapeEditor.rerender(); } catch { /* 忽略 */ }
+                // 0.2.2：部署面板若开着，用已有测量结果按新语言重画（不重新读盘）
+                try { if (window.DeployStatus && window.DeployStatus.isOpen()) window.DeployStatus.rerender(); } catch { /* 忽略 */ }
             });
             window.I18n.applyDOM();
         } else {
@@ -335,10 +343,14 @@
             },
             onNew: async (packDir) => {
                 // 中栏"+ 新建"按钮共用：按当前内容类型路由
-                if (window.AppState.contentType === 'structure') {
+                const type = window.AppState.contentType;
+                if (type === 'structure') {
                     window.AppState.activeFrame = 'structure';
                     window.StructureEditor.open({ pack: window.AppState.pack, structure: null, isNew: true });
-                } else if (window.AppState.contentType === 'entity') {
+                } else if (type === 'item' || type === 'block') {
+                    window.AppState.activeFrame = 'itemblock';
+                    window.ItemBlockEditor.open({ pack: window.AppState.pack, kind: type, def: null, isNew: true });
+                } else if (type === 'entity') {
                     window.AppState.activeFrame = 'entity';
                     window.EntityEditor.open({ pack: window.AppState.pack, entity: null, isNew: true });
                 }
@@ -357,6 +369,28 @@
             },
         });
 
+        // 初始化中栏（物品/方块列表，共用 #entityList 容器）+ 右栏编辑器
+        const reloadItemBlockList = async () => {
+            const pack = window.AppState.pack;
+            if (pack && (window.AppState.contentType === 'item' || window.AppState.contentType === 'block')) {
+                await window.ItemBlockList.loadItemsAndBlocks(pack.dir, window.AppState.contentType);
+            }
+        };
+        window.ItemBlockList.init({
+            onSelect: async (packDir, it) => {
+                window.AppState.activeFrame = 'itemblock';
+                const readRes = await window.api.readItemBlock(packDir, it.kind, it.id);
+                if (!readRes.ok) { window.showError('读取失败: ' + readRes.error); return; }
+                if (!readRes.data) { window.showError('找不到 ' + it.kind + ' ' + it.id); return; }
+                window.ItemBlockEditor.open({ pack: window.AppState.pack, kind: it.kind, def: readRes.data, isNew: false });
+            },
+            onNew: async (packDir) => {
+                window.AppState.activeFrame = 'itemblock';
+                window.ItemBlockEditor.open({ pack: window.AppState.pack, kind: window.AppState.contentType === 'block' ? 'block' : 'item', def: null, isNew: true });
+            },
+        });
+        window.ItemBlockEditor.init({ onListChanged: reloadItemBlockList });
+
         // 一键导入原版 / 一键导出整包原版数据
         const btnImport = document.getElementById('btnStructImport');
         const btnImportDir = document.getElementById('btnStructImportDir');
@@ -365,9 +399,18 @@
         if (btnImportDir) btnImportDir.addEventListener('click', () => structImportVanilla(true));
         if (btnExportAll) btnExportAll.addEventListener('click', () => structExportVanillaAll());
 
+        // 物品/方块：导出整包原版数据（模型 + blockstate + lang + 掉落 + 标签）
+        const btnIbExportAll = document.getElementById('btnItemBlockExportAll');
+        if (btnIbExportAll) btnIbExportAll.addEventListener('click', () => itemBlockExportVanillaAll());
+
         // 动画契约按钮（右栏框架）：刷新 = 重读契约 + 重盘点；打包 = 重建该包 jar
         document.getElementById('btnContractRefresh').addEventListener('click', () => window.ContractEditor.refresh());
         document.getElementById('btnContractBuild').addEventListener('click', () => window.ContractEditor.build());
+
+        // 0.2.2 部署四态面板 + 内容包 on/off（顶栏「🚀 部署状态」）
+        if (window.DeployStatus) window.DeployStatus.init();
+        // 0.2.2 第 2 步：提交回溯（只读 git）；从部署面板每行的「🕘 回溯」进入
+        if (window.GitHistoryView) window.GitHistoryView.init();
 
         // 内容类型路由：按中栏下拉切换列表加载器（新增类型时在此注册）
         async function loadContentList() {
@@ -375,9 +418,15 @@
             window.AppState.contentType = type;
             const tools = document.getElementById('structTools');
             if (tools) tools.style.display = (type === 'structure') ? 'flex' : 'none';
+            const ibTools = document.getElementById('itemBlockTools');
+            if (ibTools) ibTools.style.display = (type === 'item' || type === 'block') ? 'flex' : 'none';
             // 0.2.1：切内容类型时清掉上一次的结构导入/导出报告（此前一直残留）
             if (type !== 'structure') {
                 const rep = document.getElementById('structReport');
+                if (rep) { rep.style.display = 'none'; rep.textContent = ''; }
+            }
+            if (type !== 'item' && type !== 'block') {
+                const rep = document.getElementById('itemBlockReport');
                 if (rep) { rep.style.display = 'none'; rep.textContent = ''; }
             }
             const pack = window.AppState.pack;
@@ -388,6 +437,8 @@
                 await window.StructureList.loadStructures(pack.dir);
             } else if (type === 'contract') {
                 await window.ContractList.load(pack.dir);
+            } else if (type === 'item' || type === 'block') {
+                await window.ItemBlockList.loadItemsAndBlocks(pack.dir, type);
             } else {
                 await window.EntityList.loadEntities(pack.dir);
             }
@@ -495,6 +546,34 @@
             }
             window.showStatus(tf('structure.exportAllDone', { n: structures.length, f: fileCount }) +
                 (stagedNotExported.length ? `（另有 ${stagedNotExported.length} 个草稿未导出）` : ''), true);
+        }
+
+        // ===== 物品/方块：导出整包原版数据 =====
+        async function itemBlockExportVanillaAll() {
+            const pack = window.AppState.pack;
+            if (!pack) { window.showError('请先选择内容包'); return; }
+            window.showStatus('导出物品/方块原版文件…', true);
+            let r;
+            try { r = await window.api.exportItemBlockVanillaAll(pack.dir); } catch (e) { r = { ok: false, error: String(e && e.message || e) }; }
+            const d = (r && r.data) || {};
+            const rep = document.getElementById('itemBlockReport');
+            if (rep) {
+                rep.style.display = 'block';
+                const lines = ['=== 导出原版（物品/方块 整包） ==='];
+                for (const id of d.items || []) lines.push('  ✔ 物品 ' + id);
+                for (const id of d.blocks || []) lines.push('  ✔ 方块 ' + id);
+                if (d.stagedExported) lines.push(`  （草稿并入正式包：${d.stagedExported} 个）`);
+                lines.push(`  文件 ${ (d.files || []).length } 个:`);
+                for (const f of (d.files || [])) lines.push('      ' + f);
+                for (const p of d.problems || []) lines.push('  ✗ ' + p);
+                rep.textContent = lines.join('\n');
+            }
+            if (!r || !r.ok) {
+                window.showError('导出失败: ' + ((r && r.error) || '未知错误'));
+                return;
+            }
+            window.showStatus(`物品 ${(d.items || []).length} / 方块 ${(d.blocks || []).length} 已导出（${(d.files || []).length} 个文件）`, true);
+            await loadContentList();
         }
 
         // 自动加载包列表

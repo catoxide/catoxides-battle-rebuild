@@ -83,6 +83,18 @@ test('实体 id 非法时不会被写进骨架（避免生成编译不过的 Jav
     const src = Scaffold.renderEntryClass({ moduleEntry: 'a.b.C', entityIds: ['OK-upper', 'bad id'] });
     assert.ok(!src.includes('registerDataDriven(context, "OK-upper")'));
 });
+test('有物品/方块时生成批量注册调用（否则 items/blocks 是死数据）', () => {
+    const src = Scaffold.renderEntryClass({
+        moduleEntry: 'example.contentpack.my.MyPack', packId: 'my_pack', displayName: 'My', version: '1.0.0',
+        entityIds: [], itemIds: ['iron_plate'], blockIds: ['example_wall'],
+    });
+    assert.ok(src.includes('context.registerItemsAndBlocksFromJar();'));
+    assert.ok(!src.includes('private void registerDataDriven'));
+});
+test('物品/方块 id 非法时不触发批量注册（TODO 注释不算）', () => {
+    const src = Scaffold.renderEntryClass({ moduleEntry: 'a.b.C', itemIds: ['Bad-Id'], blockIds: ['x y'] });
+    assert.ok(!/^ {8}context\.registerItemsAndBlocksFromJar\(\);$/m.test(src), '不应生成实际调用');
+});
 
 console.log('=== 4. MANIFEST 预检 ===');
 test('合法 MANIFEST 无 error', () => {

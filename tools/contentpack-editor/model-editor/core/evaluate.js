@@ -16,10 +16,19 @@
 //   - pre≠post = 关键帧处跳变（线性段在 i+1 处落到 pre_{i+1}，然后跳到 post_{i+1}）
 //   - MoLang 值（整值字符串 / 含字符串分量）：不插值，返回 ≤t 的最近关键帧值（v1 不求值）
 //   - scale [0,1,1] = 隐藏（shade 约定，evaluate 不特殊处理，渲染层负责）
+//
+// 运行时参数预览（params，见 animParams.js）：
+//   evaluatePose(model, anim, t, { paramValues }) 会把关键帧里的 MoLang 值按参数值求出来：
+//   - 支持 `v.name` / `variable.name`（= 动画 params 声明的默认值，被 paramValues 覆盖）
+//   - 表达式只支持四则运算 + 取模 + 括号 + 一元正负（如 `v.pitch * -0.5 + 10`）；
+//     含函数调用/查询/比较等其它语法 → 不求值（保持原行为：该通道不应用，游戏内由引擎算）
+//   - 这是**预览近似**：真机由引擎 Molang 求值，结果以引擎为准
 
 // 双模式：node（require/module.exports）+ 浏览器经典 script（self.Evaluate）
 (function (globalScope) {
-const Model = (typeof module === 'object' && module.exports) ? require('./model') : globalScope.Model;
+const isNode = typeof module === 'object' && module.exports;
+const Model = isNode ? require('./model') : globalScope.Model;
+const P = isNode ? require('./animParams') : globalScope.AnimParams;
 const { vec3 } = Model;
 
 /**
@@ -124,14 +133,157 @@ function sampleChannel(keyframes, t) {
     return a.post + (to - a.post) * u;
 }
 
+// ==================== 运行时参数（预览近似求值） ====================
+
+/** `v.name` / `variable.name` 引用 */
+const PARAM_REF = /^(?:v|variable)\.([A-Za-z_][A-Za-z0-9_]*)$/;
+
+/**
+ * 参数值表 = 动画 params 的默认值 + 覆盖值（paramValues）。
+ * 覆盖值支持 number / 数字字符串 / 普通字符串（字符串参数只用于比较，四则运算里会失败）。
+ */
+function paramValues(anim, overrides) {
+    const values = (P && P.defaultValueMap) ? P.defaultValueMap(anim && anim.params) : {};
+    for (const [name, raw] of Object.entries(overrides || {})) {
+        if (typeof raw === 'number' && Number.isFinite(raw)) values[name] = raw;
+        else if (typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw))) values[name] = Number(raw);
+        else if (typeof raw === 'string') values[name] = raw;
+    }
+    return values;
+}
+
+/** 词法分析（只认数字 / 标识符（可带点）/ 四则运算符 / 括号）。非法字符 → null。 */
+function tokenizeMolang(expr) {
+    const tokens = [];
+    let i = 0;
+    while (i < expr.length) {
+        const ch = expr[i];
+        if (ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r') { i++; continue; }
+        if (/[0-9.]/.test(ch)) {
+            const start = i;
+            while (i < expr.length && /[0-9.]/.test(expr[i])) i++;
+            const raw = expr.slice(start, i);
+            if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(raw)) return null;
+            tokens.push({ t: 'num', v: parseFloat(raw) });
+            continue;
+        }
+        if (/[A-Za-z_]/.test(ch)) {
+            const start = i;
+            while (i < expr.length && /[A-Za-z0-9_.]/.test(expr[i])) i++;
+            tokens.push({ t: 'id', v: expr.slice(start, i) });
+            continue;
+        }
+        if ('+-*/%()'.includes(ch)) { tokens.push({ t: 'op', v: ch }); i++; continue; }
+        return null; // 不支持的字符（逗号、比较符、引号…）→ 不求值
+    }
+    return tokens;
+}
+
+/**
+ * 受限 MoLang 子集求值：数字、`v.x` / `variable.x`、+ - * / %、括号、一元正负。
+ * 其它语法（函数调用、query、比较、三元…）→ 返回 null（调用方保持原值 = 不应用）。
+ * @returns {number|null}
+ */
+function evalMolangExpr(expr, values) {
+    if (typeof expr !== 'string') return null;
+    const tokens = tokenizeMolang(expr);
+    if (!tokens || tokens.length === 0) return null;
+    let pos = 0;
+    const peek = () => tokens[pos];
+    const fail = () => { throw new Error('unsupported'); };
+    function primary() {
+        const tk = peek();
+        if (!tk) fail();
+        if (tk.t === 'num') { pos++; return tk.v; }
+        if (tk.t === 'op' && (tk.v === '-' || tk.v === '+')) {
+            pos++;
+            const v = primary();
+            return tk.v === '-' ? -v : v;
+        }
+        if (tk.t === 'op' && tk.v === '(') {
+            pos++;
+            const v = exprRule();
+            const close = peek();
+            if (!close || close.t !== 'op' || close.v !== ')') fail();
+            pos++;
+            return v;
+        }
+        if (tk.t === 'id') {
+            const m = PARAM_REF.exec(tk.v);
+            if (!m) fail();
+            pos++;
+            const value = values[m[1]];
+            if (typeof value === 'number' && Number.isFinite(value)) return value;
+            if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return Number(value);
+            fail();
+        }
+        fail();
+    }
+    function term() {
+        let v = primary();
+        while (peek() && peek().t === 'op' && '*/%'.includes(peek().v)) {
+            const op = tokens[pos++].v;
+            const r = primary();
+            v = op === '*' ? v * r : op === '/' ? v / r : v % r;
+        }
+        return v;
+    }
+    function exprRule() {
+        let v = term();
+        while (peek() && peek().t === 'op' && '+-'.includes(peek().v)) {
+            const op = tokens[pos++].v;
+            const r = term();
+            v = op === '+' ? v + r : v - r;
+        }
+        return v;
+    }
+    try {
+        const result = exprRule();
+        if (pos !== tokens.length) return null;
+        return Number.isFinite(result) ? result : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * 把一个通道采样值里的 MoLang 部分按参数值求出来。
+ * - number → 原样；string → 求值成 number（失败 → null）
+ * - 数组 → 逐分量（含字符串分量 = molangVec）；任一分量求不出 → null
+ * - null → null（无贡献）
+ * @returns {number|number[]|null}
+ */
+function resolveChannelValue(v, values) {
+    if (v == null) return null;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    if (typeof v === 'string') return evalMolangExpr(v, values);
+    if (Array.isArray(v)) {
+        const out = [];
+        for (const c of v) {
+            if (typeof c === 'number') { out.push(c); continue; }
+            if (typeof c === 'string') {
+                const r = evalMolangExpr(c, values);
+                if (r == null) return null;
+                out.push(r);
+                continue;
+            }
+            return null;
+        }
+        return out;
+    }
+    return null;
+}
+
 /**
  * 求 t 时刻的完整姿态。
  * @param {Geometry} model 模型（静态姿态来源：rotation/pivot/scale）
- * @param {Object} anim 动画（{name, loop, durationSec, tracks}）
+ * @param {Object} anim 动画（{name, loop, durationSec, tracks, params?}）
  * @param {number} tSec
+ * @param {{paramValues?: Object<string, number|string>}} [options]
+ *        paramValues = 参数预览值（覆盖动画 params 里的默认值；缺省只用默认值）
  * @returns {Map<string, {rotation: Vec3, position: Vec3, scale: Vec3}>} 每根骨骼一条（绝对值，可直接喂 viewport.setPose）
  */
-function evaluatePose(model, anim, tSec) {
+function evaluatePose(model, anim, tSec, options) {
     const pose = new Map();
     if (model && Array.isArray(model.bones)) {
         for (const b of model.bones) {
@@ -144,6 +296,7 @@ function evaluatePose(model, anim, tSec) {
     }
     if (!anim || !Array.isArray(anim.tracks)) return pose;
 
+    const values = paramValues(anim, options && options.paramValues);
     const t = resolveLoopTime(anim, tSec);
     for (const track of anim.tracks) {
         const entry = pose.get(track.bone);
@@ -151,6 +304,13 @@ function evaluatePose(model, anim, tSec) {
         let rot = sampleChannel(track.rotation, t);
         let pos = sampleChannel(track.position, t);
         let scl = sampleChannel(track.scale, t);
+        // 运行时参数：把 MoLang 值按参数值求出来（受限子集，失败则保持原值 = 不应用）
+        const rrot = resolveChannelValue(rot, values);
+        const rpos = resolveChannelValue(pos, values);
+        const rscl = resolveChannelValue(scl, values);
+        if (rrot !== null) rot = rrot;
+        if (rpos !== null) pos = rpos;
+        if (rscl !== null) scl = rscl;
         // 标量值（引擎通道常量语义 = 三分量复制）
         if (typeof rot === 'number') rot = [rot, rot, rot];
         if (typeof pos === 'number') pos = [pos, pos, pos];
@@ -177,6 +337,10 @@ const EvaluateAPI = {
     sampleChannel,
     evaluatePose,
     valueKind,
+    // 运行时参数预览（v.x 四则运算近似求值）
+    paramValues,
+    evalMolangExpr,
+    resolveChannelValue,
 };
 if (typeof module === 'object' && module.exports) module.exports = EvaluateAPI;
 if (globalScope) globalScope.Evaluate = EvaluateAPI;

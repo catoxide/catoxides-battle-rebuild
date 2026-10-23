@@ -56,6 +56,15 @@ const api = {
     exportStructureVanillaAll: (packDir) => ipcRenderer.invoke('structure:exportVanillaAll', packDir),
     getStructureDefaults: () => ipcRenderer.invoke('core:getStructureDefaults'),
 
+    // 物品/方块（items/*.json + blocks/*.json → 基座批量注册 + 原版导出）
+    itemBlockCatalog: () => ipcRenderer.invoke('itemblock:catalog'),
+    listItemBlocks: (packDir) => ipcRenderer.invoke('itemblock:list', packDir),
+    readItemBlock: (packDir, kind, id) => ipcRenderer.invoke('itemblock:read', packDir, kind, id),
+    saveItemBlock: (packDir, kind, def) => ipcRenderer.invoke('itemblock:save', packDir, kind, def),
+    deleteItemBlock: (packDir, kind, id) => ipcRenderer.invoke('itemblock:delete', packDir, kind, id),
+    exportItemBlockVanilla: (packDir, kind, id) => ipcRenderer.invoke('itemblock:exportVanilla', packDir, kind, id),
+    exportItemBlockVanillaAll: (packDir) => ipcRenderer.invoke('itemblock:exportVanillaAll', packDir),
+
     // 游戏资源（vanilla 方块贴图）
     mcAssets: () => ipcRenderer.invoke('core:mcAssets'),
     mcBlockFaces: (blockId) => ipcRenderer.invoke('core:mcBlockFaces', blockId),
@@ -95,6 +104,24 @@ const api = {
 
     // 打包
     buildPack: (data) => ipcRenderer.invoke('pack:build', data),
+
+    // 0.2.2 部署四态核对（源码 / 产物 jar / 运行目录副本 / spark 磁盘缓存）+ 内容包 on/off
+    packStatusInspect: (opts) => ipcRenderer.invoke('packStatus:inspect', opts || {}),
+    packStatusSetEnabled: (p) => ipcRenderer.invoke('packStatus:setEnabled', p),
+    packStatusInstall: (p) => ipcRenderer.invoke('packStatus:install', p),
+    packStatusClearCache: (p) => ipcRenderer.invoke('packStatus:clearCache', p),
+
+    // 0.2.2 第 2 步：提交回溯（只读 git：log/show/diff/status，绝不改工作区）
+    gitInfo: () => ipcRenderer.invoke('git:info'),
+    gitHistory: (p) => ipcRenderer.invoke('git:history', p),   // p = {packDir, jarPath[, limit]}
+    gitCommit: (p) => ipcRenderer.invoke('git:commit', p),     // p = {packDir, jarPath, sha[, maxBytes]}
+    gitWorkingTree: (p) => ipcRenderer.invoke('git:workingTree', p),
+    // 0.2.2 第 2 步：Gradle 构建输出实时流（主进程 pack:output；返回取消订阅函数）
+    onBuildOutput: (cb) => {
+        const listener = (event, payload) => cb(payload);
+        ipcRenderer.on('pack:output', listener);
+        return () => ipcRenderer.removeListener('pack:output', listener);
+    },
 
     // 3D 模型编辑器窗口（W2 子窗口；W3 gizmo/大纲/属性；W3.1 新建/另存为；W3.5 资源联动 / W4.2 实体状态映射 / W5 契约接入）
     // W4.2：ctx = {pack, packDir, entityId}（可选；主窗口"3D 中编辑"传入 → 模型编辑器状态映射面板）

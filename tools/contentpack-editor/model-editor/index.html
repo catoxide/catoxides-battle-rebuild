@@ -157,6 +157,20 @@
   .tl-keyedit input, .tl-keyedit select { background: #0f1117; color: #e2e8f0; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; font-size: 11px; width: 64px; }
   .tl-keyedit select { width: auto; }
   .tl-ke-name { color: #7dd3fc; font-family: Consolas, monospace; }
+  /* 运行时参数面板（🔧 参数）：声明 = 名字 + 默认值 + 相位 + 预览测试值（声明即同步契约） */
+  .tl-params { flex: none; max-height: 46%; overflow: auto; border-bottom: 1px solid rgba(255,255,255,.1); background: #0b0e14; }
+  .tl-params[hidden] { display: none; }
+  .tl-params-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 11px; position: sticky; top: 0; z-index: 1; background: #0b0e14; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .tl-params-head .ed-spacer { flex: 1; }
+  .tl-params-title { font-size: 11px; color: #7dd3fc; }
+  .tl-prow { display: grid; grid-template-columns: 150px 84px 104px 92px 1fr 26px; gap: 6px; align-items: center; padding: 3px 8px; }
+  .tl-prow:hover { background: rgba(56,189,248,.06); }
+  .tl-prow input, .tl-prow select { background: #0f1117; color: #e2e8f0; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; font-size: 11px; padding: 1px 4px; min-width: 0; }
+  .tl-prow .tl-pname { font-family: Consolas, monospace; color: #7dd3fc; }
+  .tl-prow .tl-pdesc { font-size: 10px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl-phead { font-size: 10px; color: #64748b; }
+  .tl-phead:hover { background: none; }
+  .tl-prow .tl-pdel { padding: 0 4px; }
 </style>
 </head>
 <body class="ed-body">
@@ -352,6 +366,7 @@
   <!-- W3.6.1 页面内模态框（替代 prompt） -->
   <script src="../src/lib/askModal.js"></script>
   <script src="core/model.js"></script>
+  <script src="core/animParams.js"></script>
   <script src="core/animation.js"></script>
   <script src="core/tick.js"></script>
   <script src="core/undo.js"></script>

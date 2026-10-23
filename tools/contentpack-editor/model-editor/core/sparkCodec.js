@@ -13,6 +13,7 @@
 const isNode = typeof module === 'object' && module.exports;
 const Model = isNode ? require('./model') : globalScope.Model;
 const Anim = isNode ? require('./animation') : globalScope.Animation;
+const P = isNode ? require('./animParams') : globalScope.AnimParams;
 const Tick = isNode ? require('./tick') : globalScope.Tick;
 const { round4, formatTime } = Tick;
 
@@ -299,6 +300,12 @@ function animationFromRaw(name, raw) {
     anim.durationSec = raw.animation_length != null ? raw.animation_length : Anim.computeDuration(anim);
     // 真实字段透传（wrist 状态动画用；false/缺省 = 不写）
     if (raw.override_previous_animation === true) anim.override = true;
+    // 运行时参数声明（`params`；声明即契约，见 animParams.js）
+    if (raw.params != null) {
+        const pv = P.normalizeParams(raw.params);
+        if (pv.errors.length) throw new Error(`动画 ${name} params 非法: ${pv.errors.join('; ')}`);
+        if (Object.keys(pv.params).length) anim.params = pv.params;
+    }
     // W7：timeline（过点 MoLang 脚本）保全
     const timeline = timelineFromRaw(raw.timeline);
     if (timeline) anim.timeline = timeline;
@@ -329,9 +336,10 @@ function importAnimationFile(source) {
 
 /**
  * 导出单个动画为一文件 JSON 文本（规则1/2/3/6）：
- *   { animations: { [name]: { loop, animation_length, override?, bones, timeline? } } }
+ *   { animations: { [name]: { loop, animation_length, override?, params?, bones, timeline? } } }
  * - loop 恒为字符串；animation_length 永远显式 = max 关键帧时间（重算，不信存储值）
  * - lerp_mode 恒写（现网风格）；空通道/空轨不写出
+ * - params：tick 相位写简写（默认值本身），substep 相位写 {default, phase}（见 animParams.js）
  * W7：
  * - pre 写出当且仅当 pre ≠ post（引擎 codec 缺省 pre=post，无损）
  * - timeline 写出为 { "<t>": [scripts] }（引擎要求 list）
@@ -374,7 +382,8 @@ function exportAnimationFile(anim) {
         loop: anim.loop,
         animation_length: round4(duration),
     };
-    if (anim.override === true) animRaw.override_previous_animation = true; // 文件顺序：loop, animation_length, override, bones, timeline
+    if (anim.override === true) animRaw.override_previous_animation = true; // 文件顺序：loop, animation_length, override, params, bones, timeline
+    if (anim.params && Object.keys(anim.params).length) animRaw.params = P.paramsToRaw(anim.params);
     if (Object.keys(bones).length) animRaw.bones = bones;
     if (Array.isArray(anim.timeline) && anim.timeline.length) {
         const tl = {};

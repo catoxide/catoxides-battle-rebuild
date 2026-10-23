@@ -14,6 +14,12 @@ window.TapeEditor = (function () {
 
     let S = null; // 编辑器状态（open 时初始化）
 
+    // 当前画布边层的实时重绘钩子（renderCanvas 每次重建时更新）：
+    // 拖动节点过程中调用它，让连线/标签跟着节点实时移动。
+    // 0.2.2 修复：此前拖动节点后 onUp 只 persistLayout 不重绘 → 连线留在旧位置
+    // （用户报「移动块的时候不会更新，连线有问题」）。
+    let liveRedrawEdges = null;
+
     function freshState() {
         return {
             open: false,
@@ -258,37 +264,42 @@ window.TapeEditor = (function () {
         svg.appendChild(edgesG);
         svg.appendChild(nodesG);
 
-        // ---- 边 ----
-        for (const [name, st] of Object.entries(tr.states)) {
-            (st.exit || []).forEach((ex, i) => {
-                const from = S.layout[S.activeTrack + ':' + name] || { x: 0, y: 0 };
-                const to = S.layout[S.activeTrack + ':' + ex.to] || { x: 200, y: 0 };
-                const h1 = nodeH(st) / 2;
-                const h2 = nodeH(tr.states[ex.to] || {}) / 2;
-                const x1 = from.x + NODE_W, y1 = from.y + h1;
-                const x2 = to.x, y2 = to.y + h2;
-                const dx = Math.max(60, Math.abs(x2 - x1) / 2);
-                const path = document.createElementNS(ns, 'path');
-                path.setAttribute('d', `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`);
-                path.setAttribute('class', 'tape-edge'
-                    + (ex.priority >= 5 ? ' hi' : '')
-                    + (isSelEdge(S.activeTrack, name, i) ? ' sel' : ''));
-                path.dataset.track = S.activeTrack;
-                path.dataset.state = name;
-                path.dataset.index = i;
-                edgesG.appendChild(path);
+        // ---- 边（抽成函数：拖动节点时 liveRedrawEdges() 实时重绘，连线跟随节点）----
+        const drawEdges = () => {
+            edgesG.innerHTML = '';
+            for (const [name, st] of Object.entries(tr.states)) {
+                (st.exit || []).forEach((ex, i) => {
+                    const from = S.layout[S.activeTrack + ':' + name] || { x: 0, y: 0 };
+                    const to = S.layout[S.activeTrack + ':' + ex.to] || { x: 200, y: 0 };
+                    const h1 = nodeH(st) / 2;
+                    const h2 = nodeH(tr.states[ex.to] || {}) / 2;
+                    const x1 = from.x + NODE_W, y1 = from.y + h1;
+                    const x2 = to.x, y2 = to.y + h2;
+                    const dx = Math.max(60, Math.abs(x2 - x1) / 2);
+                    const p = document.createElementNS(ns, 'path');
+                    p.setAttribute('d', `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`);
+                    p.setAttribute('class', 'tape-edge'
+                        + (ex.priority >= 5 ? ' hi' : '')
+                        + (isSelEdge(S.activeTrack, name, i) ? ' sel' : ''));
+                    p.dataset.track = S.activeTrack;
+                    p.dataset.state = name;
+                    p.dataset.index = i;
+                    edgesG.appendChild(p);
 
-                const label = document.createElementNS(ns, 'text');
-                label.setAttribute('x', (x1 + x2) / 2);
-                label.setAttribute('y', (y1 + y2) / 2 - 6);
-                label.setAttribute('class', 'tape-edge-label');
-                let txt = ex.when.length > 26 ? ex.when.slice(0, 25) + '…' : ex.when;
-                if (ex.priority) txt += ` (p${ex.priority})`;
-                if (ex.after) txt += ` [≥${ex.after}]`;
-                label.textContent = txt;
-                edgesG.appendChild(label);
-            });
-        }
+                    const label = document.createElementNS(ns, 'text');
+                    label.setAttribute('x', (x1 + x2) / 2);
+                    label.setAttribute('y', (y1 + y2) / 2 - 6);
+                    label.setAttribute('class', 'tape-edge-label');
+                    let txt = ex.when.length > 26 ? ex.when.slice(0, 25) + '…' : ex.when;
+                    if (ex.priority) txt += ` (p${ex.priority})`;
+                    if (ex.after) txt += ` [≥${ex.after}]`;
+                    label.textContent = txt;
+                    edgesG.appendChild(label);
+                });
+            }
+        };
+        liveRedrawEdges = drawEdges;
+        drawEdges();
 
         // ---- 节点 ----
         for (const [name, st] of Object.entries(tr.states)) {
@@ -405,6 +416,7 @@ window.TapeEditor = (function () {
                 if (drag.moved) {
                     S.layout[S.activeTrack + ':' + name] = { x: p0.x + dx, y: p0.y + dy };
                     g.setAttribute('transform', `translate(${p0.x + dx},${p0.y + dy})`);
+                    if (liveRedrawEdges) liveRedrawEdges(); // 连线/标签实时跟随（0.2.2 修复）
                 }
             };
             const onUp = (ev) => {
@@ -413,6 +425,7 @@ window.TapeEditor = (function () {
                 g.removeEventListener('pointerup', onUp);
                 if (drag.moved) {
                     persistLayout();
+                    renderAll(); // 拖完全量重绘兜底（0.2.2 修复：此前缺这步，连线停留在旧位置）
                 } else {
                     S.sel = { kind: 'state', track: S.activeTrack, name };
                     renderAll();

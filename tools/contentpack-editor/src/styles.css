@@ -630,3 +630,147 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
     color: #f9c74f;
     border-color: #6b5424;
 }
+
+/* ===== 物品/方块编辑器（items/*.json + blocks/*.json）===== */
+#itemBlockMount { padding: 10px 14px; overflow-y: auto; flex: 1; }
+.ib-tabbar { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+.ib-page { display: flex; flex-direction: column; gap: 14px; }
+.ib-section {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ib-sec-title { font-size: 13px; color: var(--acc); margin-bottom: 2px; }
+.ib-section > label,
+.ib-section > div > label.f-label { font-size: 12px; color: var(--fg-dim); display: block; margin-bottom: 2px; }
+.ib-section > div { display: flex; flex-direction: column; }
+.ib-section > div > .f-input,
+.ib-section > div > select.f-input { width: 100%; max-width: 460px; }
+.f-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.f-input:focus { outline: 1px solid var(--acc); }
+.f-check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.f-check input { accent-color: var(--acc); }
+.f-note { font-size: 12px; color: var(--fg-dim); }
+.ib-raw { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: 12px; resize: vertical; }
+.ib-pre { max-height: 320px; overflow: auto; margin: 0; }
+.ib-prop-list { display: flex; flex-direction: column; gap: 8px; }
+.ib-prop-row {
+  display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 8px;
+}
+.ib-prop-row > div { display: flex; flex-direction: column; gap: 2px; min-width: 120px; }
+.ib-prop-values { flex: 1; min-width: 200px; }
+.ib-prop-values .row { gap: 8px; }
+.ib-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ib-table th {
+  text-align: left; color: var(--fg-dim); font-weight: 600;
+  border-bottom: 1px solid var(--border); padding: 4px 6px;
+}
+.ib-table td { border-bottom: 1px solid var(--card2); padding: 4px 6px; vertical-align: middle; }
+.ib-table .f-input { width: 100%; padding: 3px 6px; font-size: 12px; }
+.ib-table td:first-child .f-input, .ib-combo { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--fg-dim); }
+.ib-combo { white-space: nowrap; }
+.ib-check-err { font-size: 12px; color: var(--err); }
+}
+
+/* ===== 0.2.2 部署四态面板（顶栏「🚀 部署状态」） ===== */
+.deploy-overlay {
+  position: fixed; inset: 0; z-index: 220; display: flex;
+  align-items: center; justify-content: center; background: rgba(0,0,0,.6);
+}
+.deploy-overlay.hidden { display: none; }
+.deploy-box {
+  width: min(1400px, 96vw); height: min(88vh, 900px); display: flex; flex-direction: column;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.6);
+}
+.deploy-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.deploy-title { font-size: 14px; font-weight: 600; color: var(--acc); }
+.deploy-note { font-size: 11px; color: var(--fg-dim); margin: 6px 0 8px; line-height: 1.5; }
+.deploy-body { flex: 1; overflow: auto; border: 1px solid var(--card2); border-radius: 4px; background: var(--card2); }
+.dp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.dp-table th {
+  position: sticky; top: 0; z-index: 1; background: var(--card); text-align: left;
+  color: var(--fg-dim); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border);
+}
+.dp-table td { padding: 6px 8px; border-bottom: 1px solid var(--card); vertical-align: top; background: var(--bg); }
+.dp-table tr.dp-bad > td { background: rgba(243,139,168,.08); }
+.dp-table tr.dp-warnrow > td { background: rgba(249,226,175,.07); }
+.dp-name { font-weight: 600; }
+.dp-sub { font-size: 11px; color: var(--fg-dim); margin-top: 2px; }
+.dp-mono { font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
+.dp-ok { color: var(--ok); }
+.dp-err { color: var(--err); }
+.dp-warn { color: var(--warn); }
+.dp-dim { color: var(--fg-dim); }
+.dp-issues { margin: 4px 0 0; padding-left: 0; list-style: none; }
+.dp-issues li { font-size: 11px; line-height: 1.45; margin-bottom: 2px; }
+.dp-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.dp-switch { font-weight: 700; font-size: 11px; text-align: center; }
+.dp-switch.on { color: var(--ok); }
+.dp-switch.off { color: var(--err); }
+.dp-banner { padding: 8px 10px; font-size: 12px; background: var(--card); border-bottom: 1px solid var(--border); }
+.dp-banner.err { color: var(--err); }
+
+/* 0.2.2 第 2 步：Gradle 构建输出控制台（面板内，实时原文）+ 提交回溯（只读） */
+.deploy-console {
+  margin-top: 8px; display: flex; flex-direction: column; max-height: 30vh;
+  border: 1px solid var(--border); border-radius: 4px; background: var(--card);
+}
+.deploy-console.folded { max-height: 32px; }
+.deploy-console.folded .deploy-console-body { display: none; }
+.deploy-console-head {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px; flex: none;
+  font-size: 11px; color: var(--fg-dim); border-bottom: 1px solid var(--border);
+}
+.deploy-console-title { font-weight: 600; }
+.deploy-console-body {
+  flex: 1; margin: 0; padding: 8px; overflow: auto; background: var(--bg);
+  font-family: ui-monospace, Consolas, monospace; font-size: 11px; line-height: 1.4;
+  white-space: pre-wrap; word-break: break-all;
+}
+.history-box { width: min(1200px, 94vw); }
+.history-body {
+  flex: 1; overflow: auto; padding: 8px; font-size: 12px;
+  border: 1px solid var(--card2); border-radius: 4px; background: var(--card2);
+}
+.gh-repo, .gh-paths, .gh-target { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+.gh-badge {
+  font-size: 11px; padding: 1px 7px; border: 1px solid var(--border);
+  border-radius: 10px; background: var(--card);
+}
+.gh-badge.ok { color: var(--ok); }
+.gh-badge.warn { color: var(--warn); }
+.gh-badge.dim { color: var(--fg-dim); }
+.gh-work { margin-bottom: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--card); }
+.gh-work.dirty { border-color: var(--warn); }
+.gh-sec { margin: 8px 0 4px; font-weight: 600; color: var(--acc); }
+.gh-change { font-size: 11px; }
+.gh-hint { margin-top: 4px; }
+.gh-commit { padding: 4px 0; border-bottom: 1px solid var(--card); }
+.gh-commit.open { background: rgba(255, 255, 255, .03); }
+.gh-commit-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.gh-sha {
+  font-family: ui-monospace, Consolas, monospace; font-size: 11px; cursor: pointer;
+  color: var(--acc); background: none; border: 1px solid var(--border); border-radius: 3px;
+}
+.gh-author { font-size: 11px; color: var(--fg-dim); }
+.gh-subject { flex: 1; min-width: 200px; }
+.gh-merge { font-size: 11px; }
+.gh-diff-box { margin: 4px 0 6px 6px; padding-left: 8px; border-left: 2px solid var(--acc); }
+.gh-diff {
+  max-height: 320px; overflow: auto; margin: 4px 0 0; padding: 6px;
+  font-family: ui-monospace, Consolas, monospace; font-size: 11px; line-height: 1.35;
+  white-space: pre; background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+}

@@ -149,12 +149,19 @@ test("duration=0 的 'true' 不回绕", () => {
 });
 
 console.log('=== 6. MoLang / 幽灵骨 / scale 0 ===');
-test('MoLang 字符串：v1 不应用（保持静态姿态）', () => {
-    const anim = {
+test('MoLang 值：可求值的常量/参数应用；求不出的保持静态', () => {
+    const constAnim = {
         name: 'x', loop: 'once', durationSec: 2,
         tracks: [{ bone: 'a', rotation: [{ timeSec: 0, post: ['1+1', '0', '0'], lerpMode: 'linear' }] }],
     };
-    assert.deepStrictEqual(E.evaluatePose(model, anim, 0.5).get('a').rotation, [10, 0, 0]);
+    // 常量表达式可求值（1+1 = 2，加法叠加到静态 rotation 10 上）
+    assert.deepStrictEqual(E.evaluatePose(model, constAnim, 0.5).get('a').rotation, [12, 0, 0]);
+    const unknownAnim = {
+        name: 'x', loop: 'once', durationSec: 2,
+        tracks: [{ bone: 'a', rotation: [{ timeSec: 0, post: ['query.anim_time()', '0', '0'], lerpMode: 'linear' }] }],
+    };
+    // 预览不支持的 MoLang（query / 函数调用等）→ 不应用，保持静态姿态
+    assert.deepStrictEqual(E.evaluatePose(model, unknownAnim, 0.5).get('a').rotation, [10, 0, 0]);
 });
 test('标量通道值 = 三分量复制（引擎常量语义）', () => {
     const anim = {

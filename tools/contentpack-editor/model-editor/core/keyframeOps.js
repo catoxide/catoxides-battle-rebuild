@@ -9,9 +9,11 @@
 
 // 双模式：node（require/module.exports）+ 浏览器经典 script（self.KeyframeOps）
 (function (globalScope) {
-const Anim = (typeof module === 'object' && module.exports) ? require('./animation') : globalScope.Animation;
+const isNode = typeof module === 'object' && module.exports;
+const Anim = isNode ? require('./animation') : globalScope.Animation;
+const P = isNode ? require('./animParams') : globalScope.AnimParams;
 
-/** 克隆动画（深拷贝 tracks/timeline）。 */
+/** 克隆动画（深拷贝 tracks/timeline/params）。 */
 function cloneAnimation(anim) {
     const out = {
         name: anim.name,
@@ -26,6 +28,7 @@ function cloneAnimation(anim) {
         }),
     };
     if (anim.override === true) out.override = true;
+    if (anim.params && Object.keys(anim.params).length > 0) out.params = P.cloneParams(anim.params);
     if (Array.isArray(anim.timeline)) out.timeline = anim.timeline.map((e) => ({ timeSec: e.timeSec, scripts: (e.scripts || []).slice() }));
     return out;
 }

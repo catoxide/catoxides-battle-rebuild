@@ -148,7 +148,8 @@ function entryLocation(moduleEntry) {
  * contentpacks-source/test-mob-pack/.../TestMobPack.java）。
  * 所以有实体时骨架必须生成这段注册代码，否则包的 JSON 是「死数据」。
  *
- * @param {{moduleEntry:string, packId?:string, displayName?:string, version?:string, entityIds?:string[]}} cfg
+ * @param {{moduleEntry:string, packId?:string, displayName?:string, version?:string, entityIds?:string[],
+ *          itemIds?:string[], blockIds?:string[]}} cfg
  * @returns {string|null}
  */
 /** Java 字符串字面量转义（REVIEW-M5：displayName/Module-Version 是用户输入，
@@ -170,6 +171,9 @@ function renderEntryClass(cfg) {
     const version = cfg.version || '1.0.0';
     const entityIds = (cfg.entityIds || []).filter((id) => ENTITY_ID_RE.test(id));
     const hasMobs = entityIds.length > 0;
+    const itemIds = (cfg.itemIds || []).filter((id) => ENTITY_ID_RE.test(id));
+    const blockIds = (cfg.blockIds || []).filter((id) => ENTITY_ID_RE.test(id));
+    const hasItemBlocks = itemIds.length + blockIds.length > 0;
     const L = [];
 
     L.push(`package ${loc.pkg};`);
@@ -204,6 +208,12 @@ function renderEntryClass(cfg) {
     L.push(' * <p>数据驱动实体（entities/*.json）不会自动注册，必须在这里显式注册；');
     L.push(' * 通用渲染器由主 mod 经 {@code getDataDrivenEntities()} 统一挂载，本包无需实现');
     L.push(' * {@code registerClientRenderers}。');
+    if (hasItemBlocks) {
+        L.push(' *');
+        L.push(' * <p>物品/方块（items/*.json + blocks/*.json）由基座批量注册器统一处理：');
+        L.push(' * {@code registerItemsAndBlocksFromJar()} 扫描本包 jar，按契约校验并注册');
+        L.push(' * （含自定义参数 blockstate、方块实体、BlockItem、创造栏）。');
+    }
     L.push(' */');
     L.push(`public class ${loc.cls} implements ContentPack {`);
     L.push('');
@@ -225,13 +235,22 @@ function renderEntryClass(cfg) {
     L.push('    /** 注册阶段：只做注册（此时其它包的 register() 可能还没跑完）。 */');
     L.push('    @Override');
     L.push('    public void register(ContentPackContext context) {');
+    let body = false;
     if (hasMobs) {
         L.push('        // 注册本包 entities/*.json 定义的数据驱动实体');
         for (const id of entityIds) L.push(`        registerDataDriven(context, "${id}");`);
-    } else {
+        body = true;
+    }
+    if (hasItemBlocks) {
+        L.push('        // 批量注册本包 items/*.json + blocks/*.json（物品/方块/方块实体/创造栏）');
+        L.push('        context.registerItemsAndBlocksFromJar();');
+        body = true;
+    }
+    if (!body) {
         L.push('        // TODO 在这里注册内容，例如：');
         L.push('        // context.registerDataDrivenMob(MobDefinitionParser.parse(json));');
         L.push('        // context.registerStructure(blueprint);');
+        L.push('        // context.registerItemsAndBlocksFromJar();   // 批量注册 items/ + blocks/');
         L.push('        // context.provide(MyCapability.INSTANCE, impl);   // 供其它包消费');
     }
     L.push('    }');

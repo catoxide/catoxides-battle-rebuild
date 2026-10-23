@@ -9,6 +9,7 @@ const path = require('path');
 const ManifestLib = require('./manifest');
 const Scaffold = require('./packScaffold');
 const JarReader = require('./jarReader');
+const ItemBlockSchema = require('./itemBlockSchema');
 
 /**
  * 预检一个包目录。
@@ -54,16 +55,69 @@ function preflightPack(packDir, opts = {}) {
     }
     findings.push(...Scaffold.validateEntities(entities));
 
-    // --- 3. 有数据无入口：entities 不会被自动注册 ---
+    // --- 2b. 物品/方块 JSON（items/*.json + blocks/*.json） ---
+    const items = [];
+    const blocks = [];
+    for (const [dirName, kind, arr] of [['items', 'item', items], ['blocks', 'block', blocks]]) {
+        const dir = path.join(packDir, dirName);
+        if (!fs.existsSync(dir)) continue;
+        for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.json'))) {
+            const full = path.join(dir, file);
+            try {
+                const obj = JSON.parse(fs.readFileSync(full, 'utf-8'));
+                arr.push(obj);
+                if (obj && obj.id && `${obj.id}.json` !== file) {
+                    findings.push({
+                        level: 'warn', code: 'W-IB-FILENAME',
+                        msg: `${dirName}/${file} 的 id 是 "${obj.id}"：文件名与 id 不一致，批量注册器按 id 读取会找不到。`,
+                        src: 'BatchContentRegistrar（按 id 扫描 jar）',
+                    });
+                }
+                // 与基座注册器同一套校验（单一真源：itemBlockSchema ↔ BatchContentRegistrar）
+                const check = kind === 'item' ? ItemBlockSchema.validateItem(obj) : ItemBlockSchema.validateBlock(obj);
+                for (const err of check.errors) {
+                    findings.push({ level: 'error', code: 'E-IB-VALID', msg: `${dirName}/${file}: ${err}`, src: 'BatchContentRegistrar.validate' });
+                }
+            } catch (e) {
+                findings.push({ level: 'error', code: 'E-IB-JSON', msg: `${dirName}/${file} 不是合法 JSON：${e.message}`, src: 'ItemBlockParser.parse' });
+            }
+        }
+    }
+
+    // --- 3. 有数据无入口：entities / items / blocks 都不会被自动注册 ---
     const entry = (manifest['Module-Entry'] || '').trim();
-    if (!entry && entities.length > 0) {
+    const ibCount = items.length + blocks.length;
+    if (!entry && entities.length + ibCount > 0) {
+        const what = [];
+        if (entities.length) what.push(`${entities.length} 个 entities/*.json`);
+        if (items.length) what.push(`${items.length} 个 items/*.json`);
+        if (blocks.length) what.push(`${blocks.length} 个 blocks/*.json`);
         findings.push({
             level: 'error', code: 'E-DATA-NO-ENTRY',
-            msg: `有 ${entities.length} 个 entities/*.json 但 MANIFEST 没有 Module-Entry：加载器不会自动注册 entities/，` +
-                `只有包的 register() 调 ContentPackContext.registerDataDrivenMob 才会注册 ⇒ 这些 JSON 是死数据（游戏里不存在该实体）。` +
+            msg: `有 ${what.join('、')} 但 MANIFEST 没有 Module-Entry：加载器不会自动注册这些 JSON，` +
+                `只有包的 register() 显式注册（registerDataDrivenMob / registerItemsAndBlocksFromJar）才会生效 ⇒ 这些 JSON 是死数据（游戏里不存在该内容）。` +
                 `填上 Module-Entry 并让编辑器生成入口类即可。`,
-            src: 'ContentPackContext.java:198 / TestMobPack.java:40-47',
+            src: 'ContentPackContext / BatchContentRegistrar',
         });
+    }
+    // 入口类存在但没调批量注册 → items/blocks 死数据
+    if (entry && ibCount > 0) {
+        const loc = Scaffold.entryLocation(entry);
+        const srcFile = loc ? path.join(packDir, loc.path) : null;
+        if (srcFile && fs.existsSync(srcFile)) {
+            const src = fs.readFileSync(srcFile, 'utf-8');
+            if (!src.includes('registerItemsAndBlocksFromJar')) {
+                findings.push({
+                    level: 'error', code: 'E-IB-NO-REGISTER',
+                    msg: `入口类 ${loc.path} 没有调用 context.registerItemsAndBlocksFromJar()：` +
+                        `本包的 ${items.length} 个物品、${blocks.length} 个方块不会注册（死数据）。` +
+                        `在编辑器里「补齐骨架」或手动补一行即可。`,
+                    src: 'BatchContentRegistrar（jar 扫描注册）',
+                });
+            }
+        } else if (!srcFile || !fs.existsSync(srcFile)) {
+            // E-ENTRY-NO-SOURCE 已覆盖，不重复报
+        }
     }
 
     // --- 4. 入口类源码是否存在 ---
@@ -107,6 +161,8 @@ function preflightPack(packDir, opts = {}) {
         findings,
         manifest,
         entities,
+        items,
+        blocks,
         expectedJar,
         gradleTask: `${Scaffold.gradleProjectPath(path.basename(packDir))}:contentpackJar`,
         gradleCommand: Scaffold.gradleBuildCommand(path.basename(packDir)),

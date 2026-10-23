@@ -25,6 +25,7 @@
     <button class="btn ghost small" id="btnDebugToggle" title="调试模式（W5.5）">🔍 调试</button>
     <button class="btn ghost small" id="btnGpuToggle" title="渲染模式（W5.3）">⚡ 硬件加速</button>
     <button class="btn ghost small" id="btnOpenModelEditor" title="打开 3D 模型编辑器（W2）">🧊 模型编辑器</button>
+    <button class="btn ghost small" id="btnDeployStatus" data-i18n="app.deploy" data-i18n-title="app.deployTip" title="四态核对：源码 / 产物 jar / run 安装副本 / spark 缓存 + 内容包开关">🚀 部署状态</button>
     <span class="sub" data-i18n="app.lang">语言</span>
     <select id="langSelect" style="width:auto; margin:0">
       <option value="zh">中文</option>
@@ -37,6 +38,57 @@
 <div id="gpuBanner" class="hidden">
   <span id="gpuBannerText"></span>
   <button class="btn ghost small" id="btnGpuBannerClose" style="margin-left:auto">知道了</button>
+</div>
+
+<!-- 0.2.2 部署四态面板（顶栏「🚀 部署状态」打开）：源码 / 产物 jar / run 安装副本 / spark 缓存
+     + 内容包 on/off。逻辑在 views/deployStatus.js，测量在 core/packStatus.js。 -->
+<div id="deployOverlay" class="deploy-overlay hidden">
+  <div class="deploy-box">
+    <div class="deploy-head">
+      <span class="deploy-title" data-i18n="deploy.title">部署状态（四态核对）</span>
+      <span class="muted" id="deployScanned"></span>
+      <button class="btn ghost small" id="btnDeployRefresh" data-i18n="deploy.refresh">⟳ 重新测量</button>
+      <button class="btn ghost small" id="btnDeployClose" data-i18n="deploy.close" style="margin-left:auto">✕ 关闭</button>
+    </div>
+    <div class="deploy-note" data-i18n="deploy.sub">
+      同一份内容有四层副本，任何一层落后都会表现成「改了没生效 / 没改却变了 / 包关不掉」。以下数字都是读盘实测（md5 / mtime / 条目数），没有推算。
+    </div>
+    <div class="deploy-body" id="deployBody"></div>
+
+    <!-- 0.2.2 第 2 步：Gradle 构建输出实时流。主进程原样转发 stdout/stderr，
+         前端只做封顶（超长自动丢弃最旧的行），不加工、不翻译。 -->
+    <div class="deploy-console" id="deployConsole">
+      <div class="deploy-console-head">
+        <span class="deploy-console-title" data-i18n="deploy.console">构建输出</span>
+        <span class="muted" id="buildOutputState"></span>
+        <span style="margin-left:auto"></span>
+        <button class="btn ghost small" id="btnBuildConsoleToggle" data-i18n="deploy.consoleFold">收起</button>
+        <button class="btn ghost small" id="btnBuildConsoleClear" data-i18n="deploy.consoleClear">清空</button>
+      </div>
+      <pre class="deploy-console-body" id="deployConsoleBody"></pre>
+    </div>
+
+    <div class="status" id="deployStatus"></div>
+  </div>
+</div>
+
+<!-- 0.2.2 第 2 步：提交回溯（只读 git log/show/diff/status）。
+     本视图不改工作区、不产生提交；回溯动作在第 3 步，且必须先归档当前状态。
+     逻辑在 views/gitHistoryView.js，取数在 core/gitHistory.js。 -->
+<div id="historyOverlay" class="deploy-overlay hidden">
+  <div class="deploy-box history-box">
+    <div class="deploy-head">
+      <span class="deploy-title" data-i18n="history.title">提交回溯（只读）</span>
+      <span class="muted" id="historyRepo"></span>
+      <button class="btn ghost small" id="btnHistoryRefresh" data-i18n="history.refresh">⟳ 刷新</button>
+      <button class="btn ghost small" id="btnHistoryClose" data-i18n="history.close" style="margin-left:auto">✕ 关闭</button>
+    </div>
+    <div class="deploy-note" id="historyNote" data-i18n="history.sub">
+      列表来自 git log -- &lt;包路径&gt;；只统计这些路径相关的提交。工作区未提交的改动会单列出来 —— 它是回溯安全的判断依据。
+    </div>
+    <div class="history-body" id="historyBody"></div>
+    <div class="status" id="historyStatus"></div>
+  </div>
 </div>
 
 <!-- 0.2.1 修复：全局状态/错误条移到编辑器容器之外。
@@ -84,6 +136,8 @@
       <select id="contentTypeSelect" title="内容类型" style="width:auto; margin:0; max-width:130px">
         <option value="entity" data-i18n="entity.title">实体</option>
         <option value="structure" data-i18n="structure.title">建筑结构</option>
+        <option value="item">物品</option>
+        <option value="block">方块</option>
         <option value="contract" data-i18n="contract.title">动画契约</option>
       </select>
       <span id="packNameLabel" class="muted"></span>
@@ -96,6 +150,11 @@
       <button class="btn ghost small" id="btnStructExportAll" data-i18n="structure.exportVanillaAll" data-i18n-title="structure.exportVanillaAllTip">⬆ 导出原版（全部）</button>
     </div>
     <pre id="structReport" class="out" style="display:none; margin:6px 8px"></pre>
+    <!-- 物品/方块专用工具条（仅内容类型 = 物品/方块 时显示）：导出整包原版数据 -->
+    <div id="itemBlockTools" class="row" style="display:none; gap:6px; padding:6px 8px; border-bottom:1px solid var(--line, #2b2b2b); flex-wrap:wrap">
+      <button class="btn ghost small" id="btnItemBlockExportAll" title="把包内全部物品/方块的模型、blockstate（含自定义参数）、lang、掉落表、标签写进包目录（原版 1.21.1 文件）">⬆ 导出原版（全部）</button>
+    </div>
+    <pre id="itemBlockReport" class="out" style="display:none; margin:6px 8px"></pre>
     <div id="entityList" class="list"></div>
   </aside>
 
@@ -389,6 +448,20 @@
       <pre class="out" id="contractOutput"></pre>
     </div>
 
+    <!-- 物品/方块编辑器：items/*.json + blocks/*.json → 基座批量注册 + 原版导出 -->
+    <div id="itemBlockEditorContent" class="hidden">
+      <div class="editor-header">
+        <span class="editor-title" id="itemBlockTitle"></span>
+        <span class="editor-badge" id="itemBlockBadge"></span>
+        <div class="editor-actions">
+          <button class="btn ghost" id="btnItemBlockExport">导出原版</button>
+          <button class="btn ghost" id="btnItemBlockDelete">删除</button>
+          <button class="btn accent" id="btnItemBlockSave">保存</button>
+        </div>
+      </div>
+      <div id="itemBlockMount"></div>
+    </div>
+
     <!-- TimeTape 状态机可视化编辑器（W2 图形节点 + W3 实时仿真） -->
     <div id="tapeEditorContent" class="hidden">
       <div class="editor-header">
@@ -421,6 +494,11 @@
 <script src="core/tapeEngine.js"></script>
 <script src="core/tapeDoc.js"></script>
 <script src="views/tapeEditor.js"></script>
+<script src="core/itemBlockSchema.js"></script>
+<script src="views/itemBlockList.js"></script>
+<script src="views/itemBlockEditor.js"></script>
+<script src="views/deployStatus.js"></script>
+<script src="views/gitHistoryView.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
