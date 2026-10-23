@@ -77,7 +77,7 @@ logs/
 scratch/
 runclient_decomp/
 META-INF/
-example/
+/example/
 .contentpack-editor/
 .playwright-cli/
 contentpacks_staging/
