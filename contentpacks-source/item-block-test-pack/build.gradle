@@ -1,0 +1,7 @@
+// 由 ContentPack Editor 生成 —— jar 插件包构建（无额外编译依赖）
+plugins {
+    id 'java-library'
+    id 'net.neoforged.gradle.userdev'
+}
+
+apply from: '../contentpack.gradle'

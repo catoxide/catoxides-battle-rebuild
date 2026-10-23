@@ -1,0 +1,7 @@
+Manifest-Version: 1.0
+Module-Name: item-block-test-pack
+Module-Type: contentpack
+Module-Version: 0.1.0
+Module-Requires: catoxidesbattlerebuild>=0.2.0
+Module-Entry: com.catoxide.item_block_test_pack.ItemBlockTestPack
+Created-By: ContentPack Editor

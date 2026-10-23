@@ -1,0 +1,16 @@
+{
+  "id": "iron_plate",
+  "namespace": "item_block_test_pack",
+  "lang": {
+    "en_us": "Iron Plate",
+    "zh_cn": "铁板"
+  },
+  "stackSize": 64,
+  "rarity": "uncommon",
+  "creative": true,
+  "fireResistant": false,
+  "model": {
+    "type": "generated",
+    "texture": "minecraft:item/iron_ingot"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "id": "brass_lantern",
+  "namespace": "item_block_test_pack",
+  "lang": {
+    "en_us": "Brass Lantern",
+    "zh_cn": "黄铜灯"
+  },
+  "material": {
+    "hardness": 3.0,
+    "resistance": 6.0,
+    "sound": "stone",
+    "lightLevel": 0,
+    "friction": 0.6,
+    "transparent": false,
+    "randomTicks": false,
+    "requiresTool": false,
+    "solid": false
+  },
+  "properties": [
+    { "name": "lit", "type": "boolean", "default": "false", "labelZh": "点亮" }
+  ],
+  "redstone": {
+    "property": "lit",
+    "lightLit": 15,
+    "lightUnlit": 1
+  },
+  "blockstates": {
+    "mode": "variants",
+    "variants": [
+      { "when": { "lit": "true" }, "model": "brass_lantern_lit", "texture": "minecraft:block/redstone_lamp_lit" },
+      { "when": { "lit": "false" }, "model": "brass_lantern" }
+    ]
+  },
+  "model": {
+    "type": "cube_all",
+    "texture": "minecraft:block/redstone_lamp",
+    "file": "brass_lantern",
+    "itemFile": "brass_lantern_lit"
+  },
+  "blockEntity": null,
+  "loot": { "selfDrop": true },
+  "tags": [
+    "minecraft:mineable/pickaxe"
+  ],
+  "creative": true,
+  "blockItem": true
+}
