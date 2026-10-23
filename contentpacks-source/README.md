@@ -14,6 +14,7 @@
 | `durability-pack/` | 原版物品耐久 + 三机制降级 + toml 配置 |
 | `quest-test-pack/` | 任务系统验证包 |
 | `structure-example-pack/` | 建筑结构示例（纯数据包）：`structures/*/blueprint.json` 源格式 + 编辑器导出的原版 jigsaw 数据 |
+| `item-block-test-pack/` | **物品/方块批量注册示例**（0.5）：`items/` + `blocks/` JSON（含自定义参数 blockstate、generic 方块实体、multipart）+ 导出的原版模型/blockstate/lang/loot/标签；入口类调 `registerItemsAndBlocksFromJar()` |
 | `editor/` | **网页版生成器**（零安装，双击打开 `index.html`）：产出 Manifest + build.gradle + 入口类骨架 + 实体 JSON |
 | `contentpack.gradle` | **共享构建约定**（单一真源）：toolchain / 仓库 / sourceSets / `contentpackJar` / MANIFEST 派生 |
 | `build-pack.ps1` | 回退打包脚本（独立 javac + jar；**与 Gradle 产物同目录，不要混用**） |
@@ -66,11 +67,30 @@ gradlew contentpackJar                    # 全部包
 powershell -File contentpacks-source/build-pack.ps1 -SourceDir contentpacks-source/my-pack -OutJar contentpacks/my-pack.jar
 ```
 
+## 游戏实跑校验（开发期测试工具）
+
+原版**没有独立的资源包/数据包校验器**——唯一的"官方检查器"是游戏进程本身
+（进世界时 `RegistryDataLoader` 硬校验 data 注册表；客户端启动时 `ModelBakery`
+校验模型/blockstate/音效；战利品表与 tags 懒解析）。
+`scripts/validate-game.ps1` 把这件事做成一键脱机流程：无头启动游戏 →
+扫描 log 错误标记 → 杀进程 → 报 pass/fail。
+
+```powershell
+.\scripts\validate-game.ps1                        # data（runServer）+ models（runClient）全跑
+.\scripts\validate-game.ps1 -Phase data            # 只校验 data/ 注册表 + 包加载/批量注册
+.\scripts\validate-game.ps1 -Phase models          # 只校验模型/blockstate/音效
+.\scripts\validate-game.ps1 -Pack item-block-test-pack   # 先重建该包 jar 再校验
+```
+
+注意：会杀掉带 `-Dforge.logging.console.level` 的 java 进程（游戏 JVM），
+**不要在手动开着游戏时跑**；首次 data 阶段会在 `run/server/saves` 建新世界。
+
 ## 格式与规范
 
 | 文档 | 内容 |
 |------|------|
 | `design/CONTENTPACK_FORMAT.md` | MANIFEST 属性 / 实体 JSON schema / 行为组件 / 加载流程 / 故障隔离 |
+| `design/ITEM_BLOCK_REGISTRATION.md` | **物品/方块批量注册契约**（0.5）：items/blocks JSON、自定义参数与完整方块形态、方块实体、原版导出 |
 | `design/GRADLE_MULTIPROJECT.md` | 多项目构建配方、必填项、已证伪路径、产物等价性闸门 |
 | `design/PARALLEL_DEV_WORKFLOW.md` | 主 mod 会话与内容包会话的并行边界与并发纪律 |
 | `design/NATIVE_CONTENTPACK_DEV.md` | 从零用 ContentPack 开发机制的路径 |
