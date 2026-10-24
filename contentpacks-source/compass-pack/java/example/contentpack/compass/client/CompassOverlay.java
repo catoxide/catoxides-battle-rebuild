@@ -74,12 +74,12 @@ public final class CompassOverlay {
         String degrees = Integer.toString(Math.round(bearing) % 360) + "°";
 
         // ===== 简化版：只画当前方位数字（背景随 frostedBackground 开/关） =====
-        if (CompassConfig.numberOnly) {
+        if (CompassConfig.numberOnly()) {
             int top = 8;
             // 1.21.1 的 Font 没有 height()；固定高度做背景，文本垂直居中用固定偏移
             int pillH = 18;
             int textW = font.width(degrees);
-            if (CompassConfig.frostedBackground) {
+            if (CompassConfig.frostedBackground()) {
                 graphics.fill(left, top, right, top + pillH, 0x78000000);
                 graphics.fill(left, top + pillH - 1, right, top + pillH, 0x66FFFFFF);
             }
@@ -91,13 +91,13 @@ public final class CompassOverlay {
         // ===== 完整罗盘条 =====
         // 条厚（配置 thickBar）
         int top = 8, bottom = 34;
-        if (CompassConfig.thickBar) {
+        if (CompassConfig.thickBar()) {
             top = 5;
             bottom = 38;
         }
 
         // 磨砂黑背景（配置 frostedBackground）
-        if (CompassConfig.frostedBackground) {
+        if (CompassConfig.frostedBackground()) {
             graphics.fill(left, top, right, bottom, 0x78000000);
             graphics.fill(left, bottom - 1, right, bottom, 0x66FFFFFF);
         }
@@ -106,7 +106,7 @@ public final class CompassOverlay {
         // 1.21.1：选项类是 net.minecraft.client.Options（从 GameOptions 改名），
         // FOV 是 OptionInstance<Integer>，值通过 fov().get() 取。null/退化值回退默认 75。
         float visibleDegrees;
-        if (CompassConfig.fovTicks) {
+        if (CompassConfig.fovTicks()) {
             Integer fov = minecraft.options.fov().get();
             visibleDegrees = (fov == null || fov <= 0 || fov > 200) ? 75f : (float) fov;
         } else {

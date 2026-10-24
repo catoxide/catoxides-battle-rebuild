@@ -14,8 +14,8 @@ import com.catoxide.catoxidesbattlerebuild.util.LogManager;
  * <ul>
  *   <li>顶部横排罗盘条：角度读数 + 8 方位（N/NE/E/SE/S/SW/W/NW）+ 15° 刻度 + 固定中指针</li>
  *   <li>H 键开关（lang: key.skyrimcompasshud.toggle）</li>
- *   <li>样式配置（run\client\config\compass-pack-client.toml，/reload 生效）：
- *       ①刻度（均匀15°↔按FOV模拟实际）②简化版（仅方位数字）③条厚（正常↔厚）④背景（磨砂黑↔无）</li>
+ *   <li>样式配置（{@code config-declarations.json} → run\client\config\compass-pack-client.toml，
+ *       全部 HOT，改完即生效）：①刻度（均匀15°↔按FOV模拟实际）②简化版（仅方位数字）③条厚（正常↔厚）④背景（磨砂黑↔无）</li>
  * </ul>
  *
  * <h3>A7（内容包显式注册）</h3>
@@ -48,13 +48,10 @@ public class CompassPack implements ContentPack {
     public void register(ContentPackContext context) {
         // 纯客户端 overlay：无 server 内容注册。
         if (CatoxidesBattleRebuildConstants.CLIENT) {
+            // 配置由包 jar 的 config-declarations.json 声明，主 mod 已编译并注册到
+            // run\client\config\compass-pack-client.toml；这里只拿读值句柄。
+            CompassConfig.bind(context.config("hud"));
             CompassClientEvents.init(context.getModEventBus());
-            // 客户端配置（ModConfigSpec → toml，落到 run\client\config\compass-pack-client.toml；
-            //   游戏内 /reload 生效，加载回调刷新 CompassConfig 运行值）
-            // 回调必须经 core 按 spec 过滤——内容包共用主 mod 的配置事件总线，
-            // 自己裸听 ModConfigEvent.Loading 会在别的包配置加载时读尚未加载的 spec 而崩溃。
-            context.registerConfig(net.neoforged.fml.config.ModConfig.Type.CLIENT,
-                    CompassConfig.SPEC, "compass-pack-client", CompassConfig::load);
             LogManager.clientStartup("CompassPack",
                     "顶部罗盘已注册（H 键切换；样式配置 compass-pack-client.toml）");
         } else {

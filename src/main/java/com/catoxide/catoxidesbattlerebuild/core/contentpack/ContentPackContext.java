@@ -143,6 +143,34 @@ public final class ContentPackContext {
         registerConfig(net.neoforged.fml.config.ModConfig.Type.SERVER, spec, fileName, onLoad);
     }
 
+    /**
+     * 取本包某个配置的读值句柄（声明式配置，见 {@code config-declarations.json}）。
+     *
+     * <p>只能在 {@code register()} 阶段调用（那时「当前包」作用域有效）；
+     * 拿到的句柄可以缓存到静态字段，之后任意时刻读值——不要自己再复制一份数值，
+     * 否则 HOT 档位会被降级成 COLD。
+     *
+     * <pre>{@code
+     * private static PackConfig config;
+     * public void register(ContentPackContext ctx) { config = ctx.config("hud"); }
+     * public void render(...) { if (config.getBoolean("thickBar")) { ... } }
+     * }</pre>
+     *
+     * @throws IllegalStateException 不在 register() 阶段，或该配置没有成功注册
+     */
+    public com.catoxide.catoxidesbattlerebuild.core.config.PackConfig config(String configId) {
+        String packId = currentPackId;
+        if (packId == null) {
+            throw new IllegalStateException("ctx.config(...) 只能在 register() 阶段调用（当前无包作用域）");
+        }
+        return com.catoxide.catoxidesbattlerebuild.core.config.PackConfigRegistry.get(packId, configId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "ContentPack '" + packId + "' has no registered config '" + configId
+                                + "' (declare it in "
+                                + com.catoxide.catoxidesbattlerebuild.core.config.PackConfigDeclarations.JAR_ENTRY
+                                + "; check earlier PackConfig errors)"));
+    }
+
     public String getModId() {
         return modId;
     }

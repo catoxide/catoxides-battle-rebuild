@@ -1,5 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild;
 
+import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackConfigBridge;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackContext;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackLoader;
 import com.catoxide.catoxidesbattlerebuild.network.ModNetworkHandler;
@@ -30,6 +31,11 @@ public class CatoxidesBattleRebuild {
     public CatoxidesBattleRebuild(IEventBus modEventBus, net.neoforged.fml.ModContainer modContainer) {
         LogManager.serverStartup("CatoxidesBattleRebuild", "Initializing mod...");
         this.modContainer = modContainer;
+
+        // 内置配置屏入口（仅客户端）：所有包的配置都挂在主 mod 上，这里只装一个扩展点
+        if (CatoxidesBattleRebuildConstants.CLIENT) {
+            com.catoxide.catoxidesbattlerebuild.client.ConfigScreenBridge.register(modContainer);
+        }
 
         CatoxidesBattleRebuildConstants.init();
         ModNetworkHandler.init();
@@ -79,6 +85,8 @@ public class CatoxidesBattleRebuild {
                     modEventBus,
                     modContainer
             );
+            // 配置声明必须先于 executeAllRegistries：包的 register() 里要能 ctx.config(id)
+            ContentPackConfigBridge.registerAll(contentPackContext);
             ContentPackLoader.executeAllRegistries(contentPackContext);
             ModEvents.setContentPackContext(contentPackContext);
             LogManager.serverStartup("CatoxidesBattleRebuild", "ContentPacks loaded: " + loaded);
