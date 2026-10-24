@@ -75,8 +75,10 @@ function Invoke-Gradle([string[]]$Args) {
 
 # ---------- optional: rebuild a pack jar first ----------
 if ($Pack) {
-    Write-Host "[pack] building :packs:$Pack:contentpackJar ..." -ForegroundColor DarkGray
-    Invoke-Gradle @(":packs:$Pack:contentpackJar")
+    # ${Pack} 的花括号不能省：":packs:$Pack:contentpackJar" 会被解析成作用域变量 $Pack:contentpackJar，
+    # 实测任务名退化成 ":packs:"，脚本却因旧 jar 存在而静默继续（= 从未重建）。
+    Write-Host "[pack] building :packs:${Pack}:contentpackJar ..." -ForegroundColor DarkGray
+    Invoke-Gradle @(":packs:${Pack}:contentpackJar")
     $jarPath = Join-Path $root "contentpacks/$Pack.jar"
     if (-not (Test-Path $jarPath)) { throw "build finished but $jarPath not found" }
     Write-Host "[pack] $jarPath ready (run task deploys it)" -ForegroundColor DarkGray
