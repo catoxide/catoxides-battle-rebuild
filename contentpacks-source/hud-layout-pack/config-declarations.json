@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "configs": [
+    {
+      "id": "editor",
+      "scope": "CLIENT",
+      "file": "hud-layout-pack-client",
+      "sections": [
+        {
+          "key": "editor",
+          "values": [
+            {
+              "key": "snapGrid",
+              "type": "int",
+              "default": 2,
+              "min": 1,
+              "max": 32,
+              "tier": "HOT",
+              "comment": [
+                "Drag snapping in GUI-scaled pixels; 1 = free movement.",
+                "Offsets live in config/catoxidesbattlerebuild/hud-layout.json, not in this file."
+              ]
+            },
+            {
+              "key": "showGroupLabels",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": "true: draw the group name and its current offset inside each drag handle."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

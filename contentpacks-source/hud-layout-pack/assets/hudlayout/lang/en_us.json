@@ -1,0 +1,20 @@
+{
+  "key.hudlayoutpack.open_editor": "HUD layout editor",
+  "key.categories.hudlayoutpack": "HUD Layout",
+
+  "catoxidesbattlerebuild.configuration.section.hud.layout.pack.client.toml": "HUD Layout",
+  "catoxidesbattlerebuild.configuration.section.hud.layout.pack.client.toml.title": "HUD Layout",
+
+  "catoxidesbattlerebuild.configuration.hud-layout-pack.editor.editor": "Editor",
+  "catoxidesbattlerebuild.configuration.hud-layout-pack.editor.editor.button": "Editor",
+
+  "catoxidesbattlerebuild.configuration.hud-layout-pack.editor.editor.snapGrid": "Snap grid (px)",
+  "catoxidesbattlerebuild.configuration.hud-layout-pack.editor.editor.showGroupLabels": "Show group labels",
+
+  "hudlayout.group.hud_bottom": "Hotbar group",
+  "hudlayout.group.effects": "Status effects",
+
+  "hudlayout.editor.title": "HUD layout",
+  "hudlayout.editor.hint": "Drag a handle to move its group. R resets the hovered group. ESC saves and closes.",
+  "hudlayout.editor.offset": "%s,%s"
+}

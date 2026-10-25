@@ -1,0 +1,20 @@
+{
+  "key.hudlayoutpack.open_editor": "HUD 布局编辑",
+  "key.categories.hudlayoutpack": "HUD 布局",
+
+  "catoxidesbattlerebuild.configuration.section.hud.layout.pack.client.toml": "HUD 布局",
+  "catoxidesbattlerebuild.configuration.section.hud.layout.pack.client.toml.title": "HUD 布局",
+
+  "catoxidesbattlerebuild.configuration.hud-layout-pack.editor.editor": "编辑器",
+  "catoxidesbattlerebuild.configuration.hud-layout-pack.editor.editor.button": "编辑器",
+
+  "catoxidesbattlerebuild.configuration.hud-layout-pack.editor.editor.snapGrid": "吸附网格（像素）",
+  "catoxidesbattlerebuild.configuration.hud-layout-pack.editor.editor.showGroupLabels": "显示分组名",
+
+  "hudlayout.group.hud_bottom": "物品栏组",
+  "hudlayout.group.effects": "状态效果",
+
+  "hudlayout.editor.title": "HUD 布局",
+  "hudlayout.editor.hint": "拖动方框移动所在组；R 重置鼠标下的组；ESC 保存并退出。",
+  "hudlayout.editor.offset": "%s,%s"
+}

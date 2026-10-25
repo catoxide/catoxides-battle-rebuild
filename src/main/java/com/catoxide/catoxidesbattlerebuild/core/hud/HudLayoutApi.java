@@ -19,8 +19,6 @@ public final class HudLayoutApi {
         int offsetX(ResourceLocation group);
 
         int offsetY(ResourceLocation group);
-
-        boolean isCustomized(ResourceLocation group);
     }
 
     private static volatile Provider provider;
@@ -45,11 +43,6 @@ public final class HudLayoutApi {
     public static int offsetY(ResourceLocation elementOrGroup) {
         Provider current = provider;
         return current == null ? 0 : current.offsetY(resolveGroup(elementOrGroup));
-    }
-
-    public static boolean isCustomized(ResourceLocation elementOrGroup) {
-        Provider current = provider;
-        return current != null && current.isCustomized(resolveGroup(elementOrGroup));
     }
 
     private static ResourceLocation resolveGroup(ResourceLocation elementOrGroup) {
