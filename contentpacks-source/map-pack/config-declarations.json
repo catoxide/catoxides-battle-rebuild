@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "configs": [
+    {
+      "id": "map",
+      "scope": "CLIENT",
+      "file": "map-pack-client",
+      "sections": [
+        {
+          "key": "hud",
+          "values": [
+            {
+              "key": "enabled",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": [
+                "Show the minimap in the top-right corner."
+              ]
+            },
+            {
+              "key": "size",
+              "type": "int",
+              "default": 128,
+              "tier": "HOT",
+              "min": 64,
+              "max": 256,
+              "comment": [
+                "Minimap edge length in screen pixels."
+              ]
+            },
+            {
+              "key": "blocksPerPixel",
+              "type": "int",
+              "default": 2,
+              "tier": "HOT",
+              "min": 1,
+              "max": 8,
+              "comment": [
+                "How many blocks one minimap pixel covers. 1 is the finest (1 pixel per block)."
+              ]
+            },
+            {
+              "key": "showBiome",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": [
+                "Show the biome name under the minimap."
+              ]
+            },
+            {
+              "key": "showTime",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": [
+                "Show the current in-game time under the minimap."
+              ]
+            }
+          ]
+        },
+        {
+          "key": "map",
+          "values": [
+            {
+              "key": "fullscreenBlocks",
+              "type": "int",
+              "default": 1024,
+              "tier": "HOT",
+              "min": 256,
+              "max": 8192,
+              "comment": [
+                "World-map view width in blocks at zoom 1x. Mouse wheel changes zoom in game."
+              ]
+            },
+            {
+              "key": "showBlockInfo",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": [
+                "Hovering the world map shows block name, biome and coordinates.",
+                "Only loaded chunks are queried; unknown areas show nothing."
+              ]
+            },
+            {
+              "key": "showBiomePrediction",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": [
+                "Show predicted biomes for unexplored areas (needs biome-preview-pack).",
+                "Prediction is drawn dimmed; real explored terrain always wins."
+              ]
+            },
+            {
+              "key": "predictionHover",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": [
+                "When hovering an unloaded area, show the predicted biome instead of nothing.",
+                "Requires showBiomePrediction."
+              ]
+            },
+            {
+              "key": "predictionOutline",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": [
+                "Draw a darker outline between different predicted biomes (jelly-block look)."
+              ]
+            },
+            {
+              "key": "inheritPrompt",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": [
+                "When entering a new world whose seed matches an existing map, ask whether to inherit it.",
+                "Inheritance copies the old map into this world; the two stay independent."
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

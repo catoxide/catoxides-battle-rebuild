@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "configs": [
+    {
+      "id": "preview",
+      "scope": "COMMON",
+      "file": "biome-preview-pack",
+      "sections": [
+        {
+          "key": "performance",
+          "values": [
+            {
+              "key": "resolutionTier",
+              "type": "int",
+              "default": 1,
+              "tier": "HOT",
+              "min": 0,
+              "max": 3,
+              "comment": [
+                "0: off - no sampling at all.",
+                "1: 4-block cells (finest; 44 us per chunk, 181 ms per 1024x1024 tile on one thread).",
+                "2: 8-block cells (10 us per chunk).",
+                "3: 16-block cells (coarsest; 2.8 us per chunk).",
+                "Sampling always runs on a background pool at low priority and pauses itself when the server tick gets slow."
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

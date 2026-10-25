@@ -9,7 +9,8 @@
     "ItemStackMixin",
     "EnchantmentHelperMixin",
     "AnvilMenuMixin",
-    "RepairItemRecipeMixin"
+    "RepairItemRecipeMixin",
+    "LevelChunkMixin"
   ],
   "client": [
   ],

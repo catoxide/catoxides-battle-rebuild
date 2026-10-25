@@ -1,0 +1,10 @@
+// ============================================================
+// ContentPack: biome-preview-pack
+// 引用方向：本包 ──▶ core（根项目），永不反向。
+// 构建约定全部在 ../contentpack.gradle（共享单一真源）。
+// ============================================================
+plugins {
+    id 'java-library'
+    id 'net.neoforged.gradle.userdev'
+}
+apply from: '../contentpack.gradle'

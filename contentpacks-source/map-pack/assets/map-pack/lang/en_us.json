@@ -1,0 +1,34 @@
+{
+  "key.catoxidesbattlerebuild.open_map": "Open world map",
+  "key.categories.catoxidesbattlerebuild.map": "Map",
+  "catoxidesbattlerebuild.map.title": "World Map",
+  "catoxidesbattlerebuild.map.new_world": "New world - map recording started",
+  "catoxidesbattlerebuild.map.existing_world": "Loaded existing map for this world",
+  "catoxidesbattlerebuild.map.waiting_world": "Waiting for world id...",
+  "catoxidesbattlerebuild.map.inherit.title": "Found an existing map with the same seed",
+  "catoxidesbattlerebuild.map.inherit.hint": "Copy its explored terrain into this world?",
+  "catoxidesbattlerebuild.map.inherit.skip": "Start fresh",
+  "catoxidesbattlerebuild.map.inherit_started": "Inheriting map...",
+  "catoxidesbattlerebuild.map.inherit_done": "Map inherited",
+  "catoxidesbattlerebuild.map.hint": "Drag to pan - Scroll to zoom - C center player - PgUp/PgDn layer - Esc close",
+
+  "catoxidesbattlerebuild.configuration.section.map.pack.client.toml": "Map",
+  "catoxidesbattlerebuild.configuration.section.map.pack.client.toml.title": "Map",
+
+  "catoxidesbattlerebuild.configuration.map-pack.map.hud": "Minimap",
+  "catoxidesbattlerebuild.configuration.map-pack.map.hud.button": "Minimap",
+  "catoxidesbattlerebuild.configuration.map-pack.map.hud.enabled": "Show minimap",
+  "catoxidesbattlerebuild.configuration.map-pack.map.hud.size": "Minimap size (pixels)",
+  "catoxidesbattlerebuild.configuration.map-pack.map.hud.blocksPerPixel": "Blocks per pixel",
+  "catoxidesbattlerebuild.configuration.map-pack.map.hud.showBiome": "Show biome name",
+  "catoxidesbattlerebuild.configuration.map-pack.map.hud.showTime": "Show in-game time",
+
+  "catoxidesbattlerebuild.configuration.map-pack.map.map": "World map",
+  "catoxidesbattlerebuild.configuration.map-pack.map.map.button": "World map",
+  "catoxidesbattlerebuild.configuration.map-pack.map.map.fullscreenBlocks": "World map view width (blocks)",
+  "catoxidesbattlerebuild.configuration.map-pack.map.map.showBlockInfo": "Hover block info",
+  "catoxidesbattlerebuild.configuration.map-pack.map.map.showBiomePrediction": "Predicted biomes",
+  "catoxidesbattlerebuild.configuration.map-pack.map.map.predictionHover": "Hover uses prediction",
+  "catoxidesbattlerebuild.configuration.map-pack.map.map.inheritPrompt": "Ask to inherit map on new world",
+  "catoxidesbattlerebuild.configuration.map-pack.map.map.predictionOutline": "Prediction outlines"
+}

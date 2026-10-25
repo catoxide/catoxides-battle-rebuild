@@ -1,0 +1,9 @@
+{
+  "catoxidesbattlerebuild.configuration.section.biome.preview.pack.toml": "Biome Preview",
+  "catoxidesbattlerebuild.configuration.section.biome.preview.pack.toml.title": "Biome Preview",
+
+  "catoxidesbattlerebuild.configuration.biome-preview-pack.preview.performance": "Performance",
+  "catoxidesbattlerebuild.configuration.biome-preview-pack.preview.performance.button": "Performance",
+
+  "catoxidesbattlerebuild.configuration.biome-preview-pack.preview.performance.resolutionTier": "Preview resolution"
+}

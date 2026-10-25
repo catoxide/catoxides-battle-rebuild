@@ -1,0 +1,57 @@
+package com.catoxide.catoxidesbattlerebuild.core.hud;
+
+import net.minecraft.resources.ResourceLocation;
+
+/**
+ * 一个可被 HUD 布局系统拖动的内容包元素（客户端）。
+ *
+ * <p>桥的两半：{@link #group()} 决定它跟随哪份偏移（同组元素一起移动），
+ * {@link #bounds()} 让编辑屏画出可拖动手柄。渲染仍然由登记方自己做——
+ * 布局系统只提供偏移量，不去改别人的绘制代码。
+ *
+ * <p>示例（地图包）：
+ * <pre>{@code
+ * HudElements.register(new HudElement() {
+ *     public ResourceLocation id() { return ID; }
+ *     public ResourceLocation group() { return GROUP; }   // 例：map-pack:map
+ *     public Bounds bounds() { return new Bounds(x, y, size, size); }
+ * });
+ * // 渲染时：
+ * int dx = HudLayoutApi.offsetX(ID);
+ * int dy = HudLayoutApi.offsetY(ID);
+ * }</pre>
+ */
+public interface HudElement {
+
+    ResourceLocation id();
+
+    /**
+     * 分组键。同一组的元素共享同一份偏移。
+     *
+     * <p>原版的血量/盔甲/饥饿/空气靠 {@code Gui.leftHeight/rightHeight} 互相堆叠，
+     * 必须与 hotbar 同组整体移动，拆开会让堆叠错位。
+     */
+    ResourceLocation group();
+
+    /** 未应用偏移时的矩形（GUI 缩放单位）。每帧调用，可依赖屏幕尺寸与玩家状态。 */
+    Bounds bounds();
+
+    record Bounds(int x, int y, int width, int height) {
+
+        public Bounds shifted(int dx, int dy) {
+            return new Bounds(x + dx, y + dy, width, height);
+        }
+
+        public boolean contains(double mouseX, double mouseY) {
+            return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
+        }
+
+        public int right() {
+            return x + width;
+        }
+
+        public int bottom() {
+            return y + height;
+        }
+    }
+}
