@@ -107,6 +107,10 @@ runs {
     // The gametest system is also enabled by default for other run configs under the /test command.
     gameTestServer {
         systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        // E1 接线：把 test 源集加入 MOD_CLASSES，让 @GameTestHolder 类被扫描到。
+        // configureEach 上面已加 main；modSource 是追加语义（RunImpl.modSource → RunSourceSets.add，
+        // javap net.neoforged.gradle 7.1.26 确认），不覆盖 main。
+        modSource project.sourceSets.test
     }
 
     data {
@@ -133,6 +137,17 @@ runs {
     tasks.matching { it.name == "run${runName.capitalize()}" }.configureEach {
         dependsOn copyName
     }
+}
+
+// NeoGradle 缺陷修正：writeMinecraftClasspath* 任务的输入不含 GRADLE_USER_HOME，
+// 缓存目录搬迁（本机 2026-10 前 C:\Users\catoxide\.gradle → 现 D:\.gradle）后任务仍 UP-TO-DATE，
+// classpath.txt 保留旧盘符路径。BootstrapLauncher 对不存在的条目静默跳过 →
+// 模块层缺 NeoForge jar → 找不到 java.util.function.Consumer 入口服务 →
+// NoSuchElementException: No value present（2026-10-28 E1 实测：gameTestServer/data/junit 三个
+// run 全部中招，client/server 因文件恰好在 D: 盘正常）。把 user home 加入输入：
+// 目录再变时任务自动失效重生成。
+tasks.matching { it.name.startsWith('writeMinecraftClasspath') }.configureEach {
+    inputs.property('gradleUserHome', gradle.gradleUserHomeDir.absolutePath)
 }
 
 // NeoGradle 7.1.26 缺陷修正：DownloadAssets.assetIndex 约定值恒为 "asset-index"，
