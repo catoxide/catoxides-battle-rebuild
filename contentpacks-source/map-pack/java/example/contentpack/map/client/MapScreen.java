@@ -1,61 +1,58 @@
 package example.contentpack.map.client;
 
-import com.mojang.blaze3d.platform.NativeImage;
 import example.contentpack.map.MapConfig;
 import example.contentpack.map.MapLayer;
-import example.contentpack.map.MapStorage;
 import example.contentpack.map.MapStore;
+import example.contentpack.map.MapTile;
+import example.contentpack.map.marker.MarkerDto;
+import example.contentpack.map.marker.MarkerType;
+import example.contentpack.map.network.MarkerCreatePayload;
+import example.contentpack.map.network.MarkerRemovePayload;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.texture.DynamicTexture;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 全屏世界地图：**视口重采样 + 离散缩放档位**。
+ * 全屏世界地图：源瓦片 + GPU 缩放（图片编辑器模型）+ 工具栏 UI。
  *
- * <p>可见区域从 {@link MapStore} 重新采样成一张 {@value #VIEWPORT_TEX}×{@value #VIEWPORT_TEX}
- * 的纹理，再整体缩放到屏幕。任意档位都是整张图缩放，没有瓦片取样中心、没有接缝。
- *
- * <p>交互：左键拖动（拖动时旧纹理偏移绘制，松手重采样）· 滚轮切换 1/2/4/8/16/32 档 ·
- * C 回到玩家 · PgUp/PgDn 切层 · Esc 关闭。
+ * <p>底部：标记管理 / 放置 / 图层 / 设置；右侧：缩放、归中、导出；右上角显示当前缩放。
+ * 按钮有悬停/按下亮度反馈；鼠标悬停标记会高亮。
  */
 public final class MapScreen extends Screen {
 
     private static final int[] ZOOMS = {1, 2, 4, 8, 16, 32};
-    private static final int VIEWPORT_TEX = 512;
-    private static final int MAX_LOAD_REQUESTS = 256;
+    private static final int MAX_LOAD_REQUESTS = 320;
     private static final int MARGIN = 40;
-    private static final long REBUILD_INTERVAL_NANOS = 200_000_000L;
+    private static final int BOTTOM_BAR = 28;
 
-    private NativeImage viewportImage;
-    private DynamicTexture viewportTexture;
-    private ResourceLocation viewportLocation;
-    private int textureSeq;
-
-    private int textureOriginX;
-    private int textureOriginZ;
-    private int textureStep = 1;
-    private long lastRebuildNanos;
-    private long lastGeneration = -1;
-    private boolean needRebuild = true;
+    private final TileLodTextures textures = new TileLodTextures();
+    private final List<MapUiButton> buttons = new ArrayList<>();
 
     private int zoomIndex;
-    /** 视口中心保持 double，避免每次缩放取整累积误差。 */
     private double centerX;
     private double centerZ;
     private boolean followPlayer = true;
-    private boolean dragging;
+    private boolean placing;
+
+    private boolean pressing;
+    private boolean moved;
+    private double pressX;
+    private double pressY;
+    private MarkerDto pressedMarker;
+    private boolean mouseDown;
+
     private String layerOverride;
     private String lastLayer;
     private ResourceLocation lastDimension;
-    private long lastBiomeVersion = -1;
 
     public MapScreen() {
         super(Component.translatable("catoxidesbattlerebuild.map.title"));
@@ -71,7 +68,28 @@ public final class MapScreen extends Screen {
     @Override
     protected void init() {
         syncView();
-        rebuildViewport();
+        buildButtons();
+    }
+
+    private void buildButtons() {
+        buttons.clear();
+        int barY = this.height - BOTTOM_BAR + 4;
+        int bx = 10;
+        buttons.add(new MapUiButton(bx, barY, 90, 20, "Markers",
+                () -> Minecraft.getInstance().setScreen(new MarkerListScreen())));
+        bx += 96;
+        buttons.add(new MapUiButton(bx, barY, 90, 20, placing ? "Placing..." : "Place", this::togglePlacing));
+        bx += 96;
+        buttons.add(new MapUiButton(bx, barY, 90, 20, "Layers", () -> hint("Layers: coming soon")));
+        bx += 96;
+        buttons.add(new MapUiButton(bx, barY, 90, 20, "Settings", () -> hint("Settings: coming soon")));
+
+        int sideX = this.width - 28;
+        int sideY = top() + 10;
+        buttons.add(new MapUiButton(sideX, sideY, 22, 22, "+", this::zoomIn));
+        buttons.add(new MapUiButton(sideX, sideY + 26, 22, 22, "-", this::zoomOut));
+        buttons.add(new MapUiButton(sideX, sideY + 52, 22, 22, "C", this::recenter));
+        buttons.add(new MapUiButton(sideX, sideY + 78, 22, 22, "E", () -> hint("Export: coming soon")));
     }
 
     @Override
@@ -95,24 +113,60 @@ public final class MapScreen extends Screen {
         double minWorldX = centerX - span / 2.0;
         double minWorldZ = centerZ - span / 2.0;
         String layer = currentLayer(level);
+        ResourceLocation dimension = level.dimension().location();
+        boolean prediction = MapLayer.TOP.equals(layer);
+        int lod = lodFor(bpp);
 
-        maybeRebuild();
+        MapMinimap.requestVisibleTiles(dimension, layer,
+                (int) Math.floor(minWorldX), (int) Math.floor(minWorldZ), span + 256,
+                MAX_LOAD_REQUESTS);
+        if (prediction) {
+            MapBiomeLayer.ensureVisible(dimension,
+                    (int) Math.floor(minWorldX), (int) Math.floor(minWorldZ), span + 256);
+        }
 
         graphics.fill(0, 0, this.width, this.height, 0xD0101010);
         graphics.fill(left - 1, top - 1, left + view + 1, top + view + 1, 0xFF000000);
 
-        int drawSize = (int) Math.round(VIEWPORT_TEX * textureStep / (double) bpp);
-        int screenX = left + (int) Math.floor((textureOriginX - minWorldX) / bpp);
-        int screenY = top + (int) Math.floor((textureOriginZ - minWorldZ) / bpp);
+        int minTileX = MapTile.tileCoord((int) Math.floor(minWorldX));
+        int maxTileX = MapTile.tileCoord((int) Math.floor(minWorldX + span));
+        int minTileZ = MapTile.tileCoord((int) Math.floor(minWorldZ));
+        int maxTileZ = MapTile.tileCoord((int) Math.floor(minWorldZ + span));
+        int minY = level.getMinBuildHeight();
+        int heightRange = Math.max(1, level.getMaxBuildHeight() - minY - 1);
+        int lodSize = MapTile.SIZE >> lod;
+        int screenTile = MapTile.SIZE / bpp;
 
         graphics.enableScissor(left, top, left + view, top + view);
-        if (viewportLocation != null) {
-            graphics.blit(viewportLocation, screenX, screenY, 0, 0,
-                    drawSize, drawSize, VIEWPORT_TEX, VIEWPORT_TEX);
+        for (MapStore.TileAt at : MapStore.visibleTiles(
+                dimension, layer, minTileX, maxTileX, minTileZ, maxTileZ)) {
+            ResourceLocation texture = textures.get(at, dimension, minY, heightRange, lod,
+                    prediction, prediction ? MapBiomeLayer.version() : 0L);
+            int screenX = left + (int) Math.floor(
+                    (at.x() * MapTile.SIZE - minWorldX) / bpp);
+            int screenZ = top + (int) Math.floor(
+                    (at.z() * MapTile.SIZE - minWorldZ) / bpp);
+            graphics.blit(texture, screenX, screenZ, 0, 0,
+                    screenTile, screenTile, lodSize, lodSize);
         }
         graphics.disableScissor();
 
-        drawPlayerMarker(graphics, minecraft, left, top, view, screenX, screenY, drawSize);
+        MarkerHud.renderFullmap(graphics, minecraft, left, top, view, bpp,
+                minWorldX, minWorldZ, dimension, partialTick);
+        drawPlayerMarker(graphics, minecraft, left, top, view, minWorldX, minWorldZ, bpp);
+        highlightHoveredMarker(graphics, minecraft, mouseX, mouseY, left, top, minWorldX, minWorldZ, bpp);
+
+        // 工具栏
+        graphics.fill(0, this.height - BOTTOM_BAR, this.width, this.height, 0xC0101010);
+        for (MapUiButton button : buttons) {
+            button.render(graphics, minecraft.font, mouseX, mouseY, mouseDown);
+        }
+        drawZoomBox(graphics, minecraft, top);
+        if (placing) {
+            graphics.drawCenteredString(minecraft.font,
+                    "Click the map to place a permanent marker",
+                    this.width / 2, top - 14, 0xFFFFCC44);
+        }
 
         String info = (int) Math.floor(centerX) + ", " + (int) Math.floor(centerZ)
                 + "   (" + span + " blocks)"
@@ -123,7 +177,7 @@ public final class MapScreen extends Screen {
                 Component.translatable("catoxidesbattlerebuild.map.hint"),
                 this.width / 2, top + view + 22, 0xFFAAAAAA);
 
-        if (MapConfig.showBlockInfo() && !dragging && insideView(mouseX, mouseY)) {
+        if (MapConfig.showBlockInfo() && !pressing && insideView(mouseX, mouseY)) {
             int worldX = (int) Math.floor(minWorldX + (mouseX - left) * (double) bpp);
             int worldZ = (int) Math.floor(minWorldZ + (mouseY - top) * (double) bpp);
             MapProbe.Info probe = MapProbe.probe(level, worldX, worldZ, layer);
@@ -133,98 +187,45 @@ public final class MapScreen extends Screen {
         }
     }
 
-    private void maybeRebuild() {
-        long now = System.nanoTime();
-        if (needRebuild) {
-            rebuildViewport();
-            return;
-        }
-        long generation = MapStorage.generation();
-        if (now - lastRebuildNanos < REBUILD_INTERVAL_NANOS) {
-            return;
-        }
-        if (generation != lastGeneration || (followPlayer && !dragging)) {
-            rebuildViewport();
-        }
+    private void drawZoomBox(GuiGraphics graphics, Minecraft minecraft, int top) {
+        int x = this.width - 96;
+        int y = top + 10;
+        graphics.fill(x, y, x + 62, y + 18, 0xC0101010);
+        graphics.drawCenteredString(minecraft.font, ZOOMS[zoomIndex] + " b/px",
+                x + 31, y + 5, 0xFFFFFFFF);
     }
 
-    private void rebuildViewport() {
-        Minecraft minecraft = Minecraft.getInstance();
-        ClientLevel level = minecraft.level;
-        if (level == null || minecraft.player == null || MapWorld.id() == null) {
+    private void highlightHoveredMarker(GuiGraphics graphics, Minecraft minecraft,
+                                        int mouseX, int mouseY, int left, int top,
+                                        double minWorldX, double minWorldZ, int bpp) {
+        if (!insideView(mouseX, mouseY)) {
             return;
         }
-        int view = viewSize();
-        int bpp = ZOOMS[zoomIndex];
-        int span = view * bpp;
-        int step = Math.max(1, (span + VIEWPORT_TEX - 1) / VIEWPORT_TEX);
-        int textureSpan = step * VIEWPORT_TEX;
-        int originX = (int) Math.floor(centerX - textureSpan / 2.0);
-        int originZ = (int) Math.floor(centerZ - textureSpan / 2.0);
-        String layer = currentLayer(level);
-        ResourceLocation dimension = level.dimension().location();
-        boolean prediction = MapLayer.TOP.equals(layer);
-
-        MapMinimap.requestVisibleTiles(dimension, layer, originX, originZ, textureSpan,
-                MAX_LOAD_REQUESTS);
-        if (prediction) {
-            MapBiomeLayer.ensureVisible(dimension, originX, originZ, textureSpan);
+        MarkerDto hovered = markerAt(mouseX, mouseY);
+        if (hovered == null) {
+            return;
         }
-
-        int minY = level.getMinBuildHeight();
-        int heightRange = Math.max(1, level.getMaxBuildHeight() - minY - 1);
-        NativeImage image = new NativeImage(VIEWPORT_TEX, VIEWPORT_TEX, true);
-        boolean[] known = new boolean[VIEWPORT_TEX * VIEWPORT_TEX];
-
-        for (int py = 0; py < VIEWPORT_TEX; py++) {
-            int worldZ = originZ + py * step;
-            for (int px = 0; px < VIEWPORT_TEX; px++) {
-                int worldX = originX + px * step;
-                int argb = MapStore.sampleColor(dimension, layer, worldX, worldZ);
-                if (argb == 0) {
-                    continue;
-                }
-                int y = MapStore.sampleHeight(dimension, layer, worldX, worldZ);
-                int fluid = MapStore.sampleFluid(dimension, layer, worldX, worldZ);
-                image.setPixelRGBA(px, py, MapMinimap.toNativeAbgr(
-                        MapMinimap.applyShade(argb, y, minY, heightRange, fluid)));
-                known[py * VIEWPORT_TEX + px] = true;
+        int px = left + (int) Math.floor((hovered.x() - minWorldX) / bpp);
+        int py = top + (int) Math.floor((hovered.z() - minWorldZ) / bpp);
+        if (hovered.type().waypoint()) {
+            // 不要框：把白色三角直接压成灰色，像被按住
+            MarkerHud.drawTriangle(graphics, px, py, 5, 0xFF8A8A8A);
+        } else {
+            graphics.fill(px - 8, py - 8, px + 8, py + 8, 0x66000000);
+            String label = hovered.data().getString("label");
+            if (!label.isBlank()) {
+                graphics.drawCenteredString(minecraft.font, label, px, py - 20, 0xFFFFFFFF);
             }
         }
-
-        if (prediction) {
-            // 缩得太远时关掉描边，避免变成密集网格
-            boolean outline = MapConfig.predictionOutline() && step <= 8;
-            BiomeOverlay.paint(image, dimension, originX, originZ, VIEWPORT_TEX, step,
-                    (px, py) -> known[py * VIEWPORT_TEX + px], outline);
-        }
-
-        if (viewportLocation != null) {
-            minecraft.getTextureManager().release(viewportLocation);
-        }
-        viewportImage = image;
-        viewportTexture = new DynamicTexture(image);
-        viewportTexture.setFilter(true, false);
-        viewportLocation = minecraft.getTextureManager()
-                .register("map_pack_viewport_" + (textureSeq++), viewportTexture);
-
-        textureOriginX = originX;
-        textureOriginZ = originZ;
-        textureStep = step;
-        lastRebuildNanos = System.nanoTime();
-        lastGeneration = MapStorage.generation();
-        needRebuild = false;
     }
 
-    /** 玩家标记按纹理自身映射计算，缩放/拖动时不会和地图内容错位。 */
     private void drawPlayerMarker(GuiGraphics graphics, Minecraft minecraft,
                                   int left, int top, int view,
-                                  int screenX, int screenY, int drawSize) {
-        double scale = drawSize / (double) Math.max(1, VIEWPORT_TEX * textureStep);
-        int playerX = screenX + (int) Math.round(
-                (minecraft.player.getX() - textureOriginX) * scale);
-        int playerZ = screenY + (int) Math.round(
-                (minecraft.player.getZ() - textureOriginZ) * scale);
+                                  double minWorldX, double minWorldZ, int bpp) {
+        int playerX = left + (int) Math.floor(
+                (minecraft.player.getX() - minWorldX) / bpp);
+        int playerZ = top + (int) Math.floor(
+                (minecraft.player.getZ() - minWorldZ) / bpp);
         if (playerX < left || playerX >= left + view || playerZ < top || playerZ >= top + view) {
             return;
         }
@@ -274,21 +275,72 @@ public final class MapScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        mouseDown = true;
+        for (MapUiButton widget : buttons) {
+            if (widget.click(mouseX, mouseY, button)) {
+                return true;
+            }
+        }
         if (button == 0 && insideView(mouseX, mouseY)) {
-            dragging = true;
+            if (placing) {
+                placing = false;
+                buildButtons();
+                createMapMarker(mouseX, mouseY, true);
+                return true;
+            }
+            pressing = true;
+            moved = false;
+            pressX = mouseX;
+            pressY = mouseY;
+            pressedMarker = markerAt(mouseX, mouseY);
             followPlayer = false;
+            return true;
+        }
+        if (button == 1 && insideView(mouseX, mouseY)) {
+            handleRightClick(mouseX, mouseY);
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
+    private MarkerDto markerAt(double mouseX, double mouseY) {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        if (level == null) {
+            return null;
+        }
+        int bpp = ZOOMS[zoomIndex];
+        int span = viewSize() * bpp;
+        double minWorldX = centerX - span / 2.0;
+        double minWorldZ = centerZ - span / 2.0;
+        int left = left();
+        int top = top();
+        MarkerDto nearest = null;
+        double best = 12.0 * 12.0;
+        for (MarkerDto marker : MarkerClient.visibleMarkers(level.dimension().location())) {
+            int px = left + (int) Math.floor((marker.x() - minWorldX) / bpp);
+            int py = top + (int) Math.floor((marker.z() - minWorldZ) / bpp);
+            double distance = (px - mouseX) * (px - mouseX) + (py - mouseY) * (py - mouseY);
+            if (distance < best) {
+                best = distance;
+                nearest = marker;
+            }
+        }
+        return nearest;
+    }
+
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button,
                                 double dragX, double dragY) {
-        if (dragging) {
-            int bpp = ZOOMS[zoomIndex];
-            centerX -= dragX * bpp;
-            centerZ -= dragY * bpp;
+        if (pressing) {
+            if (Math.abs(mouseX - pressX) > 3 || Math.abs(mouseY - pressY) > 3) {
+                moved = true;
+            }
+            if (moved) {
+                int bpp = ZOOMS[zoomIndex];
+                centerX -= dragX * bpp;
+                centerZ -= dragY * bpp;
+            }
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
@@ -296,12 +348,55 @@ public final class MapScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 0 && dragging) {
-            dragging = false;
-            needRebuild = true;
+        mouseDown = false;
+        if (button == 0 && pressing) {
+            pressing = false;
+            if (!moved && pressedMarker != null) {
+                openEditor(pressedMarker);
+            }
+            pressedMarker = null;
+            moved = false;
             return true;
         }
         return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    private void openEditor(MarkerDto marker) {
+        Minecraft.getInstance().setScreen(new MarkerEditScreen(marker));
+    }
+
+    /** 右键：点到标记 → 删除；空处 → 临时点；Shift+右键 → 永久点。 */
+    private void handleRightClick(double mouseX, double mouseY) {
+        MarkerDto nearest = markerAt(mouseX, mouseY);
+        if (nearest != null) {
+            PacketDistributor.sendToServer(new MarkerRemovePayload(nearest.id()));
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        boolean permanent = minecraft.player != null && minecraft.player.isShiftKeyDown();
+        createMapMarker(mouseX, mouseY, permanent);
+    }
+
+    private void createMapMarker(double mouseX, double mouseY, boolean permanent) {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        if (level == null || minecraft.player == null) {
+            return;
+        }
+        int bpp = ZOOMS[zoomIndex];
+        int span = viewSize() * bpp;
+        double minWorldX = centerX - span / 2.0;
+        double minWorldZ = centerZ - span / 2.0;
+        int worldX = (int) Math.floor(minWorldX + (mouseX - left()) * bpp);
+        int worldZ = (int) Math.floor(minWorldZ + (mouseY - top()) * bpp);
+        String layer = currentLayer(level);
+        int surfaceY = MapStore.sampleHeight(level.dimension().location(), layer, worldX, worldZ);
+        double y = surfaceY == Integer.MIN_VALUE ? 64.0 : surfaceY;
+        ResourceLocation icon = ResourceLocation.withDefaultNamespace("nether_star");
+        PacketDistributor.sendToServer(new MarkerCreatePayload(
+                permanent ? MarkerType.STICKY.name() : MarkerType.PING.name(),
+                icon, worldX + 0.5, y, worldZ + 0.5,
+                -1, -1, "map:" + worldX + "," + worldZ, new CompoundTag(), permanent));
     }
 
     @Override
@@ -319,7 +414,6 @@ public final class MapScreen extends Screen {
         if (next == zoomIndex) {
             return true;
         }
-        // 以光标下的世界点为锚缩放（double 中心，避免取整漂移）
         double relX = mouseX - (left + view / 2.0);
         double relZ = mouseY - (top + view / 2.0);
         double worldX = centerX + relX * oldBpp;
@@ -328,15 +422,37 @@ public final class MapScreen extends Screen {
         int newBpp = ZOOMS[zoomIndex];
         centerX = worldX - relX * newBpp;
         centerZ = worldZ - relZ * newBpp;
-        needRebuild = true;
         return true;
+    }
+
+    private void zoomIn() {
+        zoomIndex = Math.max(0, zoomIndex - 1);
+    }
+
+    private void zoomOut() {
+        zoomIndex = Math.min(ZOOMS.length - 1, zoomIndex + 1);
+    }
+
+    private void recenter() {
+        followPlayer = true;
+    }
+
+    private void togglePlacing() {
+        placing = !placing;
+        buildButtons();
+    }
+
+    private void hint(String message) {
+        var player = Minecraft.getInstance().player;
+        if (player != null) {
+            player.displayClientMessage(Component.literal(message), true);
+        }
     }
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (keyCode == GLFW.GLFW_KEY_C) {
             followPlayer = true;
-            needRebuild = true;
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_PAGE_UP || keyCode == GLFW.GLFW_KEY_PAGE_DOWN) {
@@ -353,17 +469,10 @@ public final class MapScreen extends Screen {
 
     @Override
     public void removed() {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (viewportLocation != null) {
-            minecraft.getTextureManager().release(viewportLocation);
-            viewportLocation = null;
-        }
-        viewportTexture = null;
-        viewportImage = null;
+        textures.clear();
         super.removed();
     }
 
-    /** 跟随玩家 + 层/维度/预测版本变化时触发重采样。 */
     private void syncView() {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
@@ -376,13 +485,10 @@ public final class MapScreen extends Screen {
         }
         String layer = currentLayer(level);
         ResourceLocation dimension = level.dimension().location();
-        long biomeVersion = MapBiomeLayer.version();
-        if (!dimension.equals(lastDimension) || !layer.equals(lastLayer)
-                || biomeVersion != lastBiomeVersion) {
+        if (!dimension.equals(lastDimension) || !layer.equals(lastLayer)) {
+            textures.clear();
             lastDimension = dimension;
             lastLayer = layer;
-            lastBiomeVersion = biomeVersion;
-            needRebuild = true;
         }
     }
 
@@ -398,7 +504,6 @@ public final class MapScreen extends Screen {
         }
         layerOverride = layers.get(Math.floorMod(index + delta, layers.size()));
         syncView();
-        needRebuild = true;
     }
 
     private String currentLayer(ClientLevel level) {
@@ -413,7 +518,7 @@ public final class MapScreen extends Screen {
     }
 
     private int viewSize() {
-        return Math.min(this.width, this.height) - MARGIN;
+        return Math.min(this.width, this.height - BOTTOM_BAR - 16) - MARGIN;
     }
 
     private int left() {
@@ -421,7 +526,12 @@ public final class MapScreen extends Screen {
     }
 
     private int top() {
-        return (this.height - viewSize()) / 2;
+        return (this.height - BOTTOM_BAR - viewSize()) / 2;
+    }
+
+    private static int lodFor(int bpp) {
+        int level = Integer.numberOfTrailingZeros(Integer.highestOneBit(Math.max(1, bpp)));
+        return Math.min(TileLodTextures.MAX_LOD, level);
     }
 
     private static int nearestZoomIndex(int bpp) {

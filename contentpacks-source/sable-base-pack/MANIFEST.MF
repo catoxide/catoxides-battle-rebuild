@@ -4,5 +4,6 @@ Module-Version: 1.0.0
 Module-Requires: catoxidesbattlerebuild>=0.2.0
 Module-Type: contentpack
 Module-Entry: example.contentpack.sablebase.SableBasePack
+Module-Dependencies-Optional: map-pack
 Module-Mod-Requires: sable>=2.0.3
 

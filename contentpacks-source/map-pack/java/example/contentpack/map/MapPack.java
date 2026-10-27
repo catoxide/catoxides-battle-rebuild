@@ -4,11 +4,17 @@ import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPack;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackContext;
 import com.catoxide.catoxidesbattlerebuild.core.hud.HudElements;
+import com.catoxide.catoxidesbattlerebuild.core.map.MapCaps;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
+import example.contentpack.map.client.CompassConfig;
+import example.contentpack.map.client.CompassHudElement;
 import example.contentpack.map.client.MapClientEvents;
 import example.contentpack.map.client.MapHudElement;
+import example.contentpack.map.marker.MarkerServerConfig;
+import example.contentpack.map.marker.MarkerService;
 import example.contentpack.map.network.MapNetwork;
 import example.contentpack.map.network.MapServerSync;
+import example.contentpack.map.network.MarkerNetwork;
 import com.catoxide.catoxidesbattlerebuild.core.world.WorldIdentity;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
@@ -52,18 +58,30 @@ public final class MapPack implements ContentPack {
     public void register(ContentPackContext context) {
         // 两端都要注册：服务端负责发送，客户端负责接收
         MapNetwork.register(context.getModEventBus());
+        MarkerNetwork.register(context.getModEventBus());
+
+        // 标记服务端逻辑在集成服务器（单机）里也必须跑：CLIENT 是 JVM 级常量，
+        // 不能用来区分“这一侧是不是服务端”，否则单机没有 TTL 清理/死亡点/登录同步/实体发光。
+        MarkerServerConfig.bind(context.config("server"));
+        MarkerService.init();
+        example.contentpack.map.marker.MarkerSelfTest.run();
+        // 世界启动时就生成/落盘世界 ID，保证玩家登录前已就绪
+        NeoForge.EVENT_BUS.addListener((ServerStartedEvent event) ->
+                WorldIdentity.get(event.getServer()));
 
         if (CatoxidesBattleRebuildConstants.CLIENT) {
             MapConfig.bind(context.config("map"));
+            CompassConfig.bind(context.config("map"));
+            // 地图扩展能力：必须早于依赖 map-pack 的包 register（由 Module-Dependencies 保证顺序）
+            context.provide(MapCaps.API, MapHooks.INSTANCE);
             HudElements.register(new MapHudElement());
+            HudElements.register(new CompassHudElement());
             MapClientEvents.init(context.getModEventBus());
-            LogManager.clientStartup("MapPack", "小地图/世界地图已注册（M 键打开世界地图）");
+            LogManager.clientStartup("MapPack", "小地图/世界地图已注册（M 键打开世界地图；map:api 能力已提供）");
         } else {
+            // 专用服务器才需要广播方块变化：单机客户端自己经 BlockChangeHooks 收到更新
             MapServerSync.init();
-            // 世界启动时就生成/落盘世界 ID，保证玩家登录前已就绪
-            NeoForge.EVENT_BUS.addListener((ServerStartedEvent event) ->
-                    WorldIdentity.get(event.getServer()));
-            LogManager.serverInfo("MapPack", "地图方块变化广播已启用（脏区块通知）");
         }
+        LogManager.serverInfo("MapPack", "地图方块变化广播 + 标记服务已启用");
     }
 }

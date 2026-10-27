@@ -99,6 +99,10 @@ public final class MapCapture {
         if (!(changedLevel instanceof ClientLevel clientLevel)) {
             return;
         }
+        // 分离空间（Sable plot 里的船体）不属于任何地图层；只由对应扩展包自己采集
+        if (MapHooks.INSTANCE.isDetached(changedLevel, pos)) {
+            return;
+        }
         ResourceLocation dimension = clientLevel.dimension().location();
         ChunkPos chunk = new ChunkPos(pos);
         Set<String> layers = MapStore.layers(dimension);
@@ -115,6 +119,10 @@ public final class MapCapture {
 
     /** 远端变化（服务端广播）→ 内存里该维度的所有层都重采。 */
     public static void markDirtyChunk(ClientLevel clientLevel, ChunkPos pos) {
+        if (MapHooks.INSTANCE.isDetached(clientLevel,
+                new BlockPos(pos.getMinBlockX(), clientLevel.getMinBuildHeight(), pos.getMinBlockZ()))) {
+            return;
+        }
         Set<String> layers = MapStore.layers(clientLevel.dimension().location());
         if (layers.isEmpty()) {
             DIRTY.add(new Job(MapLayer.TOP, pos));

@@ -4,11 +4,21 @@ import java.util.UUID;
 
 /**
  * sub-level 信息（防腐层值类型）
- * <p>主 mod 对「可移动物理结构」的不透明表示：ID + 名称 + 姿态。
+ * <p>主 mod 对「可移动物理结构」的不透明表示：ID + 名称 + 姿态 + 局部包围盒。
  * 由 sable-base contentpack 适配器从 sable 的 SubLevel 对象转换而来。
  */
 public record SubLevelInfo(
         UUID id,
         String name,
-        PoseData pose
-) {}
+        PoseData pose,
+        SubLevelBounds bounds
+) {
+
+    public SubLevelInfo {
+        bounds = bounds == null ? SubLevelBounds.EMPTY : bounds;
+    }
+
+    public boolean containsLocal(double x, double y, double z) {
+        return this.bounds.contains(x, y, z);
+    }
+}

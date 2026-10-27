@@ -122,6 +122,146 @@
                 "When entering a new world whose seed matches an existing map, ask whether to inherit it.",
                 "Inheritance copies the old map into this world; the two stay independent."
               ]
+            },
+            {
+              "key": "markerSound",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": "Play a sound when another player's marker arrives."
+            }
+          ]
+        },
+        {
+          "key": "compass",
+          "values": [
+            {
+              "key": "fovTicks",
+              "type": "bool",
+              "default": false,
+              "tier": "HOT",
+              "comment": [
+                "false: fixed 110-degree window, 15-degree ticks (default).",
+                "true:  the bar spans your field of view, so tick spacing simulates real angles."
+              ]
+            },
+            {
+              "key": "numberOnly",
+              "type": "bool",
+              "default": false,
+              "tier": "HOT",
+              "comment": "true: show only the current bearing number (hide bar/ticks)."
+            },
+            {
+              "key": "thickBar",
+              "type": "bool",
+              "default": false,
+              "tier": "HOT",
+              "comment": "true: taller bar; false: normal/thin bar (default)."
+            },
+            {
+              "key": "frostedBackground",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": "true: frosted black background (default); false: no background."
+            },
+            {
+              "key": "alignMode",
+              "type": "int",
+              "default": 0,
+              "tier": "HOT",
+              "min": 0,
+              "max": 2,
+              "comment": [
+                "0: perspective - follow game FOV with tan projection (matches on-screen direction).",
+                "1: center only - fixed reference FOV with adjustable spread.",
+                "2: linear - fixed 110 degree window (legacy)."
+              ]
+            },
+            {
+              "key": "referenceFov",
+              "type": "int",
+              "default": 70,
+              "tier": "HOT",
+              "min": 30,
+              "max": 120,
+              "comment": "Reference FOV used by alignMode=1."
+            },
+            {
+              "key": "compassScale",
+              "type": "double",
+              "default": 1.0,
+              "tier": "HOT",
+              "min": 0.4,
+              "max": 2.5,
+              "comment": [
+                "Horizontal spread when alignMode=1. Center stays aligned; larger = ticks spread out."
+              ]
+            },
+            {
+              "key": "textStyle",
+              "type": "int",
+              "default": 1,
+              "tier": "HOT",
+              "min": 0,
+              "max": 2,
+              "comment": [
+                "0: no text effect, 1: vanilla shadow (default), 2: four-way outline.",
+                "Outline uses translucent dark grey, not a solid black border."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "server",
+      "scope": "SERVER",
+      "file": "map-pack-server",
+      "defaultTier": "HOT",
+      "sections": [
+        {
+          "key": "markers",
+          "values": [
+            {
+              "key": "shareMarkers",
+              "type": "bool",
+              "default": true,
+              "comment": "Share markers between players. Turn off for public servers."
+            },
+            {
+              "key": "shareAllDimensions",
+              "type": "bool",
+              "default": true,
+              "comment": "Also show markers from other dimensions."
+            },
+            {
+              "key": "markerRange",
+              "type": "int",
+              "default": 0,
+              "min": 0,
+              "max": 8192,
+              "comment": "Only share markers within this radius in blocks. 0 = unlimited."
+            },
+            {
+              "key": "pingSeconds",
+              "type": "int",
+              "default": 10,
+              "min": 1,
+              "max": 120,
+              "comment": [
+                "How long a temporary marker (ping / item / entity / container) stays visible.",
+                "Marking the same target again refreshes this timer."
+              ]
+            },
+            {
+              "key": "deathMarkerRadius",
+              "type": "double",
+              "default": 3.0,
+              "min": 0.5,
+              "max": 16.0,
+              "comment": "A death marker disappears after its owner gets this close (blocks)."
             }
           ]
         }

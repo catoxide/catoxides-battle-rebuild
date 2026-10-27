@@ -1,12 +1,15 @@
 package example.contentpack.map.client;
 
 import com.catoxide.catoxidesbattlerebuild.core.hud.HudLayoutApi;
+import com.catoxide.catoxidesbattlerebuild.core.map.MapRenderContext;
 import com.mojang.blaze3d.platform.NativeImage;
 import example.contentpack.map.MapConfig;
+import example.contentpack.map.MapHooks;
 import example.contentpack.map.MapLayer;
 import example.contentpack.map.MapStorage;
 import example.contentpack.map.MapStore;
 import example.contentpack.map.MapTile;
+import example.contentpack.map.MapView;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -79,6 +82,21 @@ public final class MapMinimap {
             graphics.blit(location, x, y, 0, 0, size, size, size, size);
         }
 
+        // 扩展层（如 Sable sub-level 俯视快照）叠在地形上、边框与标记之下
+        float partialTick = minecraft.getTimer().getGameTimeDeltaPartialTick(true);
+        int span = size * bpp;
+        int halfSpan = span / 2; // 与 rebuild() 的整数原点保持一致
+        MapRenderContext overlayContext = new MapRenderContext(graphics, false,
+                x, y, size, bpp,
+                centerX - halfSpan, centerZ - halfSpan,
+                dimension, partialTick);
+        graphics.enableScissor(x, y, x + size, y + size);
+        try {
+            MapHooks.INSTANCE.renderOverlays(overlayContext);
+        } finally {
+            graphics.disableScissor();
+        }
+
         int border = 0xB0000000;
         graphics.fill(x - 1, y - 1, x + size + 1, y, border);
         graphics.fill(x - 1, y + size, x + size + 1, y + size + 1, border);
@@ -88,7 +106,7 @@ public final class MapMinimap {
         int playerX = x + size / 2;
         int playerY = y + size / 2;
         graphics.fill(playerX - 1, playerY - 1, playerX + 2, playerY + 2, 0xFFFF4040);
-        drawHeading(graphics, playerX, playerY, minecraft.player.getYRot());
+        drawHeading(graphics, playerX, playerY, MapView.yaw(minecraft.player, partialTick));
 
         String coords = centerX + ", " + centerZ;
         if (MapLayer.isSection(layer)) {
@@ -106,6 +124,9 @@ public final class MapMinimap {
         if (MapConfig.showTime()) {
             drawRightAligned(graphics, minecraft, timeString(level), right, lineY, 0xCCFFFFFF);
         }
+
+        MarkerHud.renderMinimap(graphics, minecraft, x, y, size, bpp,
+                centerX, centerZ, dimension, partialTick);
     }
 
     private static void drawRightAligned(GuiGraphics graphics, Minecraft minecraft,

@@ -64,6 +64,10 @@ public final class MapConfig {
         return getBool("predictionOutline", true);
     }
 
+    public static boolean markerSound() {
+        return getBool("markerSound", true);
+    }
+
     /** 新世界发现同 seed 的已有地图时，是否弹窗询问继承。 */
     public static boolean inheritPrompt() {
         return getBool("inheritPrompt", true);
