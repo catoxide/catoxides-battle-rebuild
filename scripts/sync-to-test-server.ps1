@@ -1,26 +1,36 @@
-# sync-to-test-server.ps1 —— 把已提交的分支快照同步到测试服务器（caracatie，HDD checkout）
+# sync-to-test-server.ps1 - sync a committed branch snapshot to the test server (caracatie)
 #
-# 用法（仓库根目录下）：
-#   .\scripts\sync-to-test-server.ps1                      # 默认 Neoforge-1.21.1 → caracatie
-#   .\scripts\sync-to-test-server.ps1 -Branch <名> -Server <ssh别名> [-RemoteRoot <路径>]
+# Usage (from the repo root):
+#   .\scripts\sync-to-test-server.ps1
+#   .\scripts\sync-to-test-server.ps1 -Branch <name> -Server <ssh-alias> [-RemoteRoot <path>]
 #
-# 原则：
-#   - 只同步**已提交**的 ref（git bundle 天然不含工作区未提交改动 = 快照原则，
-#     避免把本地 WIP 脏状态带进测试环境）。
-#   - 服务器 checkout = 一次性快照目录：reset --hard + clean -fdx 后可随时重放。
-#   - 服务器 GRADLE_USER_HOME 约定 = $RemoteRoot/gradle-home（已用 Windows 缓存预热，
-#     因 maven.neoforged.net 从服务器不可达；预热方法见 design/RESEARCH_2026-10-26_模组内容包测试验收系统.md §6 E1 结果）。
+# Principles:
+#   - Only COMMITTED refs are synced (git bundle never carries uncommitted
+#     working-tree changes = snapshot principle; local WIP must not leak into
+#     the test environment).
+#   - The server checkout is disposable: reset --hard + clean -fdx, replayable anytime.
+#   - Server GRADLE_USER_HOME convention: $RemoteRoot/gradle-home (warmed from the
+#     Windows D:\.gradle cache, because maven.neoforged.net is unreachable from the
+#     server). See design/RESEARCH_2026-10-26_*.md section 6, E1 results.
 #
-# 同步后在服务器上跑 GameTest（另开 shell）：
+# After syncing, run the GameTest on the server (separate shell):
 #   cd $RemoteRoot/checkout
 #   export GRADLE_USER_HOME=$RemoteRoot/gradle-home
-#   export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+#   export JAVA_HOME=$RemoteRoot/jdk-21
 #   export JAVA_TOOL_OPTIONS=-Xmx1024m
-#   ./gradlew -Porg.gradle.java.installations.paths=/usr/lib/jvm/java-21-openjdk-amd64 \
+#   ./gradlew -Porg.gradle.java.installations.paths=$RemoteRoot/jdk-21 \
 #             -Dorg.gradle.jvmargs=-Xmx1536m runGameTestServer --console=plain
-#   （退出码 0 = 全部测试通过；见 E1 结果节。）
+#   (exit code 0 = all tests passed)
 #
-# 来源：2026-10-28 E1 实测配方固化（design/RESEARCH_2026-10-26_模组内容包测试验收系统.md §6）。
+# Note: the remote command string deliberately contains NO double quotes -
+# OpenSSH-for-Windows drops them when concatenating remote-command arguments
+# (empirically observed 2026-10-28). Keep it that way.
+#
+# NOTE: keep this file ASCII-only (no non-ASCII characters): Windows PowerShell
+# 5.1 reads BOM-less .ps1 as the system codepage (GBK on zh-CN) and mangles it.
+#
+# Origin: codified from the manually tested E1 procedure, 2026-10-28
+# (design/RESEARCH_2026-10-26_*.md section 6).
 
 param(
     [string]$Branch = "Neoforge-1.21.1",
@@ -34,26 +44,26 @@ Push-Location $repo
 try {
     $localHead = (git rev-parse --short HEAD).Trim()
     $localBranch = (git rev-parse --abbrev-ref HEAD).Trim()
-    Write-Host "[sync] 本地: $localBranch @ $localHead" -ForegroundColor DarkGray
+    Write-Host "[sync] local: $localBranch @ $localHead" -ForegroundColor DarkGray
 
-    $bundle = Join-Path $env:TEMP "mc-test-$Branch.bundle"
+    $bundleName = "mc-test-" + $Branch + ".bundle"
+    $bundle = Join-Path $env:TEMP $bundleName
     if (Test-Path $bundle) { Remove-Item $bundle -Force }
     git bundle create $bundle $Branch
-    if ($LASTEXITCODE -ne 0) { throw "git bundle create 失败" }
+    if ($LASTEXITCODE -ne 0) { throw "git bundle create failed" }
     $mb = [math]::Round((Get-Item $bundle).Length / 1MB, 1)
-    Write-Host "[sync] bundle: $mb MB (分支 $Branch)"
+    Write-Host "[sync] bundle: $mb MB (branch $Branch)"
 
-    $remoteBundle = "$RemoteRoot/sync/mc-test-$Branch.bundle"
-    scp $bundle "$Server:$remoteBundle"
-    if ($LASTEXITCODE -ne 0) { throw "scp 失败" }
+    $remoteBundle = "$RemoteRoot/sync/$bundleName"
+    scp $bundle "$($Server):$remoteBundle"
+    if ($LASTEXITCODE -ne 0) { throw "scp failed" }
 
-    # 远端命令刻意不含双引号（OpenSSH-for-Windows 参数拼接会丢引号，2026-10-28 实测）；
-    # git log --format 不带空格。
     $remote = "cd $RemoteRoot/checkout && git fetch $remoteBundle $Branch && git reset --hard FETCH_HEAD && git clean -fdx && chmod +x gradlew && git log -1 --format=%h"
-    $remoteHead = (ssh $Server $remote) -join " "
-    Write-Host "[sync] 服务器 HEAD: $remoteHead" -ForegroundColor Green
+    # git reset prints "HEAD is now at ..." - the short hash from git log is the LAST line
+    $remoteHead = ((ssh $Server $remote) | Where-Object { $_ -ne "" } | Select-Object -Last 1).Trim()
+    Write-Host "[sync] server HEAD: $remoteHead" -ForegroundColor Green
     if ($localHead -ne $remoteHead) {
-        Write-Warning "[sync] 本地 $localHead 与服务器 $remoteHead 不一致！检查 bundle/分支名。"
+        Write-Warning "[sync] local $localHead != server $remoteHead - check bundle/branch name"
     }
 }
 finally {
