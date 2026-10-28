@@ -42,9 +42,10 @@ $ErrorActionPreference = "Stop"
 $repo = Split-Path $PSScriptRoot -Parent
 Push-Location $repo
 try {
-    $localHead = (git rev-parse --short HEAD).Trim()
+    $localHead = (git rev-parse HEAD).Trim()
+    $localShort = $localHead.Substring(0, 7)
     $localBranch = (git rev-parse --abbrev-ref HEAD).Trim()
-    Write-Host "[sync] local: $localBranch @ $localHead" -ForegroundColor DarkGray
+    Write-Host "[sync] local: $localBranch @ $localShort" -ForegroundColor DarkGray
 
     $bundleName = "mc-test-" + $Branch + ".bundle"
     $bundle = Join-Path $env:TEMP $bundleName
@@ -58,7 +59,7 @@ try {
     scp $bundle "$($Server):$remoteBundle"
     if ($LASTEXITCODE -ne 0) { throw "scp failed" }
 
-    $remote = "cd $RemoteRoot/checkout && git fetch $remoteBundle $Branch && git reset --hard FETCH_HEAD && git clean -fdx && chmod +x gradlew && git log -1 --format=%h"
+    $remote = "cd $RemoteRoot/checkout && git fetch $remoteBundle $Branch && git reset --hard FETCH_HEAD && git clean -fdx && chmod +x gradlew && git rev-parse HEAD"
     # git reset prints "HEAD is now at ..." - the short hash from git log is the LAST line
     $remoteHead = ((ssh $Server $remote) | Where-Object { $_ -ne "" } | Select-Object -Last 1).Trim()
     Write-Host "[sync] server HEAD: $remoteHead" -ForegroundColor Green
