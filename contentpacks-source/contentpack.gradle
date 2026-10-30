@@ -114,6 +114,7 @@ tasks.register('contentpackJar', Jar) {
     from(projectDir) {
         exclude 'java/**'
         exclude 'MANIFEST.MF'
+        exclude 'contentpack.disabled'
         exclude 'build.gradle'
         exclude 'settings.gradle'
         exclude 'build/**'

@@ -74,8 +74,10 @@ boolean includeContentPacks = providers.gradleProperty('withContentPacks').isPre
 if (includeContentPacks) {
     def packRoot = file('contentpacks-source')
     // 自动发现：包目录下有 build.gradle 即为 Gradle 包；纯数据包天然被跳过。
+    // `contentpack.disabled` 标记 = 源码留在仓库但不再构建（被新包取代时用）。
     def packDirs = (packRoot.listFiles() ?: new File[0])
-            .findAll { File d -> d.isDirectory() && new File(d, 'build.gradle').isFile() }
+            .findAll { File d -> d.isDirectory() && new File(d, 'build.gradle').isFile()
+                    && !new File(d, 'contentpack.disabled').isFile() }
             .sort { File a, File b -> a.name <=> b.name }
     include 'packs'
     project(':packs').projectDir = packRoot
