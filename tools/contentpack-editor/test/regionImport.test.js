@@ -101,7 +101,7 @@ console.log('=== 1. 往返：export → import ===');
     ok('Items 往返（count byte 保持 byte）', bn && bn.nbt.v.Items && bn.nbt.v.Items.v.length === 2
         && bn.nbt.v.Items.v[1].v.count.$t === NBT.T.BYTE && bn.nbt.v.Items.v[1].v.count.v === 64
         && bn.nbt.v.Items.v[1].v.id.v === 'minecraft:iron_ingot', JSON.stringify(bn && bn.nbt.v.Items));
-    // 占位符 #empty 导出为 air → 导入后无该位置
+    // 占位符 #empty 是编辑器内部符号，导出时跳过（不写块）；真正的 minecraft:air 才保留
     const piece3 = {
         name: 'ph', size: [2, 1, 1], boxFills: [],
         fillBlocks: [{ x: 0, y: 0, z: 0, block: 'minecraft:stone' }, { x: 1, y: 0, z: 0, block: '#empty' }],
@@ -109,7 +109,7 @@ console.log('=== 1. 往返：export → import ===');
     };
     const r3 = RI.parseRegionNbt(VE.buildTemplateNbt(piece3, 'ns'));
     const p3 = RI.regionToPiece(r3, 'ph3');
-    ok('#empty 导出为 air（导入仅 1 块）', p3.fillBlocks.length === 1, JSON.stringify(p3.fillBlocks));
+    ok('#empty 导出跳过（导入仅 1 块）', p3.fillBlocks.length === 1, JSON.stringify(p3.fillBlocks));
 }
 
 console.log('=== 2. 真实 vanilla 文件（1.21.1 数据集）===');

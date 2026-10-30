@@ -1,8 +1,10 @@
 package example.contentpack.map.marker;
 
 import com.mojang.logging.LogUtils;
+import example.contentpack.map.network.MarkerAdoptPayload;
 import example.contentpack.map.network.MarkerCreatePayload;
 import example.contentpack.map.network.MarkerSyncPayload;
+import example.contentpack.map.network.MarkerUpdatePayload;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import net.minecraft.nbt.CompoundTag;
@@ -63,6 +65,21 @@ public final class MarkerSelfTest {
         } else {
             failed++;
         }
+        if (run("marker-display-keys", MarkerSelfTest::testDisplayKeys)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("update-payload-codec", MarkerSelfTest::testUpdateCodec)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("adopt-payload-codec", MarkerSelfTest::testAdoptCodec)) {
+            passed++;
+        } else {
+            failed++;
+        }
 
         LOGGER.info("[MapMarkerTest] passed={} failed={}", passed, failed);
         if (failed > 0) {
@@ -96,6 +113,11 @@ public final class MarkerSelfTest {
                 case DEATH, ENTITY, ITEM, CONTAINER -> false;
             };
             require(type.waypoint() == expectedWaypoint, "waypoint mismatch: " + type);
+            // 三角形只给临时地点标记；永久地点标记必须绑定真实图标
+            require(type.temporaryWaypoint() == (type == MarkerType.PING),
+                    "temporaryWaypoint mismatch: " + type);
+            require(type.editable() == (type == MarkerType.STICKY),
+                    "editable mismatch: " + type);
         }
     }
 
@@ -236,6 +258,72 @@ public final class MarkerSelfTest {
         CompoundTag emptyItem = new CompoundTag();
         emptyItem.put(MarkerData.KEY_ITEM, new CompoundTag());
         require(!MarkerData.hasItem(emptyItem), "empty item tag is not a stack");
+    }
+
+    /** 地图呈现（名字/图标）与罗盘的缺省规则：老标记没有键时保持旧行为。 */
+    private static void testDisplayKeys() {
+        CompoundTag blank = new CompoundTag();
+        require(!MarkerData.showsName(markerWith(blank)), "no label never shows a name");
+        require(MarkerData.showsInCompass(markerWith(blank)), "no compass key means visible");
+
+        CompoundTag labelled = blank.copy();
+        labelled.putString(MarkerData.KEY_LABEL, "Home");
+        require(MarkerData.showsName(markerWith(labelled)), "legacy label shows as name");
+
+        CompoundTag iconMode = labelled.copy();
+        iconMode.putString(MarkerData.KEY_DISPLAY, MarkerData.DISPLAY_ICON);
+        require(!MarkerData.showsName(markerWith(iconMode)), "display=icon hides the name");
+
+        CompoundTag nameMode = labelled.copy();
+        nameMode.putString(MarkerData.KEY_DISPLAY, MarkerData.DISPLAY_NAME);
+        require(MarkerData.showsName(markerWith(nameMode)), "display=name shows the name");
+
+        CompoundTag compassOff = blank.copy();
+        compassOff.putBoolean(MarkerData.KEY_COMPASS, false);
+        require(!MarkerData.showsInCompass(markerWith(compassOff)), "compass=false hides");
+        compassOff.putBoolean(MarkerData.KEY_COMPASS, true);
+        require(MarkerData.showsInCompass(markerWith(compassOff)), "compass=true shows");
+    }
+
+    private static MarkerDto markerWith(CompoundTag data) {
+        return new MarkerDto(UUID.randomUUID(), UUID.randomUUID(), MarkerType.STICKY,
+                ResourceLocation.parse("minecraft:target"),
+                ResourceLocation.parse("minecraft:overworld"),
+                0, 64, 0, -1, -1, "", data, 1L, 0L);
+    }
+
+    private static void testUpdateCodec() {
+        MarkerUpdatePayload original = new MarkerUpdatePayload(
+                UUID.randomUUID(), ResourceLocation.parse("minecraft:compass"),
+                "Base", false, 12.5, 71.0, -30.25, true, false);
+
+        ByteBuf buffer = Unpooled.buffer();
+        try {
+            MarkerUpdatePayload.CODEC.encode(buffer, original);
+            MarkerUpdatePayload decoded = MarkerUpdatePayload.CODEC.decode(buffer);
+            require(decoded.id().equals(original.id()), "id");
+            require(decoded.icon().equals(original.icon()), "icon");
+            require(decoded.label().equals(original.label()), "label");
+            require(!decoded.resetIcon(), "resetIcon");
+            require(decoded.x() == original.x() && decoded.y() == original.y()
+                    && decoded.z() == original.z(), "coords");
+            require(decoded.showName(), "showName");
+            require(!decoded.compass(), "compass");
+        } finally {
+            buffer.release();
+        }
+    }
+
+    private static void testAdoptCodec() {
+        MarkerAdoptPayload original = new MarkerAdoptPayload(UUID.randomUUID());
+        ByteBuf buffer = Unpooled.buffer();
+        try {
+            MarkerAdoptPayload.CODEC.encode(buffer, original);
+            MarkerAdoptPayload decoded = MarkerAdoptPayload.CODEC.decode(buffer);
+            require(decoded.id().equals(original.id()), "adopt id");
+        } finally {
+            buffer.release();
+        }
     }
 
     private static void require(boolean condition, String name) {

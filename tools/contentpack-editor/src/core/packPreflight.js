@@ -10,6 +10,7 @@ const ManifestLib = require('./manifest');
 const Scaffold = require('./packScaffold');
 const JarReader = require('./jarReader');
 const ItemBlockSchema = require('./itemBlockSchema');
+const QuestSchema = require('./questSchema');
 
 /**
  * 预检一个包目录。
@@ -84,18 +85,79 @@ function preflightPack(packDir, opts = {}) {
         }
     }
 
-    // --- 3. 有数据无入口：entities / items / blocks 都不会被自动注册 ---
+    // --- 2c. 任务 JSON（quests/*.json，仅一级目录） ---
+    // 权威：ContentPackContext.registerQuestsFromJar（只扫 quests/ 第一层）
+    //       + questSchema.validateQuest（镜子 QuestDefinitionParser 的严格性）
+    const quests = [];
+    const questsDir = path.join(packDir, 'quests');
+    if (fs.existsSync(questsDir)) {
+        const seenQuestIds = new Map();
+        for (const ent of fs.readdirSync(questsDir, { withFileTypes: true })) {
+            if (ent.isDirectory()) {
+                // 子目录里的 JSON 永远不会被扫描（name.indexOf('/', 'quests/'.length) != -1）
+                const nested = countJsonDeep(path.join(questsDir, ent.name));
+                if (nested > 0) {
+                    findings.push({
+                        level: 'error', code: 'E-Q-NESTED',
+                        msg: `quests/${ent.name}/ 下有 ${nested} 个 JSON：注册器只扫 quests/ 的【第一层】，` +
+                            `子目录里的任务永远不会被加载（静默死数据）。把它们移到 quests/ 根目录。`,
+                        src: 'ContentPackContext.registerQuestsFromJar（一级目录）',
+                    });
+                }
+                continue;
+            }
+            if (!ent.name.endsWith('.json')) continue;
+            const full = path.join(questsDir, ent.name);
+            let def = null;
+            try {
+                def = JSON.parse(fs.readFileSync(full, 'utf-8'));
+            } catch (e) {
+                findings.push({
+                    level: 'error', code: 'E-Q-JSON',
+                    msg: `quests/${ent.name} 不是合法 JSON：${e.message}（该文件解析失败会被隔离，任务不会注册）`,
+                    src: 'QuestDefinitionParser.parse',
+                });
+                continue;
+            }
+            quests.push(def);
+            // 文件名不必等于 id（注册器遍历 jar、不按 id 找文件），但 id 必须包内唯一：
+            // QuestSystem.registerDefinition 用 id 作键，后者覆盖前者 + 只打印一条 warn
+            const id = def && def.id !== undefined && def.id !== null ? String(def.id).trim() : '';
+            if (id) {
+                if (seenQuestIds.has(id)) {
+                    findings.push({
+                        level: 'error', code: 'E-Q-ID-DUP',
+                        msg: `quests/${ent.name} 的 id "${id}" 与 quests/${seenQuestIds.get(id)} 重复：` +
+                            `QuestSystem 以 id 为键，后注册的会覆盖先注册的（只打印一条警告）。`,
+                        src: 'QuestSystem.registerDefinition',
+                    });
+                } else {
+                    seenQuestIds.set(id, ent.name);
+                }
+            }
+            const check = QuestSchema.validateQuest(def);
+            for (const err of check.errors) {
+                findings.push({ level: 'error', code: 'E-Q-VALID', msg: `quests/${ent.name}: ${err}`, src: 'QuestDefinitionParser / questSchema' });
+            }
+            for (const warn of check.warnings) {
+                findings.push({ level: 'warn', code: 'W-Q-VALID', msg: `quests/${ent.name}: ${warn}`, src: 'questSchema（包 Java 工厂自定字段）' });
+            }
+        }
+    }
+
+    // --- 3. 有数据无入口：entities / items / blocks / quests 都不会被自动注册 ---
     const entry = (manifest['Module-Entry'] || '').trim();
     const ibCount = items.length + blocks.length;
-    if (!entry && entities.length + ibCount > 0) {
+    if (!entry && entities.length + ibCount + quests.length > 0) {
         const what = [];
         if (entities.length) what.push(`${entities.length} 个 entities/*.json`);
         if (items.length) what.push(`${items.length} 个 items/*.json`);
         if (blocks.length) what.push(`${blocks.length} 个 blocks/*.json`);
+        if (quests.length) what.push(`${quests.length} 个 quests/*.json`);
         findings.push({
             level: 'error', code: 'E-DATA-NO-ENTRY',
             msg: `有 ${what.join('、')} 但 MANIFEST 没有 Module-Entry：加载器不会自动注册这些 JSON，` +
-                `只有包的 register() 显式注册（registerDataDrivenMob / registerItemsAndBlocksFromJar）才会生效 ⇒ 这些 JSON 是死数据（游戏里不存在该内容）。` +
+                `只有包的 register() 显式注册（registerDataDrivenMob / registerItemsAndBlocksFromJar / registerQuestsFromJar）才会生效 ⇒ 这些 JSON 是死数据（游戏里不存在该内容）。` +
                 `填上 Module-Entry 并让编辑器生成入口类即可。`,
             src: 'ContentPackContext / BatchContentRegistrar',
         });
@@ -117,6 +179,23 @@ function preflightPack(packDir, opts = {}) {
             }
         } else if (!srcFile || !fs.existsSync(srcFile)) {
             // E-ENTRY-NO-SOURCE 已覆盖，不重复报
+        }
+    }
+    // 入口类存在但没调任务注册 → quests 死数据
+    if (entry && quests.length > 0) {
+        const loc = Scaffold.entryLocation(entry);
+        const srcFile = loc ? path.join(packDir, loc.path) : null;
+        if (srcFile && fs.existsSync(srcFile)) {
+            const src = fs.readFileSync(srcFile, 'utf-8');
+            if (!src.includes('registerQuestsFromJar')) {
+                findings.push({
+                    level: 'error', code: 'E-Q-NO-REGISTER',
+                    msg: `入口类 ${loc.path} 没有调用 context.registerQuestsFromJar()：` +
+                        `本包的 ${quests.length} 个任务不会注册（死数据，游戏里看不到）。` +
+                        `在编辑器里「补齐骨架」会自动插入该调用（只插一行，不改其它代码）。`,
+                    src: 'ContentPackContext.registerQuestsFromJar（jar 扫描注册）',
+                });
+            }
         }
     }
 
@@ -163,10 +242,21 @@ function preflightPack(packDir, opts = {}) {
         entities,
         items,
         blocks,
+        quests,
         expectedJar,
         gradleTask: `${Scaffold.gradleProjectPath(path.basename(packDir))}:contentpackJar`,
         gradleCommand: Scaffold.gradleBuildCommand(path.basename(packDir)),
     };
+}
+
+/** 递归统计目录下 .json 文件数（用于「子目录里的 JSON 不会被扫描」提示） */
+function countJsonDeep(dir) {
+    let n = 0;
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (ent.isDirectory()) n += countJsonDeep(path.join(dir, ent.name));
+        else if (ent.name.endsWith('.json')) n++;
+    }
+    return n;
 }
 
 /**
@@ -225,6 +315,7 @@ function scaffoldFiles(manifest, opts = {}) {
             displayName: opts.displayName || moduleName,
             version: manifest['Module-Version'] || '1.0.0',
             entityIds: opts.entityIds || [],
+            questIds: opts.questIds || [],
         });
         if (src) {
             const loc = Scaffold.entryLocation(entry);

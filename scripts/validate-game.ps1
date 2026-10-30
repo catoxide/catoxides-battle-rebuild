@@ -68,17 +68,36 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-function Invoke-Gradle([string[]]$Args) {
-    & "$root\gradlew.bat" @Args --offline --console=plain 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "gradlew $($Args -join ' ') failed (exit $LASTEXITCODE)" }
+function Invoke-Gradle([string[]]$GradleArgs) {
+    # The parameter must NOT be named $Args: that is a PowerShell automatic variable;
+    # a same-named parameter silently receives nothing, so @Args splats an empty array
+    # and gradlew runs with NO task (default build), exit 0, and the script would
+    # believe a stale pack jar was rebuilt. Measured: quests/_probe_tmp.json deleted
+    # from source stayed inside the jar and the data phase still passed.
+    # Hence: rename the parameter AND assert the task line actually appears below.
+    $output = & "$root\gradlew.bat" @GradleArgs --offline --console=plain 2>&1
+    $code = $LASTEXITCODE
+    $text = ($output | Out-String)
+    if ($code -ne 0) {
+        Write-Host $text -ForegroundColor DarkGray
+        throw "gradlew $($GradleArgs -join ' ') failed (exit $code)"
+    }
+    return $text
 }
 
 # ---------- optional: rebuild a pack jar first ----------
 if ($Pack) {
-    # ${Pack} 的花括号不能省：":packs:$Pack:contentpackJar" 会被解析成作用域变量 $Pack:contentpackJar，
-    # 实测任务名退化成 ":packs:"，脚本却因旧 jar 存在而静默继续（= 从未重建）。
+    # Keep the braces in ${Pack}: ":packs:$Pack:contentpackJar" is parsed as the
+    # scoped variable $Pack:contentpackJar, the task name degrades to ":packs:", and
+    # the script silently continues because an old jar exists (= never rebuilt).
+    # Measured: this line silently vanished while the block above still ran, i.e.
+    # non-ASCII comments do corrupt neighboring statements under PS 5.1 + ANSI.
     Write-Host "[pack] building :packs:${Pack}:contentpackJar ..." -ForegroundColor DarkGray
-    Invoke-Gradle @(":packs:${Pack}:contentpackJar")
+    $task = ":packs:${Pack}:contentpackJar"
+    $buildLog = Invoke-Gradle @($task)
+    if ($buildLog -notmatch [regex]::Escape("> Task $task")) {
+        throw "gradlew did not run $task (arguments lost): no '> Task $task' line in output, stale jar is not proof"
+    }
     $jarPath = Join-Path $root "contentpacks/$Pack.jar"
     if (-not (Test-Path $jarPath)) { throw "build finished but $jarPath not found" }
     Write-Host "[pack] $jarPath ready (run task deploys it)" -ForegroundColor DarkGray

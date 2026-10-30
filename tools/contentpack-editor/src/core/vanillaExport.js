@@ -19,6 +19,7 @@
 //                            Item 用 {count:Byte, Slot:Byte, id:str}——小写 count）
 //                      entities: []
 //                      DataVersion: 3465
+//                      字节序：大端（NbtIo 走 DataOutputStream）——写严格，见 buildTemplateNbt
 //                    注意：1.20.x 旧格式（blocks=[state,x,y,z] + nbtData 列表）在 1.21.1 无法读取。
 //   templatePools[i] → data/<ns>/worldgen/template_pool/<name>.json
 //                    （elements: [{weight, element:{element_type:"minecraft:single_pool_element", location, projection, processors}}]，fallback: 空池元素）
@@ -168,7 +169,9 @@ function buildTemplateNbt(piece, namespace) {
         blocks: blocksTags,
         entities: NBT.list(NBT.T.COMPOUND, []),
     };
-    return NBT.gzip(root);
+    // 写严格：Java 版 NBT = 大端。小端产物游戏读不了（structure-example-pack 实测
+    // UTFDataFormatException / 静默截断），所以这里显式指定，不依赖默认值。
+    return NBT.gzip(root, 'BE');
 }
 
 /** 生成全部原版文件（纯函数，不碰磁盘） */

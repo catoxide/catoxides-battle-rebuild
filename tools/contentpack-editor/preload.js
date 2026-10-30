@@ -65,6 +65,12 @@ const api = {
     exportItemBlockVanilla: (packDir, kind, id) => ipcRenderer.invoke('itemblock:exportVanilla', packDir, kind, id),
     exportItemBlockVanillaAll: (packDir) => ipcRenderer.invoke('itemblock:exportVanillaAll', packDir),
 
+    // 任务（quests/*.json；一个文件 = 一个任务定义）
+    listQuests: (packDir) => ipcRenderer.invoke('quest:list', packDir),
+    readQuest: (packDir, id) => ipcRenderer.invoke('quest:read', packDir, id),
+    saveQuest: (packDir, def) => ipcRenderer.invoke('quest:save', packDir, def),
+    deleteQuest: (packDir, id) => ipcRenderer.invoke('quest:delete', packDir, id),
+
     // 游戏资源（vanilla 方块贴图）
     mcAssets: () => ipcRenderer.invoke('core:mcAssets'),
     mcBlockFaces: (blockId) => ipcRenderer.invoke('core:mcBlockFaces', blockId),
@@ -116,6 +122,11 @@ const api = {
     gitHistory: (p) => ipcRenderer.invoke('git:history', p),   // p = {packDir, jarPath[, limit]}
     gitCommit: (p) => ipcRenderer.invoke('git:commit', p),     // p = {packDir, jarPath, sha[, maxBytes]}
     gitWorkingTree: (p) => ipcRenderer.invoke('git:workingTree', p),
+    // 0.2.2 第 3 步：回溯动作。plan 只读；run 会写工作区（内部先归档 + 强制检查点提交）；
+    // undo 还原到那次检查点。acknowledge / expectedHead 由面板带上来，主进程再校一遍。
+    gitRollbackPlan: (p) => ipcRenderer.invoke('git:rollbackPlan', p),
+    gitRollback: (p) => ipcRenderer.invoke('git:rollback', p),
+    gitRollbackUndo: (p) => ipcRenderer.invoke('git:rollbackUndo', p),
     // 0.2.2 第 2 步：Gradle 构建输出实时流（主进程 pack:output；返回取消订阅函数）
     onBuildOutput: (cb) => {
         const listener = (event, payload) => cb(payload);
@@ -176,6 +187,10 @@ const api = {
     // 核心模板/默认值
     getStateMachineTemplates: () => ipcRenderer.invoke('core:getStateMachineTemplates'),
     getEntityDefaults: () => ipcRenderer.invoke('core:getEntityDefaults'),
+
+    // 顶层应用菜单（main.js Menu.buildFromTemplate）：动作下发 + 语言上报
+    onMenuAction: (cb) => ipcRenderer.on('menu:action', (_e, id) => cb(id)),
+    notifyMenuLang: (lang) => ipcRenderer.send('menu:setLang', lang),
 };
 
 contextBridge.exposeInMainWorld('api', api);

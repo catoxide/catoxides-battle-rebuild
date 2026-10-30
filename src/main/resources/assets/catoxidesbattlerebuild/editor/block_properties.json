@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "description": "方块状态参数目录（单一真源）：Java 侧 BlockPropertyRegistry 启动时预注册；编辑器 itemBlockSchema.js 读取本文件作为「可选参数」列表。新增标准参数 = 往 properties 加一条目，两边同时生效。type 取值：direction（Direction 子集）/ axis（x,y,z 子集）/ boolean / int（min..max）/ enum（自定义字符串取值，StringEnumProperty 承载）。",
+  "properties": [
+    {
+      "name": "facing",
+      "type": "direction",
+      "values": ["north", "south", "west", "east", "up", "down"],
+      "default": "north",
+      "labelZh": "朝向",
+      "description": "六向朝向（furnace/campfire 一类）"
+    },
+    {
+      "name": "horizontal_facing",
+      "type": "direction",
+      "values": ["north", "south", "west", "east"],
+      "default": "north",
+      "labelZh": "水平朝向",
+      "description": "水平四向（barrel/ladder/door 一类）"
+    },
+    {
+      "name": "axis",
+      "type": "axis",
+      "values": ["x", "y", "z"],
+      "default": "y",
+      "labelZh": "轴向",
+      "description": "立方体轴向（iron_bars/ladder 一类）"
+    },
+    {
+      "name": "waterlogged",
+      "type": "boolean",
+      "default": "false",
+      "labelZh": "含水",
+      "description": "是否被水充满（fence/glass 一类）"
+    },
+    {
+      "name": "lit",
+      "type": "boolean",
+      "default": "false",
+      "labelZh": "点亮",
+      "description": "点燃状态（campfire/torch 一类）"
+    },
+    {
+      "name": "open",
+      "type": "boolean",
+      "default": "false",
+      "labelZh": "打开",
+      "description": "打开状态（door/chest 一类）"
+    },
+    {
+      "name": "powered",
+      "type": "boolean",
+      "default": "false",
+      "labelZh": "充能",
+      "description": "红石充能（lever/button 一类）"
+    },
+    {
+      "name": "enabled",
+      "type": "boolean",
+      "default": "true",
+      "labelZh": "启用",
+      "description": "启用状态（command block 一类）"
+    },
+    {
+      "name": "snowy",
+      "type": "boolean",
+      "default": "false",
+      "labelZh": "积雪",
+      "description": "是否有雪（fence 一类）"
+    },
+    {
+      "name": "short",
+      "type": "boolean",
+      "default": "false",
+      "labelZh": "低矮",
+      "description": "低矮状态（grass 一类）"
+    },
+    {
+      "name": "half",
+      "type": "enum",
+      "values": ["bottom", "top"],
+      "default": "bottom",
+      "labelZh": "半块",
+      "description": "上下半块（slab 一类；取值与原版 half 一致）"
+    },
+    {
+      "name": "shape",
+      "type": "enum",
+      "values": ["straight", "east_west", "north_south", "ascending_east", "ascending_west", "ascending_north", "ascending_south"],
+      "default": "straight",
+      "labelZh": "形状",
+      "description": "楼梯形状（stairs 一类；取值与原版 shape 一致）"
+    },
+    {
+      "name": "level",
+      "type": "int",
+      "min": 0,
+      "max": 15,
+      "default": "0",
+      "labelZh": "等级",
+      "description": "0..15 数值等级（可作通用档位参数）"
+    }
+  ]
+}

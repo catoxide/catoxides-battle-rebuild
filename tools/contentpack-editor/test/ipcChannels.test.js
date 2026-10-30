@@ -63,7 +63,7 @@ test('4. pack:output（Gradle 实时输出）两侧都在：主进程 send + pre
     assert.ok(/onBuildOutput/.test(preload) && /ipcRenderer\.on\('pack:output'/.test(preload), 'preload 要暴露 onBuildOutput');
 });
 
-test('5. 提交回溯的四个通道都接好了（git:info/history/commit/workingTree）', () => {
+test('5. 提交回溯的只读通道都接好了（git:info/history/commit/workingTree）', () => {
     for (const c of ['git:info', 'git:history', 'git:commit', 'git:workingTree']) {
         assert.ok(mainHandles.has(c), '主进程缺 handle: ' + c);
         assert.ok(preload.includes(`ipcRenderer.invoke('${c}'`), 'preload 缺 invoke: ' + c);
@@ -78,6 +78,40 @@ test('6. gitHistory 核心层不含任何写命令（只读承诺是硬约束，
     const code = src.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
     const hits = banned.filter((b) => new RegExp(`\\['${b}'`).test(code) || new RegExp(`'${b}[ ,']`).test(code));
     assert.deepStrictEqual(hits, [], 'gitHistory.js 里出现了写命令 argv：' + hits.join(', '));
+});
+
+/** 按 handler 切块：从某个通道名到下一个 ipcMain.handle 之间 */
+function handlerBlock(channel) {
+    const i = main.indexOf(`ipcMain.handle('${channel}'`);
+    assert.ok(i !== -1, '找不到 ' + channel);
+    const j = main.indexOf('ipcMain.handle(', i + 10);
+    return main.slice(i, j === -1 ? main.length : j);
+}
+
+test('7. 第 3 步回滚：三个通道都接线，预览仍只读、执行必须显式 acknowledge', () => {
+    for (const c of ['git:rollbackPlan', 'git:rollback', 'git:rollbackUndo']) {
+        assert.ok(mainHandles.has(c), '主进程缺 handle: ' + c);
+        assert.ok(preload.includes(`ipcRenderer.invoke('${c}'`), 'preload 缺 invoke: ' + c);
+    }
+    const planBlock = handlerBlock('git:rollbackPlan');
+    assert.ok(/GitRollback\.plan\(/.test(planBlock), '预览必须走 plan');
+    assert.ok(!/GitRollback\.run\(/.test(planBlock), '预览通道绝不能调 run');
+    assert.ok(!/acknowledge/.test(planBlock), '预览不需要确认参数（它不动东西）');
+    const runBlock = handlerBlock('git:rollback');
+    assert.ok(/GitRollback\.run\(/.test(runBlock), '执行通道要调 run');
+    assert.ok(/acknowledge:\s*payload\.acknowledge === true/.test(runBlock), '确认必须是显式 true，不能「有值就算」');
+    assert.ok(/expectedHead:\s*payload\.expectedHead/.test(runBlock), '要把预览时看到的 HEAD 带回去复验');
+    assert.ok(/rollbackCtx\(\)/.test(runBlock), '归档目录由主进程给出，不能由渲染端指定');
+    assert.ok(/GitHistory\.resetRepoCache\(\)/.test(runBlock), '回滚后要作废仓库缓存（HEAD 已被检查点推走）');
+    assert.ok(/GitRollback\.undo\(/.test(handlerBlock('git:rollbackUndo')), '撤销通道要调 undo');
+    // 渲染端不能自己挑归档路径：只有 packDir/jarPath 这类坐标进得来
+    assert.ok(!/payload\.archiveRoot/.test(main), '主进程不接受渲染端传来的归档目录');
+});
+
+test('8. 归档目录固定在 userData 下（不写进工程，避免被 git 自己看见）', () => {
+    assert.ok(/path\.join\(app\.getPath\('userData'\),\s*'rollback-archive'\)/.test(main), '归档必须落在 userData，不是工程里');
+    const ctx = handlerBlock('git:rollbackPlan') + main.slice(main.indexOf('function rollbackCtx'));
+    assert.ok(/archiveRoot/.test(ctx), 'rollbackCtx 要带上 archiveRoot');
 });
 
 console.log(`\n=== ipcChannels 测试: ${passed} passed, ${failed} failed ===`);

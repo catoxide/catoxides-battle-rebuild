@@ -27,6 +27,15 @@ public final class MarkerData {
     public static final String KEY_PLAYER_NAME = "playerName";
     /** 玩家在编辑屏手动换过图标后置 true，物品/生物图标不再覆盖。 */
     public static final String KEY_ICON_OVERRIDE = "iconOverride";
+    /** 地图上呈现成图标还是名字：{@code icon} / {@code name}；缺省 = 名字非空就写名字。 */
+    public static final String KEY_DISPLAY = "display";
+    /** 是否在罗盘上出现；缺省（老标记没有这个键）= 出现。 */
+    public static final String KEY_COMPASS = "compass";
+    /** 从别人分享的永久标记「永久化」过来时，记录来源标记 id；同来源只保留一份。 */
+    public static final String KEY_SOURCE = "source";
+
+    public static final String DISPLAY_ICON = "icon";
+    public static final String DISPLAY_NAME = "name";
 
     private MarkerData() {
     }
@@ -43,6 +52,27 @@ public final class MarkerData {
 
     public static boolean iconOverride(MarkerDto marker) {
         return marker.data().getBoolean(KEY_ICON_OVERRIDE);
+    }
+
+    /**
+     * 地图上这段文字该不该代替图标显示。
+     *
+     * <p>{@code display=name} 且名字非空 → 写名字；{@code display=icon} → 一律图标；
+     * 没有这个键（老标记）沿用旧行为：有名字就写名字。空名字永远回退到图标。
+     */
+    public static boolean showsName(MarkerDto marker) {
+        String label = marker.data().getString(KEY_LABEL);
+        if (label.isBlank()) {
+            return false;
+        }
+        String mode = marker.data().getString(KEY_DISPLAY);
+        return mode.isEmpty() || DISPLAY_NAME.equals(mode);
+    }
+
+    /** 罗盘上是否显示；老标记没有这个键，按显示处理。 */
+    public static boolean showsInCompass(MarkerDto marker) {
+        CompoundTag data = marker.data();
+        return !data.contains(KEY_COMPASS) || data.getBoolean(KEY_COMPASS);
     }
 
     /** 该画什么生物头像；null = 不画（非实体标记，或玩家已手动换图标）。 */

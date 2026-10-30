@@ -146,6 +146,38 @@ test('13. (0.2.1) id 含路径分隔符/.. 时草稿仍落在暂存区内（不�
     Staging.removeStagedHealthConfig(PACK_NAME, '..\\..', '..\\..\\evil');
 });
 
+test('14. 任务草稿：按内容 id 读取，保留既有文件名（quests.json）', () => {
+    const def = {
+        id: 'legacy_quest', title: '旧格式',
+        givers: [], goals: [{ type: 'item_present', item: 'minecraft:apple' }], children: [],
+    };
+    Staging.stageQuest(PACK_NAME, def, 'quests/quests.json');
+    const staged = Staging.readStagedQuest(PACK_NAME, 'legacy_quest');
+    assert.ok(staged, '应能按 id 读到草稿（文件名不叫 legacy_quest.json）');
+    assert.strictEqual(staged.id, 'legacy_quest');
+    const item = Staging.listStaged(PACK_NAME).find((i) => i.kind === 'quest');
+    assert.strictEqual(item.file, path.join('quests', 'quests.json'));
+});
+
+test('15. 任务草稿：fileRel 路径逃逸被拒绝（回落到 quests/<id>.json）', () => {
+    Staging.stageQuest(PACK_NAME, { id: 'evil_quest', title: 'x' }, '../../evil.json');
+    const root = path.resolve(Staging.getStagingRoot());
+    const item = Staging.listStaged(PACK_NAME).find((i) => i.kind === 'quest' && i.id === 'evil_quest');
+    assert.ok(item, '草稿应可见');
+    assert.strictEqual(item.file, path.join('quests', 'evil_quest.json'));
+    assert.ok(path.resolve(root, item.file).startsWith(root + path.sep), '草稿越界: ' + item.file);
+    Staging.removeStagedQuest(PACK_NAME, 'evil_quest');
+});
+
+test('16. 任务草稿导出 → 正式包（保留文件名）→ 暂存回收', () => {
+    const r = Staging.exportStaged(PACK_NAME, packDir);
+    assert.ok(r.files.some((f) => f === path.join('quests', 'quests.json')), '应写回原文件名: ' + r.files.join(', '));
+    const written = JSON.parse(fs.readFileSync(path.join(packDir, 'quests', 'quests.json'), 'utf-8'));
+    assert.strictEqual(written.id, 'legacy_quest');
+    assert.strictEqual(Staging.listStaged(PACK_NAME).length, 0);
+    fs.rmSync(path.join(packDir, 'quests'), { recursive: true, force: true });
+});
+
 // 清理
 fs.rmSync(tmpRoot, { recursive: true, force: true });
 

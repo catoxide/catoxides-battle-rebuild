@@ -1,7 +1,7 @@
 // main.js - Electron 主进程
 // 负责：窗口创建 + 所有文件系统操作（读写包/实体/模型 + 调打包脚本）
 // 渲染进程不接触 Node API（contextIsolation），只通过 preload 暴露的 window.api 通信
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -60,6 +60,7 @@ const VanillaExport = require('./src/core/vanillaExport');
 const VanillaImport = require('./src/core/vanillaImport');
 const ItemBlockSchema = require('./src/core/itemBlockSchema');
 const ItemBlockExport = require('./src/core/itemBlockExport');
+const QuestSchema = require('./src/core/questSchema');
 const RegionImport = require('./src/core/regionImport');
 const McAssets = require('./src/core/mcAssets');
 const McBlocks = require('./src/core/mcBlocks');
@@ -68,6 +69,7 @@ const Preflight = require('./src/core/packPreflight');
 const JarReader = require('./src/core/jarReader');
 const PackStatus = require('./src/core/packStatus');
 const GitHistory = require('./src/core/gitHistory');
+const GitRollback = require('./src/core/gitRollback');
 const CommandRunner = require('./src/core/commandRunner');
 const EditorContract = require('./src/core/editorContract');
 const EditorApi = require('./src/core/editorApi');
@@ -442,6 +444,9 @@ function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1400,
         height: 900,
+        // 下限来自实测：再窄时三栏 + 顶栏换行后编辑区不可用（见 layoutResilience.test.js）
+        minWidth: 960,
+        minHeight: 600,
         title: 'ContentPack Editor',
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
@@ -456,6 +461,76 @@ function createWindow() {
     // 开发时打开 devtools
     // mainWindow.webContents.openDevTools();
 }
+
+// ==================== 顶层应用菜单 ====================
+// 此前从不调 Menu.setApplicationMenu，Electron 装的是通用默认菜单：复制粘贴能用，
+// 但没有任何应用动作，View→Reload 还会走 guardRendererReload 的告警流程。
+// 菜单动作一律 send('menu:action', id) 到渲染端，由渲染端点既有按钮/既有函数 ——
+// 菜单只是已有入口的第二个触发点，不新增编辑器导出面。
+const MENU_STRINGS = {
+    zh: {
+        edit: '编辑', view: '视图', tools: '工具', window: '窗口', help: '帮助',
+        lang: '界面语言', collapse: '折叠 / 展开包列表', refresh: '重新加载列表',
+        reload: '重新加载窗口', devtools: '开发者工具', zoomIn: '放大', zoomOut: '缩小', zoomReset: '实际大小',
+        deploy: '部署状态', history: '提交回溯', modelEditor: '3D 模型编辑器', build: '打包当前包',
+        about: '关于 ContentPack Editor',
+    },
+    en: {
+        edit: 'Edit', view: 'View', tools: 'Tools', window: 'Window', help: 'Help',
+        lang: 'Language', collapse: 'Toggle Pack List', refresh: 'Reload Lists',
+        reload: 'Reload Window', devtools: 'DevTools', zoomIn: 'Zoom In', zoomOut: 'Zoom Out', zoomReset: 'Actual Size',
+        deploy: 'Deploy Status', history: 'Commit History', modelEditor: '3D Model Editor', build: 'Build Current Pack',
+        about: 'About ContentPack Editor',
+    },
+};
+let menuLang = 'zh';
+function buildAppMenu() {
+    const s = MENU_STRINGS[menuLang] || MENU_STRINGS.zh;
+    const act = (id, extra) => Object.assign({
+        click: () => {
+            if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('menu:action', id);
+        },
+    }, extra || {});
+    const template = [
+        { role: 'editMenu', label: s.edit },
+        {
+            label: s.view,
+            submenu: [
+                { label: s.lang + ': 中文', type: 'radio', checked: menuLang === 'zh', click: () => setMenuLang('zh') },
+                { label: s.lang + ': English', type: 'radio', checked: menuLang === 'en', click: () => setMenuLang('en') },
+                { type: 'separator' },
+                act('collapsePack', { label: s.collapse, accelerator: 'CmdOrCtrl+B' }),
+                act('refresh', { label: s.refresh, accelerator: 'CmdOrCtrl+Shift+R' }),
+                { type: 'separator' },
+                { role: 'reload', label: s.reload },
+                { role: 'toggleDevTools', label: s.devtools },
+                { type: 'separator' },
+                { role: 'zoomIn', label: s.zoomIn },
+                { role: 'zoomOut', label: s.zoomOut },
+                { role: 'resetZoom', label: s.zoomReset },
+            ],
+        },
+        {
+            label: s.tools,
+            submenu: [
+                act('deploy', { label: s.deploy, accelerator: 'CmdOrCtrl+D' }),
+                act('history', { label: s.history, accelerator: 'CmdOrCtrl+H' }),
+                act('modelEditor', { label: s.modelEditor, accelerator: 'CmdOrCtrl+M' }),
+                { type: 'separator' },
+                act('build', { label: s.build, accelerator: 'CmdOrCtrl+Shift+B' }),
+            ],
+        },
+        { role: 'windowMenu', label: s.window },
+        { role: 'help', label: s.help, submenu: [{ role: 'about', label: s.about }] },
+    ];
+    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+function setMenuLang(lang) {
+    menuLang = lang === 'en' ? 'en' : 'zh';
+    buildAppMenu();
+}
+// 渲染端切语言时同步菜单（菜单标签在主进程，渲染端 applyDOM 够不着它）
+ipcMain.on('menu:setLang', (_e, lang) => setMenuLang(lang));
 
 // ==================== P11 片段 3D 编辑器窗口（独立窗口，Photoshop/Blender 式布局） ====================
 // 数据流：主窗口 tab 是唯一事实源 → 打开时把 blueprint 推给编辑器窗口；
@@ -478,6 +553,8 @@ function createPieceEditorWindow() {
     pieceEditorWin = new BrowserWindow({
         width: 1180,
         height: 800,
+        minWidth: 900,
+        minHeight: 620,
         title: '片段 3D 编辑器',
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
@@ -597,6 +674,8 @@ function createModelEditorWindow() {
     modelEditorWin = new BrowserWindow({
         width: 1280,
         height: 860,
+        minWidth: 900,
+        minHeight: 620,
         title: '3D 模型编辑器',
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
@@ -1595,6 +1674,8 @@ ipcMain.handle('pack:ensureScaffold', async (event, packDir, opts = {}) => {
         if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
         const manifest = ManifestLib.readManifest(packDir);
         const created = [];
+        const patched = [];
+        const skipped = [];
 
         const gradleFile = path.join(packDir, 'build.gradle');
         if (!fs.existsSync(gradleFile)) {
@@ -1610,6 +1691,7 @@ ipcMain.handle('pack:ensureScaffold', async (event, packDir, opts = {}) => {
                 const full = path.join(packDir, loc.path);
                 const ib = listItemBlockIds(packDir);
                 const hasItemBlocks = ib.itemIds.length + ib.blockIds.length > 0;
+                const questIds = listQuestIds(packDir);
                 const srcText = fs.existsSync(full) ? fs.readFileSync(full, 'utf-8') : null;
                 // 重生成条件：不存在，或 有 items/blocks 但旧骨架没有批量注册调用（死数据修复）
                 const needsRegen = !srcText || (hasItemBlocks && !srcText.includes('registerItemsAndBlocksFromJar'));
@@ -1622,18 +1704,29 @@ ipcMain.handle('pack:ensureScaffold', async (event, packDir, opts = {}) => {
                         entityIds: listEntityIds(packDir),
                         itemIds: ib.itemIds,
                         blockIds: ib.blockIds,
+                        questIds,
                     });
                     if (src) {
                         fs.mkdirSync(path.dirname(full), { recursive: true });
                         fs.writeFileSync(full, src, 'utf-8');
                         created.push(loc.path);
                     }
+                } else if (questIds.length > 0 && !srcText.includes('registerQuestsFromJar')) {
+                    // 已有入口类可能手写了大量逻辑（工厂/命令/网络包）⇒ 只外科式插一行，绝不整类重生成
+                    const patch = Scaffold.insertQuestRegistration(srcText);
+                    if (patch.changed) {
+                        fs.writeFileSync(full, patch.source, 'utf-8');
+                        patched.push(loc.path);
+                    } else {
+                        // 结构不认识（没有 register(ContentPackContext)）：不猜，留给预检 E-Q-NO-REGISTER
+                        skipped.push({ file: loc.path, reason: patch.reason });
+                    }
                 }
             }
         }
         return {
             ok: true,
-            data: { created, gradleCommand: Scaffold.gradleBuildCommand(path.basename(packDir)) },
+            data: { created, patched, skipped, gradleCommand: Scaffold.gradleBuildCommand(path.basename(packDir)) },
         };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
@@ -1656,6 +1749,22 @@ function listItemBlockIds(packDir) {
     scan('items', res.itemIds);
     scan('blocks', res.blockIds);
     return res;
+}
+
+/** 包内 quests/*.json（仅一级目录，与注册器扫描范围一致）的 id 列表 */
+function listQuestIds(packDir) {
+    const dir = path.join(packDir, 'quests');
+    if (!fs.existsSync(dir)) return [];
+    const ids = [];
+    for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.json'))) {
+        const full = path.join(dir, file);
+        if (!fs.statSync(full).isFile()) continue;
+        try {
+            const obj = JSON.parse(fs.readFileSync(full, 'utf-8'));
+            if (obj && obj.id) ids.push(String(obj.id));
+        } catch { /* 坏 JSON 由预检报告 */ }
+    }
+    return ids;
 }
 
 /** 包内 entities/*.json 的 id 列表 */
@@ -1989,7 +2098,7 @@ ipcMain.handle('structure:exportVanilla', async (event, packDir, blueprint) => {
 //
 // 导入产物直接写成正式的 structures/<id>/blueprint.json（不是草稿），
 // 之后就能在结构编辑器里改，再点「导出原版数据」写回 data/<ns>/... 的 4 类文件。
-// 命名空间：默认取包目录名（如 structure-example-pack → structure_example_pack），
+// 命名空间：默认取包目录名（如 fortress-pack → fortress_pack），
 // 避免直接覆盖 data/minecraft（那会顶掉原版结构）。
 function importVanillaInto(packDir, srcPath) {
     const rawNs = path.basename(packDir).toLowerCase().replace(/[^a-z0-9_.-]/g, '_');
@@ -2342,6 +2451,119 @@ ipcMain.handle('itemblock:exportVanillaAll', async (event, packDir) => {
     }
 });
 
+// --- 任务（quests/*.json；一个文件 = 一个任务定义） ---
+
+/** 任务摘要（列表用）：id 取自文件内容 —— 文件名不保证等于 id（历史文件 quests.json） */
+function questSummary(def, file) {
+    return {
+        id: def.id,
+        title: typeof def.title === 'string' ? def.title : '',
+        file,
+        giverCount: Array.isArray(def.givers) ? def.givers.length : 0,
+        goalCount: Array.isArray(def.goals) ? def.goals.length : 0,
+        childCount: Array.isArray(def.children) ? def.children.length : 0,
+    };
+}
+
+/** 扫描包目录 quests/*.json（仅一级）→ [{id,title,file,giverCount,goalCount,childCount}] */
+function listQuestDefs(packDir) {
+    const dir = path.join(packDir, QuestSchema.QUEST_DIR);
+    if (!fs.existsSync(dir)) return [];
+    const out = [];
+    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
+        const file = path.join(dir, f);
+        let def = null;
+        try { def = JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { continue; }
+        if (!def || typeof def !== 'object' || !def.id) continue;
+        out.push(questSummary(def, path.relative(packDir, file)));
+    }
+    return out;
+}
+
+function findQuestEntry(packDir, id) {
+    return listQuestDefs(packDir).find((q) => q.id === id) || null;
+}
+
+function readQuestDef(packDir, id) {
+    const entry = findQuestEntry(packDir, id);
+    if (!entry) return null;
+    try {
+        const def = JSON.parse(fs.readFileSync(path.join(packDir, entry.file), 'utf-8'));
+        return def && typeof def === 'object' ? def : null;
+    } catch {
+        return null;
+    }
+}
+
+ipcMain.handle('quest:list', async (event, packDir) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        const quests = listQuestDefs(packDir);
+        const staged = Staging.listStaged(packNameOf(packDir)).filter((i) => i.kind === 'quest');
+        for (const s of staged) {
+            const existing = quests.find((q) => q.id === s.id);
+            if (existing) {
+                existing.staged = true;
+            } else {
+                const def = Staging.readStagedQuest(packNameOf(packDir), s.id);
+                if (def) quests.push(Object.assign(questSummary(def, s.file), { staged: true }));
+            }
+        }
+        return { ok: true, data: quests };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('quest:read', async (event, packDir, id) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        const staged = Staging.readStagedQuest(packNameOf(packDir), id);
+        if (staged) return { ok: true, data: Object.assign({}, staged, { _staged: true }) };
+        const def = readQuestDef(packDir, id);
+        if (def) return { ok: true, data: Object.assign({}, def, { _file: findQuestEntry(packDir, id).file }) };
+        return { ok: true, data: null };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('quest:save', async (event, packDir, def) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        const check = QuestSchema.validateQuest(def);
+        if (!check.valid) {
+            return { ok: false, error: '任务校验失败:\n' + check.errors.join('\n') };
+        }
+        const clean = {};
+        for (const [k, v] of Object.entries(def || {})) {
+            if (!k.startsWith('_')) clean[k] = v;
+        }
+        // 保留既有文件名（如历史 quests.json），否则写 quests/<id>.json
+        const existing = findQuestEntry(packDir, clean.id);
+        const result = Staging.stageQuest(packNameOf(packDir), clean, existing ? existing.file : null);
+        return { ok: true, data: Object.assign({}, result, { staged: true }) };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('quest:delete', async (event, packDir, id) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        const entry = findQuestEntry(packDir, id);
+        if (entry) fs.unlinkSync(path.join(packDir, entry.file));
+        Staging.removeStagedQuest(packNameOf(packDir), id);
+        return { ok: true, data: { deleted: entry ? entry.file : null } };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
 // --- 部位配置 ---
 ipcMain.handle('health:read', async (event, packDir, namespace, entityId) => {
     try {
@@ -2596,8 +2818,9 @@ ipcMain.handle('dialog:openJarFile', async () => {
 });
 
 // --- 圈地读取：结构模板 .nbt → 蓝图片段 ---
-// 支持 1.21.1 现行格式（blocks[].nbt 携带 jigsaw 数据，小端）与 1.20.x 旧格式；
-// 字节序由 RegionImport/NBT.decodeAuto 自动判别（游戏=小端，部分工具/数据集=大端）。
+// 支持 1.21.1 现行格式（blocks[].nbt 携带 jigsaw 数据）与 1.20.x 旧格式；
+// 字节序由 RegionImport/NBT.decodeTaggedAuto 自动判别（Java 版=大端，部分工具/旧包=小端），
+// 导出统一写大端。
 ipcMain.handle('core:importRegion', async () => {
     try {
         const result = await dialog.showOpenDialog(mainWindow, {
@@ -2919,6 +3142,76 @@ ipcMain.handle('git:workingTree', async (event, payload = {}) => {
     }
 });
 
+/**
+ * 0.2.2 第 3 步：回溯动作（归档 + 强制检查点提交 + 范围内 restore）
+ * 边界与上面那组相反 —— 这组会写工作区，所以每条都要求 payload.acknowledge === true，
+ * 并且 core/gitRollback.js 内部把顺序固定成「先归档、再提交、最后才动文件」：
+ * 任何一步失败，工作区都还是原样。范围只来自包目录 + 产物 jar，没有整树操作的入口。
+ */
+function rollbackCtx() {
+    // 动手前作废仓库信息缓存（5 秒 TTL）：检查点提交会改 HEAD，
+    // 拿旧 HEAD 去做 expectedHead 比较等于把这道安全检查关掉
+    try { GitHistory.resetRepoCache(); } catch { /* 缓存清了就好，失败不影响测量 */ }
+    return { root: ROOT, archiveRoot: path.join(app.getPath('userData'), 'rollback-archive') };
+}
+
+ipcMain.handle('git:rollbackPlan', async (event, payload = {}) => {
+    try {
+        if (!ROOT) return { ok: false, error: '尚未设置项目根目录（顶栏「📁 连接工程…」）' };
+        const { rels, notes } = gitPathsFor(payload);
+        if (!rels.length) return { ok: false, error: '该包没有可核对的 git 路径：' + (notes.join('；') || '未知原因') };
+        const data = GitRollback.plan(rollbackCtx(), { sha: payload.sha, paths: rels });
+        data.notes = notes;
+        Logger.info('git', `rollbackPlan(${rels.join(', ')}) → ${data.ok ? `改 ${data.restoreCount} / 删 ${data.removeCount}` : '拒绝：' + (data.note || '')}`);
+        return { ok: data.ok, data, error: data.ok ? null : (data.note || '回滚预览失败') };
+    } catch (e) {
+        Logger.error('git', `rollbackPlan 失败: ${e && e.stack ? e.stack : e}`);
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('git:rollback', async (event, payload = {}) => {
+    try {
+        if (!ROOT) return { ok: false, error: '尚未设置项目根目录（顶栏「📁 连接工程…」）' };
+        const { rels, notes } = gitPathsFor(payload);
+        if (!rels.length) return { ok: false, error: '该包没有可核对的 git 路径：' + (notes.join('；') || '未知原因') };
+        const data = GitRollback.run(rollbackCtx(), {
+            sha: payload.sha, paths: rels, label: payload.label,
+            acknowledge: payload.acknowledge === true, expectedHead: payload.expectedHead,
+        });
+        data.notes = notes;
+        // 检查点提交把 HEAD 往前推了一格：缓存里的旧 HEAD 不能再给面板用
+        try { GitHistory.resetRepoCache(); } catch { /* 下一轮测量自然会重取 */ }
+        if (data.ok) {
+            Logger.warn('git', `回滚执行 ${payload.label || rels[0]} → ${data.target}：改写 ${data.restoredCount}、删除 ${data.removeCount}` +
+                `；检查点 ${data.checkpointSha}${data.checkpointCommitted ? '（新提交）' : '（沿用 HEAD）'}；归档 ${data.archiveDir}`);
+        } else {
+            Logger.error('git', `回滚未完成（阶段 ${data.stage}）：${data.note || ''} · 归档 ${data.archiveDir || '（未建）'}`);
+        }
+        return { ok: data.ok, data, error: data.ok ? null : (data.note || '回滚失败') };
+    } catch (e) {
+        Logger.error('git', `rollback 失败: ${e && e.stack ? e.stack : e}`);
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+/** 撤销 = 把工作区还原到那次检查点提交（回滚前的状态），方向唯一，不再产生新提交 */
+ipcMain.handle('git:rollbackUndo', async (event, payload = {}) => {
+    try {
+        if (!ROOT) return { ok: false, error: '尚未设置项目根目录（顶栏「📁 连接工程…」）' };
+        const { rels, notes } = gitPathsFor(payload);
+        if (!rels.length) return { ok: false, error: '该包没有可核对的 git 路径：' + (notes.join('；') || '未知原因') };
+        const data = GitRollback.undo(rollbackCtx(), { checkpointSha: payload.checkpointSha, paths: rels });
+        data.notes = notes;
+        try { GitHistory.resetRepoCache(); } catch { /* 同上 */ }
+        Logger.warn('git', `撤销回滚 → 检查点 ${String(payload.checkpointSha || '').slice(0, 8)}：${data.ok ? (data.note || '') : '失败：' + (data.note || '')}`);
+        return { ok: data.ok, data, error: data.ok ? null : (data.note || '撤销失败') };
+    } catch (e) {
+        Logger.error('git', `rollbackUndo 失败: ${e && e.stack ? e.stack : e}`);
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
 /** 通用命令执行：实现搬到 core/commandRunner.js（那里可被单测覆盖，含实时输出回调）。
  *  0.2.2：opts.onOutput(kind, text) 把 Gradle 输出实时推给渲染进程 —— 构建是分钟级的事，
  *  只给终态输出的话用户会以为按钮坏了。 */
@@ -3167,6 +3460,7 @@ app.whenReady().then(() => {
             }).catch(() => { /* GPU 信息获取失败不影响启动 */ });
         } catch { /* 同上 */ }
     }
+    buildAppMenu();
     createWindow();
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();

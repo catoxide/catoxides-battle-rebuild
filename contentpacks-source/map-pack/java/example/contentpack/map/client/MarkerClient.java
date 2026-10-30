@@ -11,6 +11,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.client.resources.SkinManager;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -109,6 +110,22 @@ public final class MarkerClient {
 
     public static List<MarkerDto> allMarkers() {
         return new ArrayList<>(MARKERS.values());
+    }
+
+    /** 能否改/删：owner 或 op。客户端只是预判，服务端仍会再校验。 */
+    public static boolean canModify(MarkerDto marker) {
+        Minecraft minecraft = Minecraft.getInstance();
+        return minecraft.player != null
+                && (minecraft.player.getUUID().equals(marker.owner())
+                || minecraft.player.hasPermissions(2));
+    }
+
+    /**
+     * 能否打开编辑屏：只有自己的永久地点标记。
+     * <p>临时标记没有名字也没有图标选择；别人分享来的要等「永久化」成自己的副本才能改。
+     */
+    public static boolean canEdit(MarkerDto marker) {
+        return marker.type().editable() && canModify(marker);
     }
 
     /** 剩余 TTL；0 = 永久或已到期。 */
@@ -230,6 +247,18 @@ public final class MarkerClient {
                     })));
         }
         return null;
+    }
+
+    /** 玩家皮肤纹理（64×64）；拿不到档案时用默认皮肤。 */
+    public static ResourceLocation playerSkin(MarkerDto marker) {
+        SkinManager skins = Minecraft.getInstance().getSkinManager();
+        GameProfile profile = playerProfile(marker);
+        if (profile != null) {
+            return skins.getInsecureSkin(profile).texture();
+        }
+        UUID uuid = MarkerData.entityUuid(marker);
+        return skins.getInsecureSkin(new GameProfile(uuid == null ? new UUID(0L, 0L) : uuid,
+                MarkerData.playerName(marker))).texture();
     }
 
     /** 玩家头像：带皮肤档案的玩家头（渲染成 3D 头）；拿不到皮肤时是默认头。 */

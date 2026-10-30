@@ -35,9 +35,11 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.ContainerScreenEvent;
+import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
@@ -77,9 +79,20 @@ public final class MapClientEvents {
             event.register(TOGGLE_COMPASS);
         });
 
+        // 方块顶面贴图缓存指向旧图集，资源重载后必须清掉
+        modBus.addListener(RegisterClientReloadListenersEvent.class, event ->
+                event.registerReloadListener(BlockTopTextures.reloadListener()));
+
         BlockChangeHooks.register((level, pos, oldState, newState) -> {
             if (level.isClientSide()) {
                 MapCapture.markDirty(level, pos);
+            }
+        });
+
+        // 区块一加载就排进采集队列：地图跟着视距长，而不是等周期扫描
+        NeoForge.EVENT_BUS.addListener((ChunkEvent.Load event) -> {
+            if (event.getLevel() instanceof ClientLevel level && event.getChunk() != null) {
+                MapCapture.onChunkLoaded(level, event.getChunk().getPos());
             }
         });
 

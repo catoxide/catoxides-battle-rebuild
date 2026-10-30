@@ -14,6 +14,24 @@ import java.util.List;
 /**
  * Generates template_pool JSON files from TemplatePool definitions.
  * Output: data/<namespace>/worldgen/template_pool/<pool_name>.json
+ *
+ * <p><b>The emitted shape must match {@code minecraft:template_pool}'s codec exactly</b>,
+ * because a malformed file here makes every world unopenable. Modelled on a real vanilla file,
+ * e.g. {@code data/minecraft/worldgen/template_pool/pillager_outpost/base_plates.json}:
+ * <pre>
+ * {
+ *   "elements": [
+ *     { "weight": 1,
+ *       "element": {
+ *         "element_type": "minecraft:single_pool_element",
+ *         "location": "ns:piece",
+ *         "processors": { "processors": [] },
+ *         "projection": "rigid"
+ *       } }
+ *   ],
+ *   "fallback": "minecraft:empty"
+ * }
+ * </pre>
  */
 public final class TemplatePoolGenerator {
 
@@ -32,21 +50,25 @@ public final class TemplatePoolGenerator {
 
         JsonObject root = new JsonObject();
 
-        // Fallback pool
-        root.addProperty("fallback_pool", pool.fallbackPool != null && !pool.fallbackPool.isEmpty()
-            ? pool.fallbackPool : "minecraft:empty");
+        // Fallback pool. The key is "fallback" (not "fallback_pool") and its value must be a
+        // TEMPLATE POOL id - "minecraft:empty_pool_element" is an element *type*, not a pool.
+        String fallback = pool.fallbackPool != null && !pool.fallbackPool.isEmpty()
+            ? pool.fallbackPool : "minecraft:empty";
+        if (fallback.contains("empty_pool_element")) {
+            LogManager.serverWarn(TAG,
+                "Pool '%s' fallback '%s' is a pool element type, not a template pool; using 'minecraft:empty'",
+                pool.name, fallback);
+            fallback = "minecraft:empty";
+        }
+        root.addProperty("fallback", fallback);
 
         // Elements array
         JsonArray elements = new JsonArray();
 
         for (TemplatePool.PoolElement element : pool.elements) {
             JsonObject elem = new JsonObject();
-
-            // Element name (unique identifier)
-            String elemName = namespace + ":" + pool.name + "/" + element.template;
             elem.add("element", buildPoolElement(element, namespace, pieces));
-            elem.addProperty("weight", element.weight);
-
+            elem.addProperty("weight", Math.max(1, element.weight));
             elements.add(elem);
         }
 
@@ -62,39 +84,52 @@ public final class TemplatePoolGenerator {
     private static JsonObject buildPoolElement(TemplatePool.PoolElement element, String namespace, List<StructurePiece> pieces) {
         JsonObject elem = new JsonObject();
 
-        // Element type
-        elem.addProperty("element_type", "single");
+        // Element type - the full registry name, not the bare word "single".
+        elem.addProperty("element_type", "minecraft:single_pool_element");
 
-        // Locate reference - points to the NBT template
-        String templatePath = namespace + ":" + element.template;
-        elem.addProperty("locatable_template", templatePath);
+        // Location - points at the NBT template. Key is "location", not "locatable_template".
+        elem.addProperty("location", namespace + ":" + element.template);
 
-        // Projection
-        String projection = "ground";
-        if (element.projection != null) {
-            projection = element.projection;
-        }
-        elem.addProperty("projection", projection);
-
-        // Try to find the piece for projection override
+        // Projection - only "rigid" and "terrain_matching" exist. A piece-level override wins.
+        String projection = element.projection;
         for (StructurePiece piece : pieces) {
-            if (piece.name.equals(element.template)) {
-                if (piece.projection != null) {
-                    projection = piece.projection;
-                }
+            if (piece.name != null && piece.name.equals(element.template) && piece.projection != null) {
+                projection = piece.projection;
                 break;
             }
         }
-        elem.addProperty("projection", projection);
+        elem.addProperty("projection", toVanillaProjection(projection));
 
-        // Processors
-        JsonArray processors = new JsonArray();
-        for (String processor : element.processors) {
-            processors.add(processor);
+        // Processors - a ProcessorList, i.e. {"processors":[...]} or a processor list id.
+        // A bare array is not a valid input.
+        JsonArray processorList = new JsonArray();
+        if (element.processors != null) {
+            for (String processor : element.processors) {
+                processorList.add(processor);
+            }
         }
+        JsonObject processors = new JsonObject();
+        processors.add("processors", processorList);
         elem.add("processors", processors);
 
         return elem;
+    }
+
+    /**
+     * Map a blueprint projection string onto a StructureTemplatePool.Projection name.
+     * "ground" (our blueprint default) means "follow the terrain" -> terrain_matching.
+     */
+    private static String toVanillaProjection(String projection) {
+        if (projection == null) return "rigid";
+        switch (projection.toLowerCase()) {
+            case "rigid": return "rigid";
+            case "terrain_matching":
+            case "terrain":
+            case "ground": return "terrain_matching";
+            default:
+                LogManager.serverWarn(TAG, "Unknown projection '%s'; using 'rigid'", projection);
+                return "rigid";
+        }
     }
 
     /**

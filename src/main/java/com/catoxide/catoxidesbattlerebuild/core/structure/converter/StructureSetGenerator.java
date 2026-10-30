@@ -52,38 +52,31 @@ public final class StructureSetGenerator {
         JsonObject placement = new JsonObject();
         placement.addProperty("type", "minecraft:random_spread");
 
-        placement.addProperty("spacing", config.spacing);
-        placement.addProperty("separation", config.separation);
+        // Vanilla requires separation < spacing; the codec rejects the file otherwise.
+        int spacing = Math.max(2, config.spacing);
+        int separation = Math.max(0, Math.min(config.separation, spacing - 1));
+        placement.addProperty("spacing", spacing);
+        placement.addProperty("separation", separation);
         placement.addProperty("salt", config.salt);
-        placement.add("exclusion_zone", generateExclusionZone(config, namespace));
 
-        return placement;
-    }
-
-    /**
-     * Generate exclusion zone configuration.
-     */
-    private static JsonObject generateExclusionZone(PlacementConfig config, String namespace) {
-        JsonObject zone = new JsonObject();
-
-        // Default: exclude own structure type
-        zone.addProperty("own_structures", 4);
-
-        // Add custom exclusion zones
-        if (!config.exclusionZones.isEmpty()) {
-            JsonArray otherZones = new JsonArray();
-            for (PlacementConfig.ExclusionZone ez : config.exclusionZones) {
-                JsonObject other = new JsonObject();
-                other.addProperty("structure", ez.structureType);
-                other.addProperty("distance", ez.distance);
-                otherZones.add(other);
+        // exclusion_zone is optional and has exactly two fields:
+        //   { "other_set": <structure_set id>, "chunk_count": <n> }
+        // The previous { "own_structures": 4, "other_structures": [...] } shape was invented
+        // and is rejected outright by the codec. Vanilla only excludes ONE other set.
+        if (config.exclusionZones != null && !config.exclusionZones.isEmpty()) {
+            if (config.exclusionZones.size() > 1) {
+                LogManager.serverWarn(TAG,
+                    "exclusion_zone holds a single other_set; using the first of %d",
+                    config.exclusionZones.size());
             }
-            zone.add("other_structures", otherZones);
-        } else {
-            zone.add("other_structures", new JsonArray());
+            PlacementConfig.ExclusionZone ez = config.exclusionZones.get(0);
+            JsonObject zone = new JsonObject();
+            zone.addProperty("other_set", ez.structureType);
+            zone.addProperty("chunk_count", Math.max(1, ez.distance));
+            placement.add("exclusion_zone", zone);
         }
 
-        return zone;
+        return placement;
     }
 
     /**
@@ -101,6 +94,21 @@ public final class StructureSetGenerator {
             structures.add(entry);
         }
         root.add("structures", structures);
+
+        // placement is REQUIRED by minecraft:structure_set - the old code omitted it entirely,
+        // which alone made the file unparseable. StructureSet carries no spacing/separation,
+        // so emit a conservative random_spread.
+        if (structSet.placementType == StructureSet.PlacementType.CONCENTRIC_RINGS) {
+            LogManager.serverWarn(TAG,
+                "concentric_rings placement is not supported yet; using random_spread for '%s'",
+                structSet.name);
+        }
+        JsonObject placement = new JsonObject();
+        placement.addProperty("type", "minecraft:random_spread");
+        placement.addProperty("spacing", 34);
+        placement.addProperty("separation", 8);
+        placement.addProperty("salt", 0);
+        root.add("placement", placement);
 
         LogManager.serverInfo(TAG, "Generated structure set '%s': %d structures",
             structSet.name, structures.size());

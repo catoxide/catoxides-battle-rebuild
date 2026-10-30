@@ -39,6 +39,7 @@
         try { if (window.ContractEditor) window.ContractEditor.close(); } catch { /* 忽略 */ }
         try { if (window.TapeEditor) window.TapeEditor.close(); } catch { /* 忽略 */ }
         try { if (window.ItemBlockEditor) window.ItemBlockEditor.close(); } catch { /* 忽略 */ }
+        try { if (window.QuestEditor) window.QuestEditor.close(); } catch { /* 忽略 */ }
         window.AppState.entity = null;
         window.AppState.healthConfig = { parts: [] };
         window.AppState.model = null;
@@ -53,15 +54,18 @@
         const contractActive = window.ContractEditor && window.ContractEditor.hasActiveTab();
         const tapeActive = window.TapeEditor && window.TapeEditor.hasActiveTab();
         const itemBlockActive = window.ItemBlockEditor && window.ItemBlockEditor.hasActiveTab();
+        const questActive = window.QuestEditor && window.QuestEditor.hasActiveTab();
         const frame = window.AppState && window.AppState.activeFrame;
         let show = null;
         if (frame === 'tape' && tapeActive) show = 'tape';
         else if (frame === 'contract' && contractActive) show = 'contract';
         else if (frame === 'itemblock' && itemBlockActive) show = 'itemblock';
+        else if (frame === 'quest' && questActive) show = 'quest';
         else if (frame === 'structure' && structActive) show = 'structure';
         else if (frame === 'entity' && entityActive) show = 'entity';
         else if (structActive) show = 'structure';
         else if (itemBlockActive) show = 'itemblock';
+        else if (questActive) show = 'quest';
         else if (entityActive) show = 'entity';
         else if (contractActive) show = 'contract';
         else if (tapeActive) show = 'tape';
@@ -72,12 +76,14 @@
         const ctr = document.getElementById('contractEditorContent');
         const tape = document.getElementById('tapeEditorContent');
         const ib = document.getElementById('itemBlockEditorContent');
+        const qs = document.getElementById('questEditorContent');
         if (show) empty.classList.add('hidden'); else empty.classList.remove('hidden');
         ent.classList.toggle('hidden', show !== 'entity');
         if (str) str.classList.toggle('hidden', show !== 'structure');
         if (ctr) ctr.classList.toggle('hidden', show !== 'contract');
         if (tape) tape.classList.toggle('hidden', show !== 'tape');
         if (ib) ib.classList.toggle('hidden', show !== 'itemblock');
+        if (qs) qs.classList.toggle('hidden', show !== 'quest');
     };
 
     // ===== 布局交互：可拖拽分隔条 + 左栏收起/展开 =====
@@ -97,6 +103,10 @@
         const entityPanel = document.getElementById('panelEntity');
         const expandBtn = document.getElementById('btnExpandPack');
         const collapseBtn = document.getElementById('btnCollapsePack');
+
+        // 编辑区至少留这么宽：再窄工具条和表单就不可用了。
+        const MIN_EDITOR = 300;
+        const DIVIDERS = 10; // 两条 5px 分隔条
 
         // 恢复保存的宽度
         if (layout.packWidth) packPanel.style.width = layout.packWidth + 'px';
@@ -138,7 +148,12 @@
                 const dx = e.clientX - startX;
                 let w = startW + dx;
                 if (w < minW) w = minW;
-                if (w > maxW) w = maxW;
+                // 上限随视口走：固定 500 的话，窄窗口里能把编辑区拖成负宽，
+                // 而 body overflow:hidden 不留滚动条，拖出去的界面不可达。
+                const other = key === 'packWidth' ? entityPanel : packPanel;
+                const otherW = other.classList.contains('collapsed') ? 0 : other.offsetWidth;
+                const cap = Math.max(minW, Math.min(maxW, document.documentElement.clientWidth - otherW - MIN_EDITOR - DIVIDERS));
+                if (w > cap) w = cap;
                 panel.style.width = w + 'px';
                 panel.classList.remove('collapsed');
                 if (key === 'packWidth') {
@@ -158,6 +173,33 @@
         // divider1 拖左栏宽度（60~500px），divider2 拖中栏宽度（80~500px）
         makeDivider('divider1', 'panelPack', 'packWidth', 60, 500);
         makeDivider('divider2', 'panelEntity', 'entityWidth', 80, 500);
+
+        // 侧栏宽度是 localStorage 持久化的：大屏上拖出的 500+500，换到小屏/低分辨率
+        // 会把编辑区压成 0，且 body overflow:hidden 不留横向滚动条 —— 那部分界面
+        // 直接不可达。视口变小时按比例压回，压到下限还不够就收左栏。只在溢出时动手。
+        // 钳制结果不落盘：小屏上的一次妥协不该永久改掉用户在大屏上拖出的宽度。
+        function clampPanelsToViewport() {
+            const avail = document.documentElement.clientWidth - MIN_EDITOR - DIVIDERS;
+            const wasCollapsed = packPanel.classList.contains('collapsed');
+            let pw = wasCollapsed ? 0 : packPanel.offsetWidth;
+            let ew = entityPanel.offsetWidth;
+            if (pw + ew <= avail) return;
+            const scale = avail / (pw + ew);
+            pw = wasCollapsed ? 0 : Math.max(60, Math.round(pw * scale));
+            ew = Math.max(80, Math.round(ew * scale));
+            if (pw + ew > avail) {
+                if (!wasCollapsed) {
+                    packPanel.classList.add('collapsed');
+                    document.body.classList.add('pack-collapsed');
+                }
+                pw = 0;
+                ew = Math.max(80, Math.min(ew, avail));
+            }
+            if (!wasCollapsed) packPanel.style.width = pw + 'px';
+            entityPanel.style.width = ew + 'px';
+        }
+        window.addEventListener('resize', clampPanelsToViewport);
+        clampPanelsToViewport();
     }
 
     // ===== 启动 =====
@@ -274,12 +316,36 @@
                 try { if (window.ContractEditor && window.ContractEditor.rerender) window.ContractEditor.rerender(); } catch { /* 忽略 */ }
                 try { if (window.StructureEditor && window.StructureEditor.rerender) window.StructureEditor.rerender(); } catch { /* 忽略 */ }
                 try { if (window.TapeEditor && window.TapeEditor.rerender) window.TapeEditor.rerender(); } catch { /* 忽略 */ }
+                try { if (window.QuestEditor && window.QuestEditor.rerender) window.QuestEditor.rerender(); } catch { /* 忽略 */ }
                 // 0.2.2：部署面板若开着，用已有测量结果按新语言重画（不重新读盘）
                 try { if (window.DeployStatus && window.DeployStatus.isOpen()) window.DeployStatus.rerender(); } catch { /* 忽略 */ }
+                try { if (window.api && window.api.notifyMenuLang) window.api.notifyMenuLang(langSel.value); } catch { /* 忽略 */ }
             });
             window.I18n.applyDOM();
+            try { if (window.api && window.api.notifyMenuLang) window.api.notifyMenuLang(window.I18n.getLang()); } catch { /* 忽略 */ }
         } else {
             langSel.style.display = 'none';
+        }
+
+        // 顶层应用菜单的动作下发：菜单只是已有入口的第二个触发点，
+        // 全部落到既有按钮/既有函数上，不在菜单侧复制业务逻辑。
+        if (window.api && window.api.onMenuAction) {
+            window.api.onMenuAction((id) => {
+                const clickBtn = (elId) => {
+                    const el = document.getElementById(elId);
+                    if (el && !el.disabled) el.click();
+                };
+                if (id === 'deploy') clickBtn('btnDeployStatus');
+                else if (id === 'history') clickBtn('btnOpenHistory');
+                else if (id === 'modelEditor') clickBtn('btnOpenModelEditor');
+                else if (id === 'build') clickBtn('btnPackBuild');
+                else if (id === 'collapsePack') {
+                    if (document.body.classList.contains('pack-collapsed')) clickBtn('btnExpandPack');
+                    else clickBtn('btnCollapsePack');
+                } else if (id === 'refresh') {
+                    refreshAfterPackPaths().catch(() => { /* 刷新失败走既有 showError 通路 */ });
+                }
+            });
         }
 
         // 显示路径信息 + 项目根来源（0.2.1：无论有无工程，这里都必须有输出，
@@ -325,6 +391,9 @@
             window.AppState.pack = pack;
             document.getElementById('packNameLabel').textContent = pack.name + ' v' + pack.version;
             document.getElementById('btnNewEntity').disabled = false;
+            // 包级「📦 打包」跟着选中态走：没选包时按下去只会静默无反应（见上面 click 里的早退）
+            const pbb = document.getElementById('btnPackBuild');
+            if (pbb) pbb.disabled = false;
             await loadContentList();
         });
 
@@ -353,6 +422,9 @@
                 } else if (type === 'entity') {
                     window.AppState.activeFrame = 'entity';
                     window.EntityEditor.open({ pack: window.AppState.pack, entity: null, isNew: true });
+                } else if (type === 'quest') {
+                    window.AppState.activeFrame = 'quest';
+                    window.QuestEditor.open({ pack: window.AppState.pack, def: null, isNew: true });
                 }
             },
         });
@@ -391,6 +463,28 @@
         });
         window.ItemBlockEditor.init({ onListChanged: reloadItemBlockList });
 
+        // 初始化中栏（任务列表，共用 #entityList 容器）+ 右栏任务编辑器
+        const reloadQuestList = async () => {
+            const pack = window.AppState.pack;
+            if (pack && window.AppState.contentType === 'quest') {
+                await window.QuestList.loadQuests(pack.dir);
+            }
+        };
+        window.QuestList.init({
+            onSelect: async (packDir, q) => {
+                window.AppState.activeFrame = 'quest';
+                const readRes = await window.api.readQuest(packDir, q.id);
+                if (!readRes.ok) { window.showError(tf('quest.readFail', { msg: readRes.error })); return; }
+                if (!readRes.data) { window.showError(tf('quest.notFound', { id: q.id })); return; }
+                window.QuestEditor.open({ pack: window.AppState.pack, def: readRes.data, isNew: false });
+            },
+            onNew: async () => {
+                window.AppState.activeFrame = 'quest';
+                window.QuestEditor.open({ pack: window.AppState.pack, def: null, isNew: true });
+            },
+        });
+        window.QuestEditor.init({ onListChanged: reloadQuestList });
+
         // 一键导入原版 / 一键导出整包原版数据
         const btnImport = document.getElementById('btnStructImport');
         const btnImportDir = document.getElementById('btnStructImportDir');
@@ -403,6 +497,12 @@
         const btnIbExportAll = document.getElementById('btnItemBlockExportAll');
         if (btnIbExportAll) btnIbExportAll.addEventListener('click', () => itemBlockExportVanillaAll());
 
+        // 任务：暂存草稿 → 正式包（staging:export；该包全部草稿一起写，与结构/实体「导出到包」同一套流程）
+        const btnQuestExportAll = document.getElementById('btnQuestExportAll');
+        if (btnQuestExportAll) btnQuestExportAll.addEventListener('click', () => questWriteToPack());
+        const btnQuestEnsureScaffold = document.getElementById('btnQuestEnsureScaffold');
+        if (btnQuestEnsureScaffold) btnQuestEnsureScaffold.addEventListener('click', () => questEnsureScaffold());
+
         // 动画契约按钮（右栏框架）：刷新 = 重读契约 + 重盘点；打包 = 重建该包 jar
         document.getElementById('btnContractRefresh').addEventListener('click', () => window.ContractEditor.refresh());
         document.getElementById('btnContractBuild').addEventListener('click', () => window.ContractEditor.build());
@@ -412,6 +512,30 @@
         // 0.2.2 第 2 步：提交回溯（只读 git）；从部署面板每行的「🕘 回溯」进入
         if (window.GitHistoryView) window.GitHistoryView.init();
 
+        // 部署面板与回溯面板都用「包目录名」当主键（core/packStatus.js:318 dirName = 包目录名），
+        // 而 AppState.pack 只有 dir，所以这里取末段目录名，不用 pack.name（两者不保证相同）。
+        const dirNameOf = (d) => String(d || '').split(/[\\/]/).filter(Boolean).pop() || '';
+
+        // 顶栏「🕘 提交回溯」：此前唯一入口藏在部署面板每行的动作里（views/deployStatus.js:195），
+        // 不打开部署面板就找不到。没选中包时也让它开 —— 面板自己有 history.noTarget 提示。
+        const btnHistory = document.getElementById('btnOpenHistory');
+        if (btnHistory) btnHistory.addEventListener('click', () => {
+            if (!window.GitHistoryView) return;
+            const pack = window.AppState.pack;
+            if (pack && pack.dir) window.GitHistoryView.openDir(dirNameOf(pack.dir), pack.dir);
+            else window.GitHistoryView.open();
+        });
+
+        // 中栏「📦 打包」：包级入口。此前「打包」只存在于实体/结构/契约三个编辑器内部，
+        // 物品/方块与 TimeTape 视图里想打个 jar 只能绕道顶栏部署面板再找那一行。
+        // 走部署面板而不是直接调 buildPack：那里才有四态核对与 Gradle 构建输出流。
+        const btnPackBuild = document.getElementById('btnPackBuild');
+        if (btnPackBuild) btnPackBuild.addEventListener('click', () => {
+            const pack = window.AppState.pack;
+            if (!pack || !pack.dir || !window.DeployStatus) return;
+            window.DeployStatus.open({ buildDirName: dirNameOf(pack.dir) });
+        });
+
         // 内容类型路由：按中栏下拉切换列表加载器（新增类型时在此注册）
         async function loadContentList() {
             const type = document.getElementById('contentTypeSelect').value;
@@ -420,6 +544,8 @@
             if (tools) tools.style.display = (type === 'structure') ? 'flex' : 'none';
             const ibTools = document.getElementById('itemBlockTools');
             if (ibTools) ibTools.style.display = (type === 'item' || type === 'block') ? 'flex' : 'none';
+            const qTools = document.getElementById('questTools');
+            if (qTools) qTools.style.display = (type === 'quest') ? 'flex' : 'none';
             // 0.2.1：切内容类型时清掉上一次的结构导入/导出报告（此前一直残留）
             if (type !== 'structure') {
                 const rep = document.getElementById('structReport');
@@ -427,6 +553,10 @@
             }
             if (type !== 'item' && type !== 'block') {
                 const rep = document.getElementById('itemBlockReport');
+                if (rep) { rep.style.display = 'none'; rep.textContent = ''; }
+            }
+            if (type !== 'quest') {
+                const rep = document.getElementById('questReport');
                 if (rep) { rep.style.display = 'none'; rep.textContent = ''; }
             }
             const pack = window.AppState.pack;
@@ -439,6 +569,8 @@
                 await window.ContractList.load(pack.dir);
             } else if (type === 'item' || type === 'block') {
                 await window.ItemBlockList.loadItemsAndBlocks(pack.dir, type);
+            } else if (type === 'quest') {
+                await window.QuestList.loadQuests(pack.dir);
             } else {
                 await window.EntityList.loadEntities(pack.dir);
             }
@@ -576,6 +708,69 @@
             await loadContentList();
         }
 
+        // ===== 任务：暂存草稿 → 正式包（staging:export 是该包全部草稿一起写） =====
+        async function questWriteToPack() {
+            const t = window.I18n ? window.I18n.t : (k) => k;
+            const tf = window.I18n ? window.I18n.tf : (k) => k;
+            const pack = window.AppState.pack;
+            if (!pack) { window.showError(t('structure.needPack')); return; }
+            window.showStatus(t('quest.exporting'), true);
+            let r;
+            try { r = await window.api.stagingExport(pack.dir); } catch (e) { r = { ok: false, error: String((e && e.message) || e) }; }
+            const d = (r && r.data) || {};
+            const files = d.files || [];
+            const rep = document.getElementById('questReport');
+            if (rep) {
+                rep.style.display = 'block';
+                const lines = [t('quest.exportTitle')];
+                for (const f of files) lines.push('  ✔ ' + f);
+                if (!files.length) lines.push('  ' + t('quest.exportedNothing'));
+                rep.textContent = lines.join('\n');
+            }
+            if (!r || !r.ok) {
+                window.showError(t('quest.exportFail') + ((r && r.error) || ''));
+                return;
+            }
+            window.showStatus(tf('quest.exported', { n: files.length }), true);
+            await loadContentList();
+        }
+
+        // ===== 任务：补齐骨架（入口类只插一行 registerQuestsFromJar，绝不整类重生成） =====
+        async function questEnsureScaffold() {
+            const t = window.I18n ? window.I18n.t : (k) => k;
+            const tf = window.I18n ? window.I18n.tf : (k) => k;
+            const pack = window.AppState.pack;
+            if (!pack) { window.showError(t('structure.needPack')); return; }
+            const rep = document.getElementById('questReport');
+            if (rep) { rep.style.display = 'block'; rep.textContent = t('quest.scaffoldRunning'); }
+            let r;
+            try { r = await window.api.ensureScaffold(pack.dir); } catch (e) { r = { ok: false, error: String((e && e.message) || e) }; }
+            if (!r || !r.ok) {
+                if (rep) rep.textContent = t('quest.scaffoldFail') + ((r && r.error) || '');
+                window.showError(t('quest.scaffoldFail') + ((r && r.error) || ''));
+                return;
+            }
+            const d = r.data || {};
+            const created = d.created || [];
+            const patched = d.patched || [];
+            const skipped = d.skipped || [];
+            const lines = [t('quest.scaffoldTitle')];
+            for (const f of created) lines.push('  + ' + f);
+            for (const f of patched) lines.push('  ~ ' + f);
+            for (const s of skipped) lines.push('  ! ' + s.file + ' (' + s.reason + ')');
+            if (!created.length && !patched.length && !skipped.length) lines.push('  ' + t('quest.scaffoldNothing'));
+            // 顺手跑一次预检，把剩下的 E-Q-* 直接列出来（用户不用再去别处找）
+            const pre = await window.api.preflightPack(pack.dir);
+            if (pre && pre.ok) {
+                const q = (pre.data.findings || []).filter((x) => /^[EW]-Q-/.test(x.code));
+                lines.push('');
+                lines.push(q.length ? tf('quest.scaffoldPreflightN', { n: q.length }) : t('quest.scaffoldPreflightClean'));
+                for (const x of q) lines.push('  ' + (x.level === 'error' ? '[ERROR] ' : '[WARN ] ') + x.code + ' ' + x.msg);
+            }
+            if (rep) rep.textContent = lines.join('\n');
+            window.showStatus(tf('quest.scaffoldDone', { c: created.length, p: patched.length }), skipped.length === 0);
+        }
+
         // 自动加载包列表
         await window.PackList.loadPacks();
     }
@@ -702,6 +897,8 @@
                 if (lbl) lbl.textContent = '';
                 const ne = document.getElementById('btnNewEntity');
                 if (ne) ne.disabled = true;
+                const pb = document.getElementById('btnPackBuild');
+                if (pb) pb.disabled = true;
                 const el = document.getElementById('entityList');
                 if (el) el.innerHTML = '';
             }

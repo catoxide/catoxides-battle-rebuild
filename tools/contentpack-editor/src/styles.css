@@ -10,6 +10,9 @@
   --err: #f38ba8;
   --warn: #f9e2af;
   --border: #45475a;
+  /* 圆角两级：控件 4px / 容器 6px。历史上散落 3~10px 七种取值，观感不统一 */
+  --r: 4px;
+  --r-lg: 6px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -29,6 +32,8 @@ body {
   display: flex;
   align-items: baseline;
   gap: 12px;
+  row-gap: 6px;
+  flex-wrap: wrap;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--card2);
@@ -36,6 +41,23 @@ body {
 }
 .app-header h1 { font-size: 17px; color: var(--acc); }
 .sub { opacity: .6; font-size: 12px; }
+/* 顶栏按钮都是 flex-shrink:0，窄窗口时唯一能被压的就是文字 span ——
+   实测「语言」被压成竖排、按钮互相叠。这里让路径串自己截断、文字不折行、
+   实在放不下就整簇换行，而不是压字。 */
+#headerPaths { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-header .sub { white-space: nowrap; }
+/* 右侧按钮区：窄窗口时整簇换行（而不是把语言标签压成竖排或溢出裁切）。
+   它自己必须能缩（min-width:0 + 可 shrink），内部的 .hdr-group 不缩 —— 以簇为单位换行。 */
+.hdr-right {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  row-gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
 
 /* W5.3 GPU 崩溃自愈横幅 */
 #gpuBanner {
@@ -65,7 +87,7 @@ body {
 #panelPack { width: 260px; flex-shrink: 0; transition: width .12s ease; }
 #panelPack.collapsed { width: 0; }
 #panelEntity { width: 240px; flex-shrink: 0; transition: width .12s ease; }
-.editor-panel { flex: 1; padding: 12px 16px; overflow-y: auto; }
+.editor-panel { flex: 1; padding: 12px 16px; overflow-y: auto; container-type: inline-size; }
 
 /* 可拖拽分隔条 */
 .divider {
@@ -81,8 +103,9 @@ body {
 body.dragging { cursor: col-resize; user-select: none; }
 body.dragging .divider { background: var(--acc); opacity: .8; }
 
-/* 面板标题栏动作区（收起按钮） */
-.title-actions { display: flex; gap: 4px; align-items: center; }
+/* 面板标题栏动作区（收起按钮）。flex-shrink:0 —— 里面的按钮都是 shrink:0，
+   若让动作区自己被压，按钮会溢出到面板外被裁掉（窄中栏实测过）。 */
+.title-actions { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
 .title-actions .btn { padding: 2px 6px; font-size: 11px; }
 
 /* 收起后的展开按钮（悬于左缘） */
@@ -93,7 +116,7 @@ body.dragging .divider { background: var(--acc); opacity: .8; }
   z-index: 100;
   padding: 6px 4px;
   font-size: 12px;
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 var(--r) var(--r) 0;
   display: none;
 }
 body.pack-collapsed #panelPack.collapsed { width: 0; }
@@ -110,12 +133,14 @@ body.pack-collapsed #btnExpandPack { display: block; }
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+/* 中栏标题行：包名夹在下拉与按钮组之间，不截断就会折成两行把行高撑开 */
+#packNameLabel { min-width: 0; margin: 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ===== 列表 ===== */
 .list { flex: 1; overflow-y: auto; padding: 6px; }
 .list-item {
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--r);
   cursor: pointer;
   margin-bottom: 3px;
   border: 1px solid transparent;
@@ -130,7 +155,7 @@ body.pack-collapsed #btnExpandPack { display: block; }
   height: 56px;
   flex-shrink: 0;
   background: var(--card2);
-  border-radius: 6px;
+  border-radius: var(--r);
   border: 1px solid var(--border);
 }
 .list-item .li-text { min-width: 0; }
@@ -143,7 +168,7 @@ body.pack-collapsed #btnExpandPack { display: block; }
   font-weight: 400;
   background: var(--warn);
   color: #1e1e2e;
-  border-radius: 8px;
+  border-radius: var(--r);
   padding: 0 6px;
   margin-left: 6px;
   vertical-align: 1px;
@@ -155,7 +180,7 @@ body.pack-collapsed #btnExpandPack { display: block; }
 /* ===== 卡片/表单 ===== */
 .card {
   background: var(--card);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   padding: 12px 14px;
   margin-bottom: 12px;
 }
@@ -166,7 +191,7 @@ input, select, textarea {
   background: #45475a;
   border: 1px solid #585b70;
   color: var(--fg);
-  border-radius: 6px;
+  border-radius: var(--r);
   padding: 6px 8px;
   font-size: 13px;
   font-family: inherit;
@@ -182,20 +207,42 @@ textarea { font-family: Consolas, monospace; resize: vertical; min-height: 60px;
 .btn {
   background: var(--acc);
   color: #1e1e2e;
-  border: none;
-  border-radius: 6px;
-  padding: 7px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  padding: 6px 12px;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   flex-shrink: 0;
+  user-select: none;
+  transition: background .1s ease, border-color .1s ease;
 }
-.btn:hover { filter: brightness(1.1); }
-.btn:disabled { opacity: .4; cursor: not-allowed; }
-.btn.ghost { background: #45475a; color: var(--fg); font-weight: 400; }
+/* 可按压感：hover 提亮背景、active 下沉 1px。此前只有 brightness 滤镜，按下去没有反馈 */
+.btn:hover:not(:disabled) { background: #a3c5fc; }
+.btn:active:not(:disabled) { background: #6f9de0; transform: translateY(1px); }
+.btn:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+/* 不可按压：降饱和 + 降透明 + not-allowed，与可按压态拉开距离 */
+.btn:disabled { opacity: .35; cursor: not-allowed; filter: saturate(.35); }
+/* ghost 与 input 区分：按钮是「凸起」控件（深底 + 描边），输入框是「凹陷」字段 */
+.btn.ghost { background: #3b3d52; color: var(--fg); font-weight: 400; border-color: #585b70; }
+.btn.ghost:hover:not(:disabled) { background: #4a4d66; border-color: var(--acc); }
+.btn.ghost:active:not(:disabled) { background: #33354a; transform: translateY(1px); }
 .btn.accent { background: var(--ok); color: #1e1e2e; }
-.btn.small { padding: 4px 10px; font-size: 12px; }
+.btn.accent:hover:not(:disabled) { background: #bceab7; }
+.btn.accent:active:not(:disabled) { background: #8ecf89; transform: translateY(1px); }
+.btn.small { padding: 3px 9px; font-size: 12px; }
 .btn.danger { background: var(--err); color: #1e1e2e; }
+.btn.danger:hover:not(:disabled) { background: #f6a6ba; }
+.btn.danger:active:not(:disabled) { background: #d9708c; transform: translateY(1px); }
+/* 破坏性动作的低强调形态：平时只是红字，悬停才染红底。
+   三个类的特异度高于 .btn.danger，所以 ghost + danger 并存时以这里为准。 */
+.btn.ghost.danger { background: #3b3d52; color: var(--err); border-color: #6b3d4a; }
+.btn.ghost.danger:hover:not(:disabled) { background: rgba(243, 139, 168, .14); border-color: var(--err); }
+.btn.ghost.danger:active:not(:disabled) { background: rgba(243, 139, 168, .24); transform: translateY(1px); }
+
+/* 顶栏分组分隔线：路径配置 / 功能入口 / 开发者工具 三类不再混排 */
+.hdr-sep { width: 1px; align-self: stretch; margin: 2px 4px; background: var(--border); flex-shrink: 0; }
+.hdr-group { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
 
 /* ===== 多标签栏 ===== */
 .editor-tabs-bar {
@@ -258,10 +305,11 @@ textarea { font-family: Consolas, monospace; resize: vertical; min-height: 60px;
   font-size: 11px;
   background: var(--card);
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: var(--r);
   color: var(--acc);
 }
-.editor-actions { margin-left: auto; display: flex; gap: 8px; }
+/* 工具条右对齐且允许换行：编辑区被压窄时按钮折到下一行，而不是溢出被裁 */
+.editor-actions { margin-left: auto; display: flex; gap: 8px; row-gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
 /* ===== 页签 ===== */
 .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
@@ -282,7 +330,7 @@ textarea { font-family: Consolas, monospace; resize: vertical; min-height: 60px;
 .bone-tree { max-height: 320px; overflow-y: auto; margin-top: 8px; font-size: 12px; }
 .bone-tree-panel {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--r-lg);
   overflow: hidden;
   background: var(--card);
 }
@@ -303,7 +351,7 @@ textarea { font-family: Consolas, monospace; resize: vertical; min-height: 60px;
 .parts-list { flex: 1; }
 .part-card {
   background: var(--card);
-  border-radius: 8px;
+  border-radius: var(--r-lg);
   padding: 10px 12px;
   margin-bottom: 10px;
   border: 1px solid var(--border);
@@ -342,13 +390,13 @@ textarea { font-family: Consolas, monospace; resize: vertical; min-height: 60px;
 /* ===== 状态栏/输出 ===== */
 .status { margin-top: 10px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* 0.2.1：全局状态条（在 #editorContent 之外，任何模式下都可见）；空内容时不占位 */
-#statusBar { margin: 0 10px 6px; padding: 4px 8px; border-radius: 6px; background: rgba(255,255,255,.04); }
+#statusBar { margin: 0 10px 6px; padding: 4px 8px; border-radius: var(--r); background: rgba(255,255,255,.04); }
 #statusBar:empty { display: none; }
 .status.ok { color: var(--ok); }
 .status.err { color: var(--err); }
 .out {
   background: #11111b;
-  border-radius: 8px;
+  border-radius: var(--r-lg);
   padding: 12px;
   margin-top: 10px;
   font-family: Consolas, monospace;
@@ -394,11 +442,17 @@ code { background: #45475a; padding: 1px 5px; border-radius: 4px; font-size: 12p
 .struct-toolbar { padding: 8px 0; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
 .struct-3d-layout { display: grid; grid-template-columns: 1fr 200px; gap: 12px; align-items: start; }
 #struct3dWrap {
-  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden;
   background: #1e1e2e; line-height: 0;
 }
 #structCanvas { width: 100%; height: 520px; display: block; cursor: grab; touch-action: none; }
 #structCanvas:active { cursor: grabbing; }
+/* 编辑区内部的双列布局用容器查询收单列：编辑区宽度取决于侧栏拖拽 + 窗口大小，
+   视口断点反映不了它。620px 以下 1fr 200px 会把 3D 画布压到 ~80px 宽。 */
+@container (max-width: 620px) {
+  .grid2 { grid-template-columns: 1fr; }
+  .struct-3d-layout { grid-template-columns: 1fr; }
+}
 /* ==================== P11 片段 3D 编辑器窗口（独立窗口：顶栏 + 左工具栏 + 画布 + 状态栏） ==================== */
 body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 .ed-topbar {
@@ -437,7 +491,7 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
 /* 中键组件/NBT 编辑菜单（P12：可编辑） */
 .ed-ctx {
   position: absolute; z-index: 50; min-width: 240px; max-width: 330px; max-height: 78vh; overflow-y: auto;
-  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg);
   box-shadow: 0 8px 24px rgba(0,0,0,.45); padding: 10px; font-size: 12px;
 }
 .ed-ctx-head { font-weight: 600; margin-bottom: 6px; word-break: break-all; }
@@ -455,7 +509,7 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
 .ed-ctx-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .struct-hud { user-select: none; }
 .struct-legend {
-  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg);
   padding: 10px 12px; max-height: 520px; overflow-y: auto;
 }
 .struct-legend .panel-title { font-size: 12px; margin-bottom: 8px; }
@@ -483,7 +537,7 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
 .block-search-list {
   display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 50;
   min-width: 260px; max-height: 320px; overflow-y: auto;
-  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg);
   box-shadow: 0 8px 24px rgba(0,0,0,.45); padding: 4px;
 }
 .block-search-item {
@@ -495,7 +549,7 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
 .ed-palette {
   position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
   display: flex; flex-direction: column-reverse; gap: 3px; z-index: 8;
-  background: rgba(30,30,46,.78); border: 1px solid #45475a; border-radius: 8px;
+  background: rgba(30,30,46,.78); border: 1px solid #45475a; border-radius: var(--r-lg);
   padding: 5px; pointer-events: auto; user-select: none;
 }
 .ed-palrow { display: flex; gap: 3px; }
@@ -529,7 +583,7 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
 .tape-tracktabs { display: flex; align-items: center; gap: 4px; }
 .tape-tracktabs .tab { font-size: 12px; padding: 3px 10px; }
 .tape-toolbar-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.tape-problems-badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); }
+.tape-problems-badge { font-size: 12px; padding: 2px 8px; border-radius: var(--r); border: 1px solid var(--border); }
 .tape-problems-badge.ok { color: var(--ok); }
 .tape-problems-badge.warn { color: var(--warn); }
 .tape-problems-badge.err { color: var(--err); }
@@ -602,7 +656,7 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
 .tape-sim .sim-tag-sep { font-size: 11px; }
 .tape-sim .sim-tag {
   font-size: 11px; font-family: ui-monospace, Consolas, monospace;
-  background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--r);
   padding: 1px 8px; cursor: pointer; color: var(--warn);
 }
 .tape-sim .sim-tag-in { width: 74px; }
@@ -618,7 +672,7 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
 .root-chip {
     font-size: 11px;
     padding: 2px 8px;
-    border-radius: 10px;
+    border-radius: var(--r);
     background: #313244;
     color: #a6adc8;
     border: 1px solid #45475a;
@@ -748,7 +802,7 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
 .gh-repo, .gh-paths, .gh-target { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
 .gh-badge {
   font-size: 11px; padding: 1px 7px; border: 1px solid var(--border);
-  border-radius: 10px; background: var(--card);
+  border-radius: var(--r); background: var(--card);
 }
 .gh-badge.ok { color: var(--ok); }
 .gh-badge.warn { color: var(--warn); }
@@ -774,3 +828,17 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
   font-family: ui-monospace, Consolas, monospace; font-size: 11px; line-height: 1.35;
   white-space: pre; background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
 }
+
+/* 0.2.2 第 3 步：回滚预览 / 确认 / 撤销（回溯视图内） */
+.gh-undo {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0;
+  padding: 6px 8px; border: 1px solid var(--acc); border-radius: 5px; background: rgba(80, 160, 255, .07);
+}
+.gh-plan {
+  margin: 6px 0 8px 6px; padding: 8px; border: 1px solid var(--border);
+  border-left: 3px solid var(--warn); border-radius: 5px; background: var(--card);
+}
+.gh-plan-sum { display: flex; flex-wrap: wrap; gap: 4px; font-size: 12px; font-weight: 600; }
+.gh-plan .gh-sec { margin-top: 6px; font-size: 11px; color: var(--fg-dim); }
+.gh-plan .gh-change { font-size: 11px; word-break: break-all; }
+.gh-plan-actions { display: flex; gap: 8px; margin-top: 8px; }

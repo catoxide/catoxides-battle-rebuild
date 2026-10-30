@@ -25,6 +25,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import com.catoxide.catoxidesbattlerebuild.core.quest.QuestDefinition;
+import com.catoxide.catoxidesbattlerebuild.core.quest.QuestDefinitionParser;
 import com.catoxide.catoxidesbattlerebuild.core.quest.QuestSystem;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -461,6 +462,67 @@ public final class ContentPackContext {
         QuestSystem.getInstance().registerDefinition(definition);
         LogManager.serverInfo("ContentPackContext", "Registered quest definition: %s (children: %d)",
                 definition.id(), definition.children().size());
+    }
+
+    /**
+     * 扫描<b>当前包 jar</b> 里的 {@code quests/*.json}（仅一级目录）并逐个解析、注册。
+     * <p>单文件失败只隔离该文件（计入 {@link QuestLoadResult#problems}），
+     * 不影响同包其余任务，也不抛给加载器。
+     * <p>注册到 1 条及以上时自动安装 {@link QuestSystem#installDefaultDriver()}，
+     * 纯 JSON 任务包因此不需要再写 Java 驱动（发放 + 完成检查）。
+     * <p>JSON 里 {@code id} 不带命名空间时用主 mod 命名空间（B6：包命名空间不随包走），
+     * 跨包同名 id 会互相覆盖并触发 QuestSystem 的覆盖告警 —— 编辑器侧要求包内 id 唯一。
+     *
+     * @return 注册结果摘要（注册数 + 每个失败文件的原因）
+     */
+    public QuestLoadResult registerQuestsFromJar() {
+        String packId = this.currentPackId;
+        if (packId == null) {
+            throw new IllegalStateException("registerQuestsFromJar 必须在 register() 阶段调用（当前无包作用域）");
+        }
+        Optional<ContentPackRegistry.LoadedPack> loaded = ContentPackRegistry.getPack(packId);
+        if (loaded.isEmpty()) {
+            throw new IllegalStateException("找不到已加载包 " + packId + "（registerQuestsFromJar）");
+        }
+        int registered = 0;
+        List<String> problems = new ArrayList<>();
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(loaded.get().jarFile())) {
+            java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                java.util.zip.ZipEntry entry = entries.nextElement();
+                String name = entry.getName();
+                if (!name.startsWith("quests/") || !name.endsWith(".json")
+                        || name.indexOf('/', "quests/".length()) != -1) {
+                    continue;
+                }
+                try (java.io.InputStream in = zip.getInputStream(entry)) {
+                    String json = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    QuestDefinition definition = QuestDefinitionParser.parse(json, modId);
+                    registerQuest(definition);
+                    registered++;
+                } catch (Exception ex) {
+                    problems.add(name + ": " + ex.getMessage());
+                    LogManager.serverError("ContentPackContext", "Failed to load quest %s in %s: %s",
+                            name, loaded.get().sourceJar(), ex.getMessage());
+                }
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("无法扫描包 jar " + loaded.get().sourceJar() + ": " + e.getMessage(), e);
+        }
+        if (registered > 0) {
+            QuestSystem.installDefaultDriver();
+        }
+        if (!problems.isEmpty()) {
+            LogManager.serverWarn("ContentPackContext", "Quest load problems in %s: %d file(s) failed",
+                    loaded.get().sourceJar(), problems.size());
+        }
+        LogManager.serverInfo("ContentPackContext", "Scanned pack jar %s for quests: registered=%d failed=%d",
+                loaded.get().sourceJar(), registered, problems.size());
+        return new QuestLoadResult(registered, List.copyOf(problems));
+    }
+
+    /** {@link #registerQuestsFromJar()} 的结果摘要；problems 条目形如 {@code quests/x.json: 原因}。 */
+    public record QuestLoadResult(int registered, List<String> problems) {
     }
 
     /**

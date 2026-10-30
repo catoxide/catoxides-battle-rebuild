@@ -383,9 +383,11 @@ function validateBlueprint(bp) {
                 errors.push(btag + ': nbt 须为 tagged compound {$t:10, v:{...}}');
             }
         });
-        // 同一位置不能既有填充方块又有 jigsaw
+        // 同一位置不能既有填充方块又有 jigsaw（air 不算填充：原版模板允许在 jigsaw 格上写 air）
         const occ = new Set();
-        (p.fillBlocks || []).forEach((fb) => occ.add(fb.x + ',' + fb.y + ',' + fb.z));
+        (p.fillBlocks || []).forEach((fb) => {
+            if (fb.block !== 'minecraft:air') occ.add(fb.x + ',' + fb.y + ',' + fb.z);
+        });
         (p.jigsaws || []).forEach((j) => {
             if (occ.has(j.x + ',' + j.y + ',' + j.z)) {
                 errors.push(tag + ': (' + j.x + ',' + j.y + ',' + j.z + ') 同时有填充方块和 jigsaw');

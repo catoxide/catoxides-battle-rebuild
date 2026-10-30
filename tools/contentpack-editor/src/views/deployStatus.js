@@ -1,6 +1,7 @@
 // deployStatus.js - 顶栏「🚀 部署状态」：四态核对面板 + 内容包 on/off
 // 依赖：window.api（preload）、window.I18n、window.askChoice
-// 暴露：window.DeployStatus.init() / open() / close() / refresh() / isOpen()
+// 暴露：window.DeployStatus.init() / open(opts?) / close() / refresh() / isOpen()
+//       opts = { buildDirName } → 打开面板并对该包直接开构建（中栏「📦 打包」用）
 //
 // 面板只做两件事：把 core/packStatus.js 实测出来的四态摆平（源码 / 产物 jar / run 安装副本 /
 // spark 磁盘缓存），以及提供搬运动作（打包 / 安装 / 清缓存 / 开关）。
@@ -398,11 +399,18 @@ window.DeployStatus = (function () {
         return !!o && !o.classList.contains('hidden');
     }
 
-    function open() {
+    function open(opts) {
         const o = document.getElementById('deployOverlay');
         if (!o) return;
         o.classList.remove('hidden');
-        refresh();
+        // opts.buildDirName：中栏「📦 打包」进来时直接对该包开构建 —— 那里没有四态记录，
+        // 必须先 refresh() 拿到 data.packs 才能找到对应的 p。
+        const want = opts && opts.buildDirName;
+        refresh().then(() => {
+            if (!want || busy || !data) return;
+            const p = (data.packs || []).find((x) => x.dirName === want);
+            if (p) buildPack(p);
+        });
     }
 
     function close() {
@@ -412,7 +420,9 @@ window.DeployStatus = (function () {
 
     function init() {
         const btnOpen = document.getElementById('btnDeployStatus');
-        if (btnOpen) btnOpen.addEventListener('click', open);
+        // 不直接把 open 当监听器：addEventListener 会把 MouseEvent 当第一个参数传进去，
+        // 而 open(opts) 现在会读 opts.buildDirName。
+        if (btnOpen) btnOpen.addEventListener('click', () => open());
         const btnClose = document.getElementById('btnDeployClose');
         if (btnClose) btnClose.addEventListener('click', close);
         const btnRefresh = document.getElementById('btnDeployRefresh');

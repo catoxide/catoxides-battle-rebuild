@@ -30,7 +30,10 @@ public class StructureBlueprint {
     public List<StructurePiece> pieces = new ArrayList<>();
     public List<JigsawConnection> connections = new ArrayList<>();
     public List<String> processors = new ArrayList<>();
-    public String fallbackPool = "minecraft:empty_pool_element";
+    // Must be a TEMPLATE POOL id. "minecraft:empty_pool_element" is an element *type*, not a
+    // pool, and referencing it leaves the template_pool registry with an unbound value - which
+    // makes the whole world unopenable.
+    public String fallbackPool = "minecraft:empty";
     public PlacementConfig placement = new PlacementConfig();
     public String biomesResourceLocation = null;
 

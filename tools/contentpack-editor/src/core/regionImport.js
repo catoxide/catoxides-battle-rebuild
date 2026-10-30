@@ -52,16 +52,21 @@ function blockIdStr(name, properties) {
  *            paletteCount:number}}
  */
 function parseRegionNbt(input) {
-    // 游戏产出 = 小端；部分工具/数据集 = 大端 → decodeAuto 自动判别。
+    // Java 版 NBT = 大端；部分第三方工具/旧包产出小端 → decodeTaggedAuto 自动判别
+    // （打分优先「完整消费缓冲区」，避免把大端文件按小端解析出前缀树）。
     // 用 tagged 精确解码：保留 NBT 类型（实体 UUID 的 IntArray、byte 字段等），
     // 否则 plainToTagged 的启发式推断会把 IntArray 写成 List<Int>，导出后字节不一致。
     let plainRoot;
     let taggedRoot = null; // {$t:10, v:{...}}
+    let nbtEndianness = null;
+    let nbtComplete = true;
     if (input && typeof input === 'object' && !Buffer.isBuffer(input) && !ArrayBuffer.isView(input)) {
         plainRoot = input; // 调用方已解码的 plain 树（兼容旧调用/测试）
     } else {
         const d = NBT.decodeTaggedAuto(input);
         taggedRoot = d.root;
+        nbtEndianness = d.endianness;
+        nbtComplete = d.complete;
         plainRoot = NBT.taggedToPlain(d.root);
     }
     const root = plainRoot;
@@ -235,6 +240,8 @@ function parseRegionNbt(input) {
         multiPalette,
         paletteAlternatives: paletteList ? paletteList.length : 0,
         tagged: !!taggedRoot,
+        nbtEndianness,
+        nbtComplete,
     };
 }
 
@@ -252,7 +259,10 @@ function regionToPiece(region, pieceName) {
     for (const b of region.blocks) {
         if (b.x < 0 || b.y < 0 || b.z < 0 || b.x >= w || b.y >= h || b.z >= d) continue;
         const id = blockIdStr(b.block, b.properties);
-        if (id === 'minecraft:air') continue;
+        // 保留 air：原版模板里的 air 是「清除」语义（放置时覆盖原地形），
+        // structure_void 才是「保持不动」。丢掉 air 会让导入的建筑嵌进地形里
+        // （实测 structure.zip 20 个模板共 1225+ 个 air 格）。编辑器体素表本就跳过 air
+        // （voxel.js isAir），这里保留不影响 3D 显示。
         const key = b.x + ',' + b.y + ',' + b.z;
         if (seen.has(key)) continue;
         seen.add(key);

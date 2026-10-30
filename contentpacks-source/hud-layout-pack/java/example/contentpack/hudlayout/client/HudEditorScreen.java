@@ -1,5 +1,6 @@
 package example.contentpack.hudlayout.client;
 
+import com.catoxide.catoxidesbattlerebuild.core.hud.HudAction;
 import com.catoxide.catoxidesbattlerebuild.core.hud.HudElement;
 import com.catoxide.catoxidesbattlerebuild.core.hud.HudElements;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
@@ -25,20 +26,34 @@ import java.util.Set;
  * <p>单人游戏暂停（{@link #isPauseScreen()}），避免编辑时被打断；多人服不受影响。
  *
  * <p>目标 = 有基准矩形的原版组 + 其他包通过 {@link HudElements} 登记的元素（按组折叠）。
+ * 右键手柄打开菜单：布局系统只内置「重置位置」，其余条目由元素通过 {@link HudElement#actions()} 提供。
  */
 public final class HudEditorScreen extends Screen {
 
     private record Target(String group, HudElement.Bounds base) {
     }
 
+    private static final int MENU_ITEM_HEIGHT = 14;
+    private static final int MENU_PADDING = 4;
+    private static final int MENU_TEXT_PADDING = 6;
+
+    private final Screen parent;
     private String draggingGroup;
     private String hoveredGroup;
     private int grabOffsetX;
     private int grabOffsetY;
+    private String menuGroup;
+    private int menuX;
+    private int menuY;
     private final Set<String> reportedBoundsErrors = new HashSet<>();
 
     public HudEditorScreen() {
+        this(null);
+    }
+
+    public HudEditorScreen(Screen parent) {
         super(Component.translatable("hudlayout.editor.title"));
+        this.parent = parent;
     }
 
     @Override
@@ -65,10 +80,34 @@ public final class HudEditorScreen extends Screen {
 
         graphics.drawString(font, title, 8, 8, 0xFFFFFFFF, true);
         graphics.drawString(font, Component.translatable("hudlayout.editor.hint"), 8, 20, 0xFFB0B0B0, true);
+
+        if (menuGroup != null) {
+            drawMenu(graphics, mouseX, mouseY);
+        }
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (menuGroup != null) {
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && clickMenuItem(mouseX, mouseY)) {
+                menuGroup = null;
+                return true;
+            }
+            // 点在菜单外/非菜单键：只关闭菜单，不穿透去拖手柄
+            menuGroup = null;
+            return true;
+        }
+
+        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+            Target target = targetAt(targets(), mouseX, mouseY);
+            if (target != null) {
+                menuGroup = target.group();
+                menuX = (int) Math.round(mouseX);
+                menuY = (int) Math.round(mouseY);
+                return true;
+            }
+        }
+
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             Target target = targetAt(targets(), mouseX, mouseY);
             if (target != null) {
@@ -111,6 +150,10 @@ public final class HudEditorScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && menuGroup != null) {
+            menuGroup = null;
+            return true;
+        }
         if (keyCode == GLFW.GLFW_KEY_R && hoveredGroup != null) {
             LayoutStore.reset(hoveredGroup);
             LayoutStore.save();
@@ -122,7 +165,68 @@ public final class HudEditorScreen extends Screen {
     @Override
     public void onClose() {
         LayoutStore.save();
-        super.onClose();
+        if (minecraft != null) {
+            minecraft.setScreen(parent);
+        }
+    }
+
+    private List<HudAction> menuItems() {
+        List<HudAction> items = new ArrayList<>();
+        items.add(new HudAction(Component.translatable("hudlayout.action.reset"), () -> {
+            LayoutStore.reset(menuGroup);
+            LayoutStore.save();
+        }));
+        for (HudElement element : HudElements.getAll()) {
+            if (element.group().getPath().equals(menuGroup)) {
+                items.addAll(element.actions());
+            }
+        }
+        return items;
+    }
+
+    private int[] menuBounds(List<HudAction> items) {
+        int width = 0;
+        for (HudAction item : items) {
+            width = Math.max(width, font.width(item.label()));
+        }
+        width += MENU_TEXT_PADDING * 2;
+        int height = items.size() * MENU_ITEM_HEIGHT + MENU_PADDING * 2;
+        int x = clamp(menuX, 2, Math.max(2, this.width - width - 2));
+        int y = clamp(menuY, 2, Math.max(2, this.height - height - 2));
+        return new int[]{x, y, width, height};
+    }
+
+    private void drawMenu(GuiGraphics graphics, int mouseX, int mouseY) {
+        List<HudAction> items = menuItems();
+        int[] rect = menuBounds(items);
+        graphics.fill(rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3], 0xE0101010);
+        graphics.renderOutline(rect[0], rect[1], rect[2], rect[3], 0xFF66DDFF);
+
+        for (int i = 0; i < items.size(); i++) {
+            int itemY = rect[1] + MENU_PADDING + i * MENU_ITEM_HEIGHT;
+            boolean hovered = mouseX >= rect[0] && mouseX < rect[0] + rect[2]
+                    && mouseY >= itemY && mouseY < itemY + MENU_ITEM_HEIGHT;
+            if (hovered) {
+                graphics.fill(rect[0] + 1, itemY, rect[0] + rect[2] - 1, itemY + MENU_ITEM_HEIGHT, 0x5522CCFF);
+            }
+            graphics.drawString(font, items.get(i).label(),
+                    rect[0] + MENU_TEXT_PADDING, itemY + 3, 0xFFFFFFFF, false);
+        }
+    }
+
+    private boolean clickMenuItem(double mouseX, double mouseY) {
+        List<HudAction> items = menuItems();
+        int[] rect = menuBounds(items);
+        if (mouseX < rect[0] || mouseX >= rect[0] + rect[2]
+                || mouseY < rect[1] || mouseY >= rect[1] + rect[3]) {
+            return false;
+        }
+        int index = (int) ((mouseY - rect[1] - MENU_PADDING) / MENU_ITEM_HEIGHT);
+        if (index < 0 || index >= items.size()) {
+            return false;
+        }
+        items.get(index).action().run();
+        return true;
     }
 
     private void drawHandle(GuiGraphics graphics, Target target, boolean hovered, boolean dragging) {

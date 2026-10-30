@@ -2,10 +2,9 @@
 // 运行: node test/structureDiagnostics.test.js
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 const D = require('../src/core/structureDiagnostics');
 const G = require('../src/core/structureGrowth');
+const { sampleBlueprint } = require('./fixtures/sampleStructure');
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -13,8 +12,7 @@ function ok(name, cond, extra) {
     else { fail++; console.log('  ✗ ' + name + (extra ? '  → ' + extra : '')); }
 }
 
-const SAMPLE = path.join(__dirname, '..', '..', '..', 'contentpacks-source', 'structure-example-pack', 'structures', 'example_structure', 'blueprint.json');
-const sampleBp = JSON.parse(fs.readFileSync(SAMPLE, 'utf-8'));
+const sampleBp = sampleBlueprint();
 
 console.log('=== 1. mulberry32 确定性 ===');
 {

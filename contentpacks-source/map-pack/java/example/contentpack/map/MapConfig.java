@@ -40,6 +40,11 @@ public final class MapConfig {
         return clamp(getInt("fullscreenBlocks", 1024), 256, 8192);
     }
 
+    /** 缩小时瓦片锐化强度（0 = 关，100 = 最强）。1 方块/像素那级不合并，不需要锐化。 */
+    public static int zoomSharpen() {
+        return clamp(getInt("zoomSharpen", 60), 0, 100);
+    }
+
     public static boolean showBiome() {
         return getBool("showBiome", true);
     }

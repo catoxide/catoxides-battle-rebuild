@@ -27,4 +27,12 @@ public interface IQuestGoal {
      */
     default void onProgressUpdate(QuestInstance quest, ServerPlayer player, String key, float value) {
     }
+
+    /**
+     * 任务整体完成后的回调（可选）。
+     * <p>用于一次性副作用（如交付物品时扣除）。{@link #isComplete} 每 tick 都会被调用，
+     * 必须保持无副作用/幂等，不要在那里扣东西。
+     */
+    default void onQuestCompleted(QuestInstance quest, ServerPlayer player) {
+    }
 }

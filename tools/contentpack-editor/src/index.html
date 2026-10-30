@@ -12,7 +12,9 @@
   <h1 data-i18n="app.title">ContentPack Editor</h1>
   <span class="sub" id="headerPaths"></span>
   <!-- W6.1 包路径设置：包库目录 / 新建包目录（覆盖默认 <项目根>/contentpacks-source） -->
-  <span id="packPathTools" style="display:flex; gap:4px; align-items:center">
+  <!-- 顶栏三簇，用 .hdr-sep 分隔：路径配置 | 功能入口 | 调试工具。
+       分组是有意的 —— 之前 9 个同色 ghost 按钮平铺，用户要靠读字才知道哪个是干活的、哪个是排障的。 -->
+  <span id="packPathTools" class="hdr-group">
     <button class="btn ghost small" id="btnPickPacksRoot" data-i18n="app.packRoot" title="包库目录（内容包列表来源）—— 点击选择目录">📦 包库</button>
     <button class="btn ghost small" id="btnPickNewPackDir" data-i18n="app.newPackDir" title="新建包目录（新建内容包落在此）—— 点击选择目录">➕ 新建包目录</button>
     <button class="btn ghost small" id="btnResetPackPaths" data-i18n="app.resetPaths" title="复位包路径为默认（<项目根>/contentpacks-source）" style="display:none">↺ 默认</button>
@@ -20,12 +22,22 @@
     <span id="rootSourceChip" class="root-chip" style="display:none" title=""></span>
     <button class="btn ghost small" id="btnConnectProject" data-i18n="app.connectProject" title="连接 mod 工程目录（含 contentpacks-source 的项目根）" style="display:none">📁 连接工程…</button>
   </span>
-  <div style="margin-left:auto; display:flex; gap:4px; align-items:center">
-    <button class="btn ghost small" id="btnDiagnostics" data-i18n="app.diagnostics" title="复制诊断信息（版本 / 项目根来源 / 路径 / 日志位置）—— 反馈问题时粘贴给开发者">🩺 诊断</button>
-    <button class="btn ghost small" id="btnDebugToggle" title="调试模式（W5.5）">🔍 调试</button>
-    <button class="btn ghost small" id="btnGpuToggle" title="渲染模式（W5.3）">⚡ 硬件加速</button>
-    <button class="btn ghost small" id="btnOpenModelEditor" title="打开 3D 模型编辑器（W2）">🧊 模型编辑器</button>
-    <button class="btn ghost small" id="btnDeployStatus" data-i18n="app.deploy" data-i18n-title="app.deployTip" title="四态核对：源码 / 产物 jar / run 安装副本 / spark 缓存 + 内容包开关">🚀 部署状态</button>
+  <div class="hdr-right">
+    <!-- 功能入口：日常干活要点的三个 -->
+    <span class="hdr-group">
+      <button class="btn ghost small" id="btnDeployStatus" data-i18n="app.deploy" data-i18n-title="app.deployTip" title="四态核对：源码 / 产物 jar / run 安装副本 / spark 缓存 + 内容包开关">🚀 部署状态</button>
+      <button class="btn ghost small" id="btnOpenHistory" data-i18n="app.history" data-i18n-title="app.historyTip" title="按内容包查提交历史，并可回滚到某次提交（先预览、再归档 + 检查点、可撤销）">🕘 提交回溯</button>
+      <button class="btn ghost small" id="btnOpenModelEditor" data-i18n="app.modelEditor" data-i18n-title="app.modelEditorTip" title="打开 3D 模型编辑器（W2）">🧊 模型编辑器</button>
+    </span>
+    <span class="hdr-sep"></span>
+    <!-- 调试工具：出问题才点。这两个开关的文案/提示由 app.js 按当前状态写（app.debugOn/Off、app.gpuHard/Soft），
+         所以不能挂 data-i18n —— 挂了会在切语言时把状态文案覆盖成静态标签。 -->
+    <span class="hdr-group">
+      <button class="btn ghost small" id="btnDiagnostics" data-i18n="app.diagnostics" data-i18n-title="app.diagnosticsTip" title="复制诊断信息（版本 / 项目根来源 / 路径 / 日志位置）—— 反馈问题时粘贴给开发者">🩺 诊断</button>
+      <button class="btn ghost small" id="btnDebugToggle" title="调试模式（W5.5）">🔍 调试</button>
+      <button class="btn ghost small" id="btnGpuToggle" title="渲染模式（W5.3）">⚡ 硬件加速</button>
+    </span>
+    <span class="hdr-sep"></span>
     <span class="sub" data-i18n="app.lang">语言</span>
     <select id="langSelect" style="width:auto; margin:0">
       <option value="zh">中文</option>
@@ -78,7 +90,7 @@
 <div id="historyOverlay" class="deploy-overlay hidden">
   <div class="deploy-box history-box">
     <div class="deploy-head">
-      <span class="deploy-title" data-i18n="history.title">提交回溯（只读）</span>
+      <span class="deploy-title" data-i18n="history.title">提交回溯</span>
       <span class="muted" id="historyRepo"></span>
       <button class="btn ghost small" id="btnHistoryRefresh" data-i18n="history.refresh">⟳ 刷新</button>
       <button class="btn ghost small" id="btnHistoryClose" data-i18n="history.close" style="margin-left:auto">✕ 关闭</button>
@@ -136,25 +148,37 @@
       <select id="contentTypeSelect" title="内容类型" style="width:auto; margin:0; max-width:130px">
         <option value="entity" data-i18n="entity.title">实体</option>
         <option value="structure" data-i18n="structure.title">建筑结构</option>
-        <option value="item">物品</option>
-        <option value="block">方块</option>
+        <option value="item" data-i18n="content.item">物品</option>
+        <option value="block" data-i18n="content.block">方块</option>
+        <option value="quest" data-i18n="quest.title">任务</option>
         <option value="contract" data-i18n="contract.title">动画契约</option>
       </select>
       <span id="packNameLabel" class="muted"></span>
-      <button class="btn ghost small" id="btnNewEntity" disabled data-i18n="entity.new">+ 新建</button>
+      <span class="title-actions">
+        <!-- 包级打包：以前「打包」只藏在三个编辑器内部（实体/结构/契约），物品方块与 TimeTape 视图根本没有。
+             这里给一个与内容类型无关的入口，落到部署面板（那里才有四态核对与构建日志）。 -->
+        <button class="btn ghost small" id="btnPackBuild" disabled data-i18n="app.packBuild" data-i18n-title="app.packBuildTip" title="打包当前内容包（打开部署面板执行）">📦 打包</button>
+        <button class="btn ghost small" id="btnNewEntity" disabled data-i18n="entity.new">+ 新建</button>
+      </span>
     </div>
     <!-- 建筑结构专用工具条（仅内容类型 = 建筑结构 时显示）：一键导入原版 / 一键导出整包原版数据 -->
     <div id="structTools" class="row" style="display:none; gap:6px; padding:6px 8px; border-bottom:1px solid var(--line, #2b2b2b); flex-wrap:wrap">
       <button class="btn ghost small" id="btnStructImport" data-i18n="structure.importVanilla" data-i18n-title="structure.importVanillaTip">⬇ 导入原版</button>
       <button class="btn ghost small" id="btnStructImportDir" data-i18n="structure.importVanillaDir" data-i18n-title="structure.importVanillaDirTip">🗂 导入文件夹</button>
-      <button class="btn ghost small" id="btnStructExportAll" data-i18n="structure.exportVanillaAll" data-i18n-title="structure.exportVanillaAllTip">⬆ 导出原版（全部）</button>
+      <button class="btn ghost small" id="btnStructExportAll" data-i18n="common.exportVanillaAll" data-i18n-title="structure.exportVanillaAllTip">⬆ 导出原版（全部）</button>
     </div>
     <pre id="structReport" class="out" style="display:none; margin:6px 8px"></pre>
     <!-- 物品/方块专用工具条（仅内容类型 = 物品/方块 时显示）：导出整包原版数据 -->
     <div id="itemBlockTools" class="row" style="display:none; gap:6px; padding:6px 8px; border-bottom:1px solid var(--line, #2b2b2b); flex-wrap:wrap">
-      <button class="btn ghost small" id="btnItemBlockExportAll" title="把包内全部物品/方块的模型、blockstate（含自定义参数）、lang、掉落表、标签写进包目录（原版 1.21.1 文件）">⬆ 导出原版（全部）</button>
+      <button class="btn ghost small" id="btnItemBlockExportAll" data-i18n="common.exportVanillaAll" data-i18n-title="itemblock.exportVanillaAllTip" title="先把暂存草稿并入正式包，再把包内全部物品/方块的模型、blockstate（含自定义参数）、lang、掉落表、标签写成原版 1.21.1 文件">⬆ 导出原版（全部）</button>
     </div>
     <pre id="itemBlockReport" class="out" style="display:none; margin:6px 8px"></pre>
+    <!-- 任务专用工具条（仅内容类型 = 任务 时显示）：任务定义走保存草稿，进正式包靠这里 -->
+    <div id="questTools" class="row" style="display:none; gap:6px; padding:6px 8px; border-bottom:1px solid var(--line, #2b2b2b); flex-wrap:wrap">
+      <button class="btn ghost small" id="btnQuestExportAll" data-i18n="quest.writeToPack" data-i18n-title="quest.writeToPackTip">⬆ 写入正式包</button>
+      <button class="btn ghost small" id="btnQuestEnsureScaffold" data-i18n="quest.ensureScaffold" data-i18n-title="quest.ensureScaffoldTip">🩹 补齐骨架</button>
+    </div>
+    <pre id="questReport" class="out" style="display:none; margin:6px 8px"></pre>
     <div id="entityList" class="list"></div>
   </aside>
 
@@ -173,10 +197,10 @@
         <span class="editor-title" id="editorTitle"></span>
         <span class="editor-badge" id="editorBadge"></span>
         <div class="editor-actions">
-          <button class="btn ghost" id="btnPreflight" data-i18n="editor.preflight">预检</button>
-          <button class="btn ghost" id="btnExport" data-i18n="editor.export">导出</button>
-          <button class="btn" id="btnSave" data-i18n="editor.saveDraft">保存草稿</button>
-          <button class="btn accent" id="btnBuild" data-i18n="editor.build">打包</button>
+          <button class="btn ghost" id="btnPreflight" data-i18n="editor.preflight" data-i18n-title="editor.preflightTip" title="只跑预检（不打包）：把 error/warn 与规则来源列出来">预检</button>
+          <button class="btn ghost" id="btnExport" data-i18n="editor.exportToPack" data-i18n-title="editor.exportToPackTip" title="把暂存区（草稿）写进正式包目录">导出到包</button>
+          <button class="btn" id="btnSave" data-i18n="editor.saveDraft" data-i18n-title="editor.saveDraftTip" title="存进暂存区（草稿），不碰正式包">保存草稿</button>
+          <button class="btn accent" id="btnBuild" data-i18n="editor.buildSave" data-i18n-title="editor.buildSaveTip" title="保存当前编辑 → 导出暂存 → 预检 → 构建 jar">保存并打包</button>
         </div>
       </div>
 
@@ -304,10 +328,10 @@
         <span class="editor-title" id="structTitle"></span>
         <span class="editor-badge" id="structBadge"></span>
         <div class="editor-actions">
-          <button class="btn ghost" id="btnStructExport" data-i18n="editor.export">导出</button>
-          <button class="btn ghost" id="btnStructExportVanilla" data-i18n="structure.exportVanilla">导出原版数据</button>
-          <button class="btn" id="btnStructSave" data-i18n="editor.saveDraft">保存草稿</button>
-          <button class="btn accent" id="btnStructBuild" data-i18n="editor.build">打包</button>
+          <button class="btn ghost" id="btnStructExport" data-i18n="editor.exportToPack" data-i18n-title="editor.exportToPackTip" title="把暂存区（草稿）写进正式包目录">导出到包</button>
+          <button class="btn ghost" id="btnStructExportVanilla" data-i18n="structure.exportVanilla" data-i18n-title="structure.exportVanillaTip" title="只把当前这张蓝图映射成原版 jigsaw 数据文件">导出原版</button>
+          <button class="btn" id="btnStructSave" data-i18n="editor.saveDraft" data-i18n-title="editor.saveDraftTip" title="存进暂存区（草稿），不碰正式包">保存草稿</button>
+          <button class="btn accent" id="btnStructBuild" data-i18n="editor.buildSave" data-i18n-title="editor.buildSaveStructTip" title="保存蓝图 → 导出暂存 → 重新生成整包原版数据 → 预检 → 构建 jar">保存并打包</button>
         </div>
       </div>
 
@@ -440,7 +464,7 @@
         <span class="editor-badge" id="contractBadge"></span>
         <div class="editor-actions">
           <button class="btn ghost" id="btnContractRefresh" data-i18n="editor.refresh">刷新</button>
-          <button class="btn accent" id="btnContractBuild" data-i18n="editor.build">打包</button>
+          <button class="btn accent" id="btnContractBuild" data-i18n="editor.build" data-i18n-title="editor.buildContractTip" title="构建当前包的 jar（契约是只读盘点，无草稿可存）">打包</button>
         </div>
       </div>
       <div id="contractBody"></div>
@@ -454,12 +478,25 @@
         <span class="editor-title" id="itemBlockTitle"></span>
         <span class="editor-badge" id="itemBlockBadge"></span>
         <div class="editor-actions">
-          <button class="btn ghost" id="btnItemBlockExport">导出原版</button>
-          <button class="btn ghost" id="btnItemBlockDelete">删除</button>
-          <button class="btn accent" id="btnItemBlockSave">保存</button>
+          <button class="btn ghost" id="btnItemBlockExport" data-i18n="itemblock.exportVanilla" data-i18n-title="itemblock.exportVanillaTip" title="只导出这一个物品/方块的原版文件（草稿优先）">导出原版</button>
+          <button class="btn ghost danger" id="btnItemBlockDelete" data-i18n="itemblock.delete" data-i18n-title="itemblock.deleteTip" title="删除正式包里的定义 + 暂存草稿">删除</button>
+          <button class="btn accent" id="btnItemBlockSave" data-i18n="editor.saveDraft" data-i18n-title="itemblock.saveTip" title="存进暂存区（草稿）。物品/方块写进正式包由中栏「导出原版（全部）」完成">保存草稿</button>
         </div>
       </div>
       <div id="itemBlockMount"></div>
+    </div>
+
+    <!-- 任务编辑器：quests/<id>.json（基座内置 giver/goal；保存 = 暂存草稿） -->
+    <div id="questEditorContent" class="hidden">
+      <div class="editor-header">
+        <span class="editor-title" id="questTitle"></span>
+        <span class="editor-badge" id="questBadge"></span>
+        <div class="editor-actions">
+          <button class="btn ghost danger" id="btnQuestDelete" data-i18n="dyn.delete" data-i18n-title="quest.deleteTip">删除</button>
+          <button class="btn accent" id="btnQuestSave" data-i18n="editor.saveDraft" data-i18n-title="quest.saveTip">保存草稿</button>
+        </div>
+      </div>
+      <div id="questMount"></div>
     </div>
 
     <!-- TimeTape 状态机可视化编辑器（W2 图形节点 + W3 实时仿真） -->
@@ -468,8 +505,8 @@
         <span class="editor-title" id="tapeTitle"></span>
         <span class="editor-badge ok" id="tapeBadge"></span>
         <div class="editor-actions">
-          <button class="btn ghost" id="tapeBtnUndo">↺ 撤销</button>
-          <button class="btn accent" id="tapeBtnSave" data-i18n="editor.saveDraft">保存</button>
+          <button class="btn ghost" id="tapeBtnUndo" data-i18n="tape.undo" data-i18n-title="tape.undoTip" title="撤销上一步图形编辑">↺ 撤销</button>
+          <button class="btn accent" id="tapeBtnSave" data-i18n="tape.save" data-i18n-title="tape.saveTip" title="直写包目录里的这个 .json（tape:saveFile），不经暂存区 —— 与实体/结构的「保存草稿」不是同一套流程">保存</button>
         </div>
       </div>
       <div id="tapeMount"></div>
@@ -497,6 +534,9 @@
 <script src="core/itemBlockSchema.js"></script>
 <script src="views/itemBlockList.js"></script>
 <script src="views/itemBlockEditor.js"></script>
+<script src="core/questSchema.js"></script>
+<script src="views/questList.js"></script>
+<script src="views/questEditor.js"></script>
 <script src="views/deployStatus.js"></script>
 <script src="views/gitHistoryView.js"></script>
 <script src="app.js"></script>

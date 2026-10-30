@@ -75,6 +75,18 @@
               ]
             },
             {
+              "key": "zoomSharpen",
+              "type": "int",
+              "default": 60,
+              "tier": "HOT",
+              "min": 0,
+              "max": 100,
+              "comment": [
+                "Sharpening applied to zoomed-out map tiles (0 = off, 100 = strongest).",
+                "Zooming out averages blocks into one pixel; this restores local contrast."
+              ]
+            },
+            {
               "key": "showBlockInfo",
               "type": "bool",
               "default": true,
@@ -198,6 +210,15 @@
               "comment": [
                 "Horizontal spread when alignMode=1. Center stays aligned; larger = ticks spread out."
               ]
+            },
+            {
+              "key": "markerScale",
+              "type": "double",
+              "default": 1.5,
+              "tier": "HOT",
+              "min": 0.5,
+              "max": 3.0,
+              "comment": "Size of marker symbols on the compass bar. 1.0 = original size."
             },
             {
               "key": "textStyle",

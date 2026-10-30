@@ -2,9 +2,8 @@
 // 运行: node test/structureGrowth.test.js
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 const G = require('../src/core/structureGrowth');
+const { sampleBlueprint } = require('./fixtures/sampleStructure');
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -13,8 +12,7 @@ function ok(name, cond, extra) {
 }
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 
-const SAMPLE = path.join(__dirname, '..', '..', '..', 'contentpacks-source', 'structure-example-pack', 'structures', 'example_structure', 'blueprint.json');
-const sampleBp = JSON.parse(fs.readFileSync(SAMPLE, 'utf-8'));
+const sampleBp = sampleBlueprint();
 
 // 固定 rng（单元素池下 pickWeighted 恒取第一个；aligned 下不消耗随机数）
 const rng50 = () => 0.5;

@@ -144,6 +144,42 @@ src/main/resources/
 
 放置纹理到 `assets/<modid>/textures/entity/<mob_name>.png`
 
+### 3.5 运行时参数（同一套动画按俯仰/瞄准/地点等变化）
+
+动画 JSON 里用可选的 `params` 声明要读取的运行时参数，关键帧/Molang 里用 `v.名字` 读取：
+"同一类动画只做一份，运行时按参数决定表现"。**声明即同步契约**：只有声明过的参数会被
+收集并同步到客户端（没声明的参数不计算、不发包）。
+
+```json
+{
+  "animations": {
+    "aim_upper_body": {
+      "loop": true,
+      "animation_length": 1.0,
+      "params": {
+        "pitch": 0.0,
+        "aim_delta_yaw": 0.0,
+        "biome": "minecraft:plains",
+        "body_rot_y": { "default": 0.0, "phase": "substep" }
+      },
+      "bones": {
+        "spine": { "rotation": { "0.0": { "post": ["v.pitch * -0.5", 0, 0] } } }
+      }
+    }
+  }
+}
+```
+
+- 简写 `"pitch": 0.0` = 默认值（相位 tick / 20Hz）；字符串默认值同理（`"biome": "..."`）。
+- 完整形 `{ "default": 0.0, "phase": "substep" }` = 需要 60Hz 物理子步刷新
+  （刚体旋转/速度等物理驱动动画）。
+- 内置参数（俯仰、朝向、速度、瞄准差角、生物群系/维度、光照、刚体状态……）**开箱即用**，
+  游戏内 `/spark getanimparams catalog` 可查全表。
+- 编辑器：3D 模型编辑器时间线工具栏 **🔧 参数** 面板可视化编辑声明，并可用"预览值"
+  在视口里直接看到 `v.名字` 表达式的影响。
+- 业务侧额外参数：注册 provider 或事件里 `params.push(...)`；详见
+  `tools/spark-core-fork/docs/RUNTIME_ANIM_PARAMS.md`。
+
 ### 4. Java 代码对接
 
 继承 `AnimatedMob<T>`，实现抽象方法：

@@ -87,6 +87,7 @@ public class QuestSavedData extends SavedData {
         t.putString("state", quest.getState().name());
         t.putBoolean("starred", quest.isStarred());
         t.putLong("startedAt", quest.getStartedAt());
+        t.putLong("endedAt", quest.getEndedAtMillis());
         String giverId = quest.getGiverId();
         t.putString("giverId", giverId == null ? "" : giverId);
         CompoundTag progress = new CompoundTag();

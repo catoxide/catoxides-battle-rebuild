@@ -3,14 +3,12 @@ package example.contentpack.questtest;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPack;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackContext;
 import com.catoxide.catoxidesbattlerebuild.core.quest.QuestDefinition;
-import com.catoxide.catoxidesbattlerebuild.core.quest.QuestDefinitionParser;
 import com.catoxide.catoxidesbattlerebuild.core.quest.QuestEvents;
 import com.catoxide.catoxidesbattlerebuild.core.quest.QuestInstance;
 import com.catoxide.catoxidesbattlerebuild.core.quest.QuestSystem;
-import com.catoxide.catoxidesbattlerebuild.core.quest.IQuestGiver;
+import com.catoxide.catoxidesbattlerebuild.core.quest.giver.ProximityGiver;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
 import example.contentpack.questtest.client.ClientQuestCache;
 import example.contentpack.questtest.client.QuestHUD;
 import example.contentpack.questtest.client.QuestKeyBindings;
@@ -26,14 +24,10 @@ import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
-import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * 测试内容包：验证任务基座（QuestSystem）完整链路 + JSON 数据驱动定义。
@@ -71,18 +65,13 @@ public class QuestTestPack implements ContentPack {
     public void register(ContentPackContext context) {
         QuestSystem questSystem = QuestSystem.getInstance();
 
-        // ===== 1. 组件工厂注册 =====
+        // ===== 1. 组件工厂注册（本包特有的）=====
+        // proximity_giver 已由基座 QuestBuiltinComponents 提供，不再在这里重复注册。
         questSystem.registerGoalType("proximity", json -> {
             JsonArray t = json.getAsJsonArray("target");
             Vec3 target = new Vec3(t.get(0).getAsDouble(), t.get(1).getAsDouble(), t.get(2).getAsDouble());
             float radius = json.has("radius") ? json.get("radius").getAsFloat() : 5f;
             return new ProximityGoal(target, radius);
-        });
-        questSystem.registerGiverType("proximity_giver", json -> {
-            JsonArray c = json.getAsJsonArray("center");
-            Vec3 center = new Vec3(c.get(0).getAsDouble(), c.get(1).getAsDouble(), c.get(2).getAsDouble());
-            float radius = json.has("radius") ? json.get("radius").getAsFloat() : 10f;
-            return new StartGiver(center, radius);
         });
         questSystem.registerGoalType("kill", json -> {
             String entity = json.get("entity").getAsString();
@@ -121,7 +110,7 @@ public class QuestTestPack implements ContentPack {
                 context.id("test_main"),
                 Component.literal("基地巡视"),
                 Component.literal("完成两个子任务"),
-                List.of(new StartGiver(start, 10f)),
+                List.of(new ProximityGiver(start, 10f)),
                 List.of(),
                 List.of(), List.of(),
                 List.of(sub1, sub2),
@@ -130,25 +119,19 @@ public class QuestTestPack implements ContentPack {
         LogManager.serverInfo(TAG, "Registered Java quest tree: main={}, children={}",
                 main.id(), main.children().size());
 
-        // ===== 3. JSON 数据驱动任务（验证 QuestDefinitionParser）=====
-        try (InputStream in = getClass().getResourceAsStream("/quests/quests.json")) {
-            if (in == null) {
-                LogManager.serverError(TAG, "quests/quests.json not found in jar");
-            } else {
-                String json = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-                QuestDefinition jsonQuest = QuestDefinitionParser.parse(json, context.getModId());
-                context.registerQuest(jsonQuest);
-            }
-        } catch (Exception e) {
-            LogManager.serverError(TAG, "Failed to parse quests/quests.json: {}", e.getMessage(), e);
-        }
+        // ===== 3. JSON 数据驱动任务（quests/*.json → QuestDefinitionParser）=====
+        // 基座扫描本包 jar 的 quests/*.json；通用组件（proximity_giver / item_present /
+        // item_submit）由 QuestBuiltinComponents 提供。单文件失败只隔离该文件。
+        ContentPackContext.QuestLoadResult questJson = context.registerQuestsFromJar();
+        LogManager.serverInfo(TAG, "JSON quests registered: {}, failed files: {}",
+                questJson.registered(), questJson.problems().size());
 
         // ===== 3b. 事件桥驱动的击杀任务（验证 QuestEventBridge → KillGoal 链路）=====
         QuestDefinition killQuest = new QuestDefinition(
                 context.id("test_kill"),
                 Component.literal("僵尸猎手"),
                 Component.literal("击杀 2 只僵尸（事件桥驱动）"),
-                List.of(new StartGiver(start, 15f)),
+                List.of(new ProximityGiver(start, 15f)),
                 List.of(new KillGoal("minecraft:zombie", 2f)),
                 List.of(), List.of(), List.of(),
                 null, 0f);
@@ -160,7 +143,7 @@ public class QuestTestPack implements ContentPack {
                 context.id("test_craft"),
                 Component.literal("工匠入门"),
                 Component.literal("合成 1 个工作台（事件桥驱动）"),
-                List.of(new StartGiver(start, 20f)),
+                List.of(new ProximityGiver(start, 20f)),
                 List.of(new CraftGoal("minecraft:crafting_table", 1f)),
                 List.of(), List.of(), List.of(),
                 null, 0f);
@@ -179,24 +162,8 @@ public class QuestTestPack implements ContentPack {
         NeoForge.EVENT_BUS.addListener((QuestEvents.QuestRemovedEvent e) ->
                 LogManager.serverInfo(TAG, "EVENT Removed: {}", e.quest.getDefinition().id()));
 
-        // ===== 5. tick 驱动：对所有已注册定义检查发放 + 进度更新 =====
-        NeoForge.EVENT_BUS.addListener((ServerTickEvent.Post e) -> {
-            var server = e.getServer();
-            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-                UUID uid = player.getUUID();
-                // 发放检查（每个定义：无激活实例且 giver 条件满足 → 发放）
-                for (QuestDefinition def : questSystem.getDefinitions()) {
-                    boolean hasActive = questSystem.getPlayerQuests(uid).stream()
-                            .anyMatch(q -> q.getDefinition().id().equals(def.id()) && q.isActive());
-                    if (!hasActive && def.givers().stream().anyMatch(g -> g.canGive(player))) {
-                        questSystem.giveQuest(player, def.id(), "tick:" + def.id().getPath());
-                    }
-                }
-                // 进度驱动：checkAllQuests 递归检查整棵树（含子任务）→
-                // 完成/失败条件被评估（ProximityGoal 到点即完成）
-                questSystem.checkAllQuests(player);
-            }
-        });
+        // ===== 5. 通用驱动：评估 giver 自动发放 + 递归检查完成（基座提供，不再手写 tick 循环）=====
+        QuestSystem.installDefaultDriver();
 
         // ===== 6. /quest 命令（M3 迁移：由 core 主类移入；不装包时命令不存在，R3）=====
         NeoForge.EVENT_BUS.addListener((RegisterCommandsEvent e) ->
@@ -235,21 +202,5 @@ public class QuestTestPack implements ContentPack {
         NeoForge.EVENT_BUS.addListener((RenderGuiEvent.Post e) -> QuestHUD.onRenderGui(e));
 
         LogManager.serverInfo(TAG, "QuestTestPack registered");
-    }
-
-    /** 示例 giver：玩家靠近指定坐标 → 发放 */
-    private static class StartGiver implements IQuestGiver {
-        private final Vec3 start;
-        private final float radius;
-
-        StartGiver(Vec3 start, float radius) {
-            this.start = start;
-            this.radius = radius;
-        }
-
-        @Override
-        public boolean canGive(ServerPlayer player) {
-            return player.position().distanceToSqr(start) <= (double) radius * radius;
-        }
     }
 }

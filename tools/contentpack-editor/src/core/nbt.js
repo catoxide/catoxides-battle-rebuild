@@ -6,15 +6,17 @@
 //     —— 条目是【类型号在前、名字在后】（不是名字在前！）
 //   list 值体：[元素类型号 1B][数量 int32]( [值体] )*
 //     —— 元素只写值体，类型由列表头声明（level.dat 实证：元素不重复类型号）
-//   字节序：Minecraft 用【小端】（level.dat 实证）；NBT 规范原文/部分工具（nbtlib 默认）
-//     用大端 → 本模块两种都支持（endianness 参数），decodeAuto 自动判别。
+//   字节序：Java 版 NBT = 【大端】（NbtIo 走 DataInputStream/DataOutputStream；
+//     data/minecraft/structure/**/*.nbt 实测大端，见 test/nbt.test.js §5）。
+//     小端只出现在部分第三方工具/旧包产物。
+//     → 写侧固定大端（严格）；读侧自动判别（宽容），显式传 'LE'/'BE' 则按该端序严格解析。
 //
 // 编码 API：
-//   NBT.encode(rootObj, endianness?) → Buffer（未压缩；'LE' 默认 | 'BE'）
-//   NBT.gzip(rootObj, endianness?)   → Buffer（gzip 后，可直接写 .nbt）
+//   NBT.encode(rootObj, endianness?) → Buffer（未压缩；'BE' 默认 = Java 版规范）
+//   NBT.gzip(rootObj, endianness?)   → Buffer（gzip 后，可直接写 .nbt；'BE' 默认）
 // 解码 API：
-//   NBT.decode(buffer, endianness?)  → 普通 JS 对象树（自动识别 gzip 魔数）
-//   NBT.decodeAuto(buffer)           → { root, endianness }：LE/BE 都试，按可解析性打分选优
+//   NBT.decode(buffer, endianness?)  → 普通 JS 对象树（自动识别 gzip 魔数；不传端序 = 自动判别）
+//   NBT.decodeAuto(buffer)           → { root, endianness, complete }：LE/BE 都试，优先能完整消费缓冲区的
 //
 // tag 构建器：NBT.str / NBT.int / NBT.byte / NBT.list(元素类型号, items) / ...
 //   构建器产物 { $t, v } 是中间表示，与字节序无关。
@@ -131,11 +133,11 @@ function writeCompoundBody(w, rd, obj) {
 /**
  * 编码为完整 NBT 流。
  * @param {Object} rootObj 根 compound 内容 { 键: tag }
- * @param {string} endianness 'LE'（Minecraft，默认）| 'BE'（规范原文/部分工具）
+ * @param {string} endianness 'BE'（Java 版规范，默认）| 'LE'（第三方工具产物，仅测试/兼容用）
  * @returns {Buffer}
  */
-function encode(rootObj, endianness = 'LE') {
-    const le = endianness !== 'BE';
+function encode(rootObj, endianness = 'BE') {
+    const le = endianness === 'LE';
     const w = makeWriter(le);
     w.u8(T_COMPOUND);
     w.i16(0); // 根名（模板根名为空）
@@ -143,8 +145,8 @@ function encode(rootObj, endianness = 'LE') {
     return Buffer.concat(w.chunks);
 }
 
-/** 编码 + gzip（可直接作为 .nbt 文件内容） */
-function gzip(rootObj, endianness = 'LE') {
+/** 编码 + gzip（可直接作为 .nbt 文件内容）。默认大端 = 游戏能读的写法。 */
+function gzip(rootObj, endianness = 'BE') {
     return zlib.gzipSync(encode(rootObj, endianness));
 }
 
@@ -237,22 +239,69 @@ function gunzipLimited(buf) {
     }
 }
 
-/**
- * 解码 NBT。输入 Buffer，自动识别 gzip 魔数。
- * @param {Buffer} input
- * @param {string} endianness 'LE'（默认）| 'BE'
- * @returns {Object} 根对象
- */
-function decode(input, endianness = 'LE') {
+/** 解压（自动识别 gzip 魔数）+ 上下限保护 */
+function inflateInput(input) {
     let buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
     if (buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b) buf = gunzipLimited(buf);
-    const le = endianness !== 'BE';
-    const rd = makeReader(buf, le);
+    return buf;
+}
+
+/**
+ * 按指定端序解析（buf 已解压）。
+ * @returns {{value:Object, consumed:number, total:number}} tagged 时 value 为 {$t:10, v:...}
+ */
+function decodeOnce(buf, endianness, tagged) {
+    const rd = makeReader(buf, endianness === 'LE');
     const rootType = rd.u8();
     if (rootType !== T_COMPOUND) throw new Error('NBT: 根必须是 compound（得到 ' + rootType + '）');
     const rootNameLen = rd.i16();
     if (rootNameLen > 0) rd.utf8(rootNameLen); // 跳过根名（模板根名为空）
-    return readCompoundBody(rd);
+    const body = tagged ? readTaggedCompoundBody(rd) : readCompoundBody(rd);
+    return { value: tagged ? { $t: T_COMPOUND, v: body } : body, consumed: rd.o, total: buf.length };
+}
+
+/**
+ * 自动判别端序：LE/BE 各试一次。
+ * 打分首要是「完整消费整个缓冲区」—— 端序选错时常能侥幸解析出一棵前缀树
+ * （实测 structure-example 的 LE 模板按 BE 解只吃掉 2949/4315 字节），
+ * 只看「能解」会选错端序；其次看根键可打印比例与根键数量。
+ */
+function decodeAutoPick(buf, tagged) {
+    const results = [];
+    for (const eo of ['LE', 'BE']) {
+        try {
+            const r = decodeOnce(buf, eo, tagged);
+            const keys = Object.keys(tagged ? (r.value.v || {}) : (r.value || {}));
+            const complete = r.consumed === r.total;
+            results.push({
+                endianness: eo, value: r.value, complete,
+                consumed: r.consumed, total: r.total,
+                score: (complete ? 1e6 : 0) + 1000 + printability(keys) * 100 + keys.length,
+            });
+        } catch (e) {
+            results.push({ endianness: eo, error: e.message, score: 0 });
+        }
+    }
+    results.sort((a, b) => b.score - a.score);
+    const best = results[0];
+    if (!best || !('value' in best)) {
+        const le = results.find((r) => r.endianness === 'LE') || {};
+        const be = results.find((r) => r.endianness === 'BE') || {};
+        throw new Error('NBT: 无法识别（LE: ' + (le.error || '?') + '；BE: ' + (be.error || '?') + '）');
+    }
+    return best;
+}
+
+/**
+ * 解码 NBT。输入 Buffer，自动识别 gzip 魔数。
+ * @param {Buffer} input
+ * @param {string} [endianness] 'BE' | 'LE'；不传 = 自动判别（万能读）
+ * @returns {Object} 根对象
+ */
+function decode(input, endianness) {
+    const buf = inflateInput(input);
+    if (endianness === 'LE' || endianness === 'BE') return decodeOnce(buf, endianness, false).value;
+    return decodeAutoPick(buf, false).value;
 }
 
 // ===== 精确解码（tagged，保留类型）=====
@@ -328,35 +377,20 @@ function readTaggedCompoundBody(rd) {
     return obj;
 }
 
-/** 精确解码（保留 NBT 类型）。@returns {{$t:10, v:Object}} 根 compound 的 tagged 表示 */
-function decodeTagged(input, endianness = 'LE') {
-    let buf = Buffer.isBuffer(input) ? input : Buffer.from(input);
-    if (buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b) buf = gunzipLimited(buf);
-    const rd = makeReader(buf, endianness !== 'BE');
-    const rootType = rd.u8();
-    if (rootType !== T_COMPOUND) throw new Error('NBT: 根必须是 compound（得到 ' + rootType + '）');
-    const rootNameLen = rd.i16();
-    if (rootNameLen > 0) rd.utf8(rootNameLen);
-    return { $t: T_COMPOUND, v: readTaggedCompoundBody(rd) };
+/**
+ * 精确解码（保留 NBT 类型）。不传端序 = 自动判别。
+ * @returns {{$t:10, v:Object}} 根 compound 的 tagged 表示
+ */
+function decodeTagged(input, endianness) {
+    const buf = inflateInput(input);
+    if (endianness === 'LE' || endianness === 'BE') return decodeOnce(buf, endianness, true).value;
+    return decodeAutoPick(buf, true).value;
 }
 
-/** 自动判别字节序的精确解码 */
+/** 自动判别端序的精确解码。@returns {{root:Object, endianness:'LE'|'BE', complete:boolean}} */
 function decodeTaggedAuto(input) {
-    const results = [];
-    for (const eo of ['LE', 'BE']) {
-        try {
-            const root = decodeTagged(input, eo);
-            results.push({ root, endianness: eo, score: 1000 + printability(root.v) * 100 + Object.keys(root.v).length });
-        } catch (e) {
-            results.push({ error: e.message, endianness: eo, score: 0 });
-        }
-    }
-    results.sort((a, b) => b.score - a.score);
-    const best = results[0];
-    if (!best.root) {
-        throw new Error('NBT: 无法识别（LE: ' + (results.find(r => r.endianness === 'LE').error) + '；BE: ' + (results.find(r => r.endianness === 'BE').error) + '）');
-    }
-    return best;
+    const r = decodeAutoPick(inflateInput(input), true);
+    return { root: r.value, endianness: r.endianness, complete: r.complete };
 }
 
 /** tagged → plain（不保留类型；仅用于读取字段做逻辑判断，long 转 number） */
@@ -384,11 +418,11 @@ function taggedToPlain(tag) {
 }
 
 /** 根键名可打印比例（打分用） */
-function printability(root) {
-    const keys = Object.keys(root || {});
-    if (!keys.length) return 0;
+function printability(keys) {
+    const list = keys || [];
+    if (!list.length) return 0;
     let ok = 0;
-    for (const k of keys) {
+    for (const k of list) {
         let good = k.length > 0;
         for (let i = 0; i < k.length; i++) {
             const c = k.charCodeAt(i);
@@ -396,29 +430,16 @@ function printability(root) {
         }
         if (good) ok++;
     }
-    return ok / keys.length;
+    return ok / list.length;
 }
 
 /**
- * 自动判别字节序并解码：LE 与 BE 各试一次，按（成功 + 根键可打印性）打分取优。
- * @returns {{root:Object, endianness:'LE'|'BE'}}
+ * 自动判别字节序并解码（不传端序时的 decode 也走这里）。
+ * @returns {{root:Object, endianness:'LE'|'BE', complete:boolean}}
  */
 function decodeAuto(input) {
-    const results = [];
-    for (const eo of ['LE', 'BE']) {
-        try {
-            const root = decode(input, eo);
-            results.push({ root, endianness: eo, score: 1000 + printability(root) * 100 + Object.keys(root).length });
-        } catch (e) {
-            results.push({ error: e.message, endianness: eo, score: 0 });
-        }
-    }
-    results.sort((a, b) => b.score - a.score);
-    const best = results[0];
-    if (!best.root) {
-        throw new Error('NBT: 无法识别（LE: ' + (results.find(r => r.endianness === 'LE').error) + '；BE: ' + (results.find(r => r.endianness === 'BE').error) + '）');
-    }
-    return best;
+    const r = decodeAutoPick(inflateInput(input), false);
+    return { root: r.value, endianness: r.endianness, complete: r.complete };
 }
 
 // ===== plain → tagged（解码树 → 构建器树）=====

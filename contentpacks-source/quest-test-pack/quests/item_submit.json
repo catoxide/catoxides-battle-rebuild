@@ -1,0 +1,16 @@
+{
+  "id": "test_item_submit",
+  "title": "缴纳铁锭",
+  "description": "交付 16 个铁锭（任务完成时扣除）",
+  "givers": [
+    { "type": "proximity_giver", "center": [1000, 64, 1000], "radius": 10 }
+  ],
+  "goals": [
+    { "type": "item_submit", "item": "minecraft:iron_ingot", "count": 16, "label": "铁锭" }
+  ],
+  "conditions": [],
+  "failConditions": [],
+  "children": [],
+  "location": [1000, 64, 1000],
+  "priority": 1.5
+}

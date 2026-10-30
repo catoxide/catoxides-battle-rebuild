@@ -1,0 +1,18 @@
+{
+  "id": "test_item_present",
+  "title": "储备口粮",
+  "description": "随身携带 8 个苹果（只检测，不扣除）",
+  "givers": [
+    { "type": "proximity_giver", "center": [1000, 64, 1000], "radius": 10 }
+  ],
+  "goals": [
+    { "type": "item_present", "item": "minecraft:apple", "count": 8, "label": "苹果" }
+  ],
+  "conditions": [],
+  "failConditions": [],
+  "children": [],
+  "location": [1000, 64, 1000],
+  "priority": 1.0,
+  "repeatable": true,
+  "cooldownTicks": 1200
+}

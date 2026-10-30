@@ -181,6 +181,65 @@ function readStagedHealthConfig(packName, namespace, entityId) {
 }
 
 /**
+ * 写任务草稿：暂存 quests/<文件名>.json（一个文件 = 一个任务定义）。
+ * @param {string} packName
+ * @param {Object} def 已通过校验的任务定义（id 必须合法）
+ * @param {string} [fileRel] 正式包里的相对路径（保留既有文件名如 quests.json）；
+ *        非法路径回落到 quests/<id>.json —— 防止路径逃逸
+ * @returns {{file:string, staged:boolean}}
+ */
+function stageQuest(packName, def, fileRel) {
+    const rel = questRelPath(fileRel) || questRelPath('quests/' + sanitize(def.id) + '.json');
+    const file = path.join(packStagingDir(packName), rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(stripInternal(def), null, 2), 'utf-8');
+    return { file: path.relative(getStagingRoot(), file), staged: true };
+}
+
+/** quests/<name>.json 相对路径白名单（REVIEW-L6：拒绝 .. 与子目录） */
+const QUEST_REL_RE = /^quests\/[a-z0-9_.\-]+\.json$/;
+
+function questRelPath(fileRel) {
+    const rel = String(fileRel || '').replace(/\\/g, '/');
+    return QUEST_REL_RE.test(rel) ? rel : null;
+}
+
+function stagedQuestFiles(packName) {
+    const dir = path.join(packStagingDir(packName), 'quests');
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => path.join(dir, f));
+}
+
+/**
+ * 读任务草稿（按定义内容里的 id 匹配 —— 文件名不保证等于 id，例如历史文件 quests.json）
+ * @returns {Object|null}
+ */
+function readStagedQuest(packName, id) {
+    for (const file of stagedQuestFiles(packName)) {
+        try {
+            const v = JSON.parse(fs.readFileSync(file, 'utf-8'));
+            if (v && typeof v === 'object' && v.id === id) return v;
+        } catch (e) {
+            console.error('[staging] 任务草稿损坏: ' + file + ' — ' + (e.message || e));
+        }
+    }
+    return null;
+}
+
+/** 删除单个任务草稿（按 id 匹配内容） */
+function removeStagedQuest(packName, id) {
+    for (const file of stagedQuestFiles(packName)) {
+        try {
+            const v = JSON.parse(fs.readFileSync(file, 'utf-8'));
+            if (v && v.id === id) fs.unlinkSync(file);
+        } catch {
+            // 损坏草稿不匹配任何 id —— 留给用户手动清理
+        }
+    }
+    return true;
+}
+
+/**
  * 列出某包的全部暂存项
  * @param {string} packName
  * @returns {Array<{kind:'entity'|'health', id:string, namespace:string, file:string, mtime:string}>}
@@ -221,6 +280,15 @@ function listStaged(packName) {
             const p = path.join(dir, f);
             items.push({ kind, id: f.slice(0, -5), namespace: null, file: path.relative(base, p), mtime: fs.statSync(p).mtime.toISOString() });
         }
+    }
+    // 任务草稿（id 取自文件内容 —— 历史文件名可以不是 <id>.json）
+    for (const p of stagedQuestFiles(packName)) {
+        let id = path.basename(p, '.json');
+        try {
+            const v = JSON.parse(fs.readFileSync(p, 'utf-8'));
+            if (v && typeof v.id === 'string' && v.id) id = v.id;
+        } catch { /* 损坏草稿按文件名列出，导出仍会原样拷贝 */ }
+        items.push({ kind: 'quest', id, namespace: null, file: path.relative(base, p), mtime: fs.statSync(p).mtime.toISOString() });
     }
     return items;
 }
@@ -291,6 +359,12 @@ function exportStaged(packName, packSourceDir) {
             const dirName = item.kind === 'item' ? 'items' : 'blocks';
             const src = path.join(base, dirName, item.id + '.json');
             const dest = path.join(packSourceDir, dirName, item.id + '.json');
+            fs.mkdirSync(path.dirname(dest), { recursive: true });
+            fs.copyFileSync(src, dest);
+            exported.push(path.relative(packSourceDir, dest));
+        } else if (item.kind === 'quest') {
+            const src = path.join(base, item.file);
+            const dest = path.join(packSourceDir, item.file);
             fs.mkdirSync(path.dirname(dest), { recursive: true });
             fs.copyFileSync(src, dest);
             exported.push(path.relative(packSourceDir, dest));
@@ -395,6 +469,9 @@ module.exports = {
     readStagedStructure,
     stageItemBlock,
     readStagedItemBlock,
+    stageQuest,
+    readStagedQuest,
+    removeStagedQuest,
     listStaged,
     hasStaged,
     listAllStagedPacks,

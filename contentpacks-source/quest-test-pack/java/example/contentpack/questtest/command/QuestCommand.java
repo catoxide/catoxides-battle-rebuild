@@ -173,7 +173,7 @@ public final class QuestCommand {
         QuestDefinition def = q.getDefinition();
         String pad = "  ".repeat(indent);
         String line = pad + "- " + def.title().getString() + " (" + def.id() + ") ["
-                + stateCn(q) + "]" + starMark(q);
+                + stateCn(q) + "]" + starMark(q) + " #" + shortInstanceId(q);
         if (!q.getGoalProgress().isEmpty()) {
             line += " 进度 " + q.getGoalProgress();
         }
@@ -200,11 +200,11 @@ public final class QuestCommand {
         }
         QuestInstance instance = QuestSystem.getInstance().giveQuest(target, def.id(), "command");
         if (instance == null) {
-            source.sendFailure(Component.literal("发放失败（可能已存在激活实例）: " + def.id()));
+            source.sendFailure(Component.literal("发放失败（已有进行中实例，或一次性任务已发放过）: " + def.id()));
             return 0;
         }
         source.sendSuccess(() -> Component.literal("已发放任务: "
-                + instance.getDefinition().title().getString()), true);
+                + instance.getDefinition().title().getString() + " #" + shortInstanceId(instance)), true);
         return 1;
     }
 
@@ -358,5 +358,11 @@ public final class QuestCommand {
 
     private static String starMark(QuestInstance quest) {
         return quest.isStarred() ? " §e★" : "";
+    }
+
+    /** 实例 id 前 8 位（同一定义重复发放时靠它区分） */
+    private static String shortInstanceId(QuestInstance quest) {
+        String id = quest.getInstanceId();
+        return id.length() > 8 ? id.substring(0, 8) : id;
     }
 }

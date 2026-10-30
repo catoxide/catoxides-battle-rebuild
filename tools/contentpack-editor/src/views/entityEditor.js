@@ -612,11 +612,12 @@ window.EntityEditor = (function () {
     }
 
     // ===== 保存到暂存区（草稿） =====
+    /** 存草稿。返回 true/false —— build() 要靠它判断能不能继续（校验失败就别打旧数据的 jar） */
     async function save() {
         const tab = activeTab();
-        if (!tab) return;
+        if (!tab) return false;
         const entity = collectEntity();
-        if (!entity.id) { window.showError(t('common.idRequired')); return; }
+        if (!entity.id) { window.showError(t('common.idRequired')); return false; }
         // 0.2.1：animations 由 3D 模型编辑器直写（主窗口只读）。主窗口缓存的是打开时的快照，
         // 若期间在 3D 里改过状态映射，直接落草稿/导出会把新映射回退 → 保存前取磁盘最新值。
         try {
@@ -628,7 +629,7 @@ window.EntityEditor = (function () {
         } catch { /* 读取失败：保留原值，不阻断保存 */ }
         // 保存实体草稿（写入 app 暂存区，不碰正式包）
         const res = await window.api.saveEntity(tab.pack.dir, entity);
-        if (!res.ok) { window.showError(t('common.saveFailed') + res.error); return; }
+        if (!res.ok) { window.showError(t('common.saveFailed') + res.error); return false; }
         // 保存/删除部位配置草稿
         const ns = entity.namespace || packNamespace(tab.pack);
         const cfg = window.AppState.healthConfig;
@@ -637,7 +638,7 @@ window.EntityEditor = (function () {
             window.showStatus('部位配置读取失败，本次未改动（未删除正式配置）: ' + (cfg._error || ''), false);
         } else if (cfg && cfg.parts && cfg.parts.length) {
             const hres = await window.api.saveHealth(tab.pack.dir, ns, entity.id, cfg);
-            if (!hres.ok) { window.showError(t('common.saveFailed') + hres.error); return; }
+            if (!hres.ok) { window.showError(t('common.saveFailed') + hres.error); return false; }
         } else {
             await window.api.deleteHealth(tab.pack.dir, ns, entity.id);
         }
@@ -649,6 +650,7 @@ window.EntityEditor = (function () {
         if (window.EntityList && window.EntityList.loadEntities) {
             window.EntityList.loadEntities(tab.pack.dir);
         }
+        return true;
     }
 
     // ===== 导出全部暂存 → 正式包 → 回收 =====
@@ -697,15 +699,11 @@ window.EntityEditor = (function () {
     async function build() {
         const tab = activeTab();
         if (!tab) return;
-        // 打包前提示：若有未导出的暂存，先提醒（打包基于正式包内容）
-        const stagedRes = await window.api.stagingList(tab.pack.dir);
-        if (stagedRes.ok && stagedRes.data && stagedRes.data.hasStaged) {
-            const go = confirm(tf('dyn.buildStagedWarn', { n: stagedRes.data.items.length }));
-            if (go) {
-                const expRes = await window.api.stagingExport(tab.pack.dir);
-                if (!expRes.ok) { window.showError(t('common.exportFailed') + expRes.error); return; }
-            }
-        }
+        // 与结构编辑器 build() 同一条链：先落草稿再导出，避免「打包的是旧数据」。
+        // 此前这里只在检测到暂存时弹一个 confirm，右侧未保存的编辑根本不在考虑范围内。
+        if (!(await save())) return;
+        const expRes = await window.api.stagingExport(tab.pack.dir);
+        if (!expRes.ok) { window.showError(t('common.exportFailed') + expRes.error); return; }
         const outEl = document.getElementById('buildOutput');
         outEl.style.display = 'block';
 

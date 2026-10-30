@@ -48,6 +48,12 @@ public final class CompassConfig {
         return Math.max(0.4, Math.min(2.5, value));
     }
 
+    /** 罗盘上标记符号的放大倍数（1.0 = 原始大小）。 */
+    public static double markerScale() {
+        double value = getDouble("markerScale", 1.5);
+        return Math.max(0.5, Math.min(3.0, value));
+    }
+
     /** 0 = 无，1 = 阴影，2 = 四向描边。 */
     public static int textStyle() {
         return Math.max(0, Math.min(2, getInt("textStyle", 1)));

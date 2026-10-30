@@ -175,11 +175,12 @@ npm start
    - `data/<ns>/worldgen/structure_set/<structureId>_set.json`
 
    导出后游戏侧**零自定义 worldgen 代码**——原版 jigsaw 引擎直接生成。
-   示例包：`contentpacks-source/structure-example-pack/`（大厅+塔+自链走廊）。
+   示例包：`contentpacks-source/fortress-pack/`（从原版结构包导入的 20 片段要塞）。
 
 > 契约字段与取值严格对齐原版 1.21.1（`src/core/structureSchema.js`，保存/导出时全字段校验，
-> 非法值如基岩版 terrainAdaptation 会直接报错）。NBT 为 type-first 条目 + gzip + 小端 + DataVersion 3465，
-> 与 nbtlib 字节级 oracle 交叉验证（`test/fixtures/oracle-*.nbt`）。模板路径常量集中在 `vanillaExport.js` 一处。
+> 非法值如基岩版 terrainAdaptation 会直接报错）。NBT 为 type-first 条目 + gzip + **大端** + DataVersion 3955，
+> 与 nbtlib 字节级 oracle 交叉验证（`test/fixtures/oracle-*.nbt`）；读取侧容错（小端 / 1.20.x 旧目录自动识别）。
+> 模板路径常量集中在 `vanillaExport.js` 一处。
 
 ---
 
@@ -218,6 +219,42 @@ npm start
 
 ---
 
+## 3e. 任务工作流（quests/，0.2.2 新增）
+
+中栏顶部下拉切换到 **任务**（与实体/结构/物品共用中栏/右栏，页签独立）：
+
+1. **选包 → 选任务 / + 新建**（`quests/<id>.json`，一个文件 = 一个任务；子任务嵌在 `children` 里）
+2. **右栏三个页签**：
+   - **基本信息**：id（保存后锁定——文件名按 id 生成）/ title / description / 可选任务坐标 location / priority /
+     **发放节奏**（`repeatable` 可重复 + `cooldownTicks` 冷却：一次性任务收到过就永不再发；可重复任务进入终态
+     且冷却结束后才能再发，**每次都是新实例 id**，旧完成记录只保留最近 10 条）
+   - **发放与目标**：givers（**进入区域发放** proximity_giver：中心坐标 + 半径）与 goals（**持有物品** item_present 只检测 / **提交物品** item_submit 完成时扣除）逐行增删；
+     字段表单由 `questSchema.js` 的类型描述驱动；**包 Java 工厂提供的自定义类型**（如 `kill` / `craft`）只读显示原 JSON 并可删除，保存时原样保留
+   - **预览与校验**：校验错误/警告 + 即将落盘的 JSON 预览（键序与 Java 解析顺序一致）
+3. **保存**（前端校验 → 暂存草稿，徽标变「草稿」）→ **⬆ 写入正式包**（中栏工具条，整包草稿一起落盘并回收）
+   → **打包 jar**（与实体同一套打包流程）
+4. 注册在 Java 侧：入口类 `register()` 调 `context.registerQuestsFromJar()`
+   （任务工具条的 **🩹 补齐骨架** 在入口类**只插这一行**，不重生成整类——老入口类里手写的工厂/命令/网络包原样保留；
+   补完会顺手跑预检并列出剩余的 `E-Q-*`；有 quests 但入口类缺调用 → 预检 `E-Q-NO-REGISTER` 拦截）
+
+任务专用预检规则（`E-Q-*`，都在 `src/core/packPreflight.js`）：
+
+| 代码 | 拦什么 | 为什么 |
+|---|---|---|
+| `E-Q-NO-REGISTER` | 有 quests/*.json 但入口类没调 `registerQuestsFromJar()` | 加载器不会自动扫描，JSON 是死数据 |
+| `E-Q-JSON` | 任务文件不是合法 JSON | 加载期被隔离，该任务不存在 |
+| `E-Q-VALID` | 缺 item/count、id 大写或带命名空间、location 不是 3 元组、既无 goals 也无 children（发放即完成）、`cooldownTicks` 非 JSON 整数或配在一次性任务上… | 镜像 `QuestDefinitionParser` 的严格性；游戏里该文件会注册失败 |
+| `E-Q-ID-DUP` | 包内两个文件用同一 id | `QuestSystem` 以 id 为键，后注册覆盖先注册（只有一条 warn） |
+| `E-Q-NESTED` | `quests/` 子目录里有 JSON | 注册器只扫**第一层**，子目录里的任务永远不会加载 |
+| `W-Q-VALID` | 用了包 Java 工厂提供的 goal/giver 类型 | 字段由包决定，编辑器不校验（保存时原样保留） |
+
+> 契约单一真源：主 mod `core/quest/QuestDefinitionParser.java` + `QuestBuiltinComponents.java`
+> + `QuestGivePolicy.java`（repeatable / cooldownTicks 的自动发放判定，独立 `javac` 单测）；
+> 前端镜像 `src/core/questSchema.js`（单测 `test/quest.test.js` 30 项 + 视图 `test/questView.test.js` 5 项）。
+> 示例包：`contentpacks-source/quest-test-pack/`（`item_present.json`（可重复样例）/ `item_submit.json` / 历史 `quests.json`）。
+
+---
+
 ## 4. 文件产出对照（编辑器 → 游戏侧）
 
 | 编辑器产出 | 路径 | 游戏侧解析 |
@@ -229,6 +266,7 @@ npm start
 | 模板池 / 结构 / 结构集合 | `data/<ns>/worldgen/...` | 原版 worldgen 注册表（jigsaw 引擎） |
 | 物品/方块定义（源格式） | `items/<id>.json`、`blocks/<id>.json` | `BatchContentRegistrar`（`registerItemsAndBlocksFromJar()`） |
 | 物品/方块原版文件 | `assets/<ns>/models/...`、`assets/<ns>/blockstate/<id>.json`、`lang`、`loot_table`、`tags` | 原版模型/blockstate/语言/掉落/标签加载器 |
+| 任务定义（源格式） | `quests/<id>.json` | `QuestDefinitionParser`（`registerQuestsFromJar()`，只扫第一层） |
 | 打包产物 | `contentpacks/<Module-Name>.jar` | `ContentPackLoader` |
 | 包声明 + 构建骨架 | `MANIFEST.MF`、`build.gradle`、`java/<入口类>.java` | 前者被 `ContentPackManifest` 解析；后两者供 `gradlew :packs:<目录>:contentpackJar` 构建 |
 
@@ -255,7 +293,8 @@ npm start
 - 技术栈：Electron（Node + 原生 JS，无框架）+ Three.js（3D 预览，本地捆绑 `src/lib/three.module.js`）
 - 与主 mod 通信：纯文件契约（JSON/NBT），语言完全解耦
 - 已内置内容类型：实体（4 页签）、建筑结构（5 页签，含 3D 体素预览 / 体素编辑 / 拼合诊断 / 结构导航 / 圈地读取）、
-  物品 / 方块（基本信息 / 形态与参数（自定义参数 + blockstate）/ 模型 / 预览，含原版文件导出）
+  物品 / 方块（基本信息 / 形态与参数（自定义参数 + blockstate）/ 模型 / 预览，含原版文件导出）、
+  任务（基本信息 / 发放与目标 / 预览与校验）
 - 后续规划：拖拽分配骨骼、schema 驱动（内容包贡献编辑页面）、loottable 模块、游戏内圈地桥接（见 `design/STRUCTURE_BRIDGE_FEASIBILITY.md`）
 
 ---

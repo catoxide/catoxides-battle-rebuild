@@ -28,7 +28,7 @@ import java.util.zip.ZipOutputStream;
  *   <li>current 覆盖：稀疏合并、只允许可编辑字段、非法整条作废、未知路径、hash 不匹配</li>
  *   <li>编译产物：bool→BooleanValue（可编辑）、int/double 专用类型、分区翻译键</li>
  *   <li>显示名：en_us 缺选项/分区/文件标题一律拒绝，resources/ 下的 lang 不算</li>
- *   <li>真实包：{@code contentpacks/compass-pack.jar} 的 4 个 HOT 选项与默认值</li>
+ *   <li>真实包：{@code contentpacks/map-pack.jar} 的客户端/服务端声明、默认值与 en_us 覆盖</li>
  * </ul>
  *
  * <p>负向用例会在控制台打印 ERROR/WARN 日志，那是被测代码的预期输出，不是测试失败。
@@ -47,7 +47,7 @@ public final class PackConfigDeclarationsCheck {
         langCoverageCases();
         rejectionCases();
         overrideCases();
-        realCompassPack();
+        realMapPack();
 
         System.out.printf("%npack config declaration check: %d passed / %d failed%n", pass, fail);
         if (fail > 0) {
@@ -397,62 +397,74 @@ public final class PackConfigDeclarationsCheck {
 
     // ==================== 真实包 ====================
 
-    private static void realCompassPack() throws IOException {
-        section("real pack: compass-pack.jar");
+    private static void realMapPack() throws IOException {
+        section("real pack: map-pack.jar");
 
-        File jar = new File("contentpacks/compass-pack.jar");
+        File jar = new File("contentpacks/map-pack.jar");
         if (!jar.isFile()) {
-            check("compass-pack.jar present (run contentpackJar first)", false);
+            check("map-pack.jar present (run contentpackJar first)", false);
             return;
         }
 
-        List<ConfigDecl> decls = PackConfigDeclarations.load(jar, "compass-pack", null);
-        check("one declared config", decls.size() == 1);
-        if (decls.isEmpty()) {
+        List<ConfigDecl> decls = PackConfigDeclarations.load(jar, "map-pack", null);
+        check("two declared configs", decls.size() == 2);
+        if (decls.size() != 2) {
             return;
         }
-        ConfigDecl decl = decls.get(0);
-        check("id hud", "hud".equals(decl.id()));
-        check("scope CLIENT", decl.scope() == ConfigScope.CLIENT);
-        check("file compass-pack-client", "compass-pack-client".equals(decl.file()));
-        check("four options", countValues(decl) == 4);
-        check("fovTicks default false", Boolean.FALSE.equals(value(decl, "fovTicks").defaultValue()));
-        check("numberOnly default false", Boolean.FALSE.equals(value(decl, "numberOnly").defaultValue()));
-        check("thickBar default false", Boolean.FALSE.equals(value(decl, "thickBar").defaultValue()));
-        check("frostedBackground default true", Boolean.TRUE.equals(value(decl, "frostedBackground").defaultValue()));
-        check("all options HOT", decl.sections().stream()
+        ConfigDecl client = decls.get(0);
+        check("id map", "map".equals(client.id()));
+        check("scope CLIENT", client.scope() == ConfigScope.CLIENT);
+        check("file map-pack-client", "map-pack-client".equals(client.file()));
+        check("22 options", countValues(client) == 22);
+        check("fullscreenBlocks default 1024",
+                Integer.valueOf(1024).equals(value(client, "fullscreenBlocks").defaultValue()));
+        check("fovTicks default false", Boolean.FALSE.equals(value(client, "fovTicks").defaultValue()));
+        check("numberOnly default false", Boolean.FALSE.equals(value(client, "numberOnly").defaultValue()));
+        check("thickBar default false", Boolean.FALSE.equals(value(client, "thickBar").defaultValue()));
+        check("frostedBackground default true", Boolean.TRUE.equals(value(client, "frostedBackground").defaultValue()));
+        check("all client options HOT", client.sections().stream()
                 .flatMap(s -> s.values().stream())
                 .allMatch(v -> v.tier() == ConfigTier.HOT));
 
-        ConfigSpecCompiler.Compiled compiled = ConfigSpecCompiler.compile(decl);
-        check("compass translation key",
-                "catoxidesbattlerebuild.configuration.compass-pack.hud.style.fovTicks"
-                        .equals(compiled.values().get("fovTicks").getSpec().getTranslationKey()));
-        check("compass options are UI-editable BooleanValue",
-                compiled.values().values().stream().allMatch(v -> v instanceof ModConfigSpec.BooleanValue));
+        ConfigDecl server = decls.get(1);
+        check("id server", "server".equals(server.id()));
+        check("scope SERVER", server.scope() == ConfigScope.SERVER);
+        check("file map-pack-server", "map-pack-server".equals(server.file()));
+        check("five server options", countValues(server) == 5);
 
-        ConfigLangCoverage.Result coverage = ConfigLangCoverage.check(jar, decl);
-        check("compass en_us covers every display name (" + coverage.missing().size() + " missing)",
-                coverage.complete());
+        ConfigSpecCompiler.Compiled compiled = ConfigSpecCompiler.compile(client);
+        check("option translation key",
+                "catoxidesbattlerebuild.configuration.map-pack.map.map.fullscreenBlocks"
+                        .equals(compiled.values().get("fullscreenBlocks").getSpec().getTranslationKey()));
+        check("map width is UI-editable IntValue",
+                compiled.values().get("fullscreenBlocks") instanceof ModConfigSpec.IntValue);
+        check("compass options are UI-editable BooleanValue",
+                compiled.values().get("fovTicks") instanceof ModConfigSpec.BooleanValue);
+
+        for (ConfigDecl decl : decls) {
+            ConfigLangCoverage.Result coverage = ConfigLangCoverage.check(jar, decl);
+            check("en_us covers every display name for " + decl.id()
+                    + " (" + coverage.missing().size() + " missing)", coverage.complete());
+        }
 
         // 面板显示的是翻译键；缺 lang 不崩溃但会露出原始键名，这里把「键名与 lang 同步」变成断言。
-        Path lang = Path.of("contentpacks-source/compass-pack/assets/skyrimcompasshud/lang/en_us.json");
-        check("compass lang file present", Files.isRegularFile(lang));
+        Path lang = Path.of("contentpacks-source/map-pack/assets/map-pack/lang/en_us.json");
+        check("map-pack lang file present", Files.isRegularFile(lang));
         if (Files.isRegularFile(lang)) {
             com.google.gson.JsonObject translations = com.google.gson.JsonParser
                     .parseString(Files.readString(lang, StandardCharsets.UTF_8))
                     .getAsJsonObject();
             boolean allTranslated = compiled.values().values().stream()
                     .allMatch(v -> translations.has(v.getSpec().getTranslationKey()));
-            check("every option has a lang entry", allTranslated);
+            check("every client option has a lang entry", allTranslated);
             check("section button lang entry",
-                    translations.has("catoxidesbattlerebuild.configuration.section.compass.pack.client.toml"));
+                    translations.has("catoxidesbattlerebuild.configuration.section.map.pack.client.toml"));
             check("section title lang entry",
-                    translations.has("catoxidesbattlerebuild.configuration.section.compass.pack.client.toml.title"));
+                    translations.has("catoxidesbattlerebuild.configuration.section.map.pack.client.toml.title"));
             check("option section header lang entry",
-                    translations.has("catoxidesbattlerebuild.configuration.compass-pack.hud.style"));
+                    translations.has("catoxidesbattlerebuild.configuration.map-pack.map.map"));
             check("option section button lang entry",
-                    translations.has("catoxidesbattlerebuild.configuration.compass-pack.hud.style.button"));
+                    translations.has("catoxidesbattlerebuild.configuration.map-pack.map.map.button"));
         }
     }
 

@@ -52,8 +52,8 @@ for (const name of ['durability-pack', 'test-mob-pack', 'quest-test-pack', 'sabl
         assert.strictEqual(r.errors.length, 0, `意外的 error: ${JSON.stringify(r.errors, null, 2)}`);
     });
 }
-test('structure-example-pack（纯数据包）预检无 error', () => {
-    const r = Preflight.preflightPack(path.join(PACKS_SOURCE, 'structure-example-pack'), { root: ROOT });
+test('fortress-pack（纯数据包：原版 jigsaw 结构）预检无 error', () => {
+    const r = Preflight.preflightPack(path.join(PACKS_SOURCE, 'fortress-pack'), { root: ROOT });
     assert.strictEqual(r.errors.length, 0, JSON.stringify(r.errors));
 });
 
@@ -116,6 +116,95 @@ test('同名 Module-Name 的重复 jar → error（加载哪个取决于扫描�
     const r2 = Preflight.preflightPack(path.join(PACKS_SOURCE, 'durability-pack'), { root: tmpRoot });
     assert.strictEqual(r2.errors.length, 0, JSON.stringify(r2.errors));
     fs.unlinkSync(path.join(out, 'durability-pack.jar'));
+});
+
+console.log('=== 3b. 任务 JSON（quests/）预检 ===');
+/** 造一个带入口类的包；entryBody = register() 方法体（默认不含任务注册） */
+function makeQuestPack(name, questFiles, opts = {}) {
+    const entry = opts.entry || 'example.contentpack.qp.QuestPack';
+    const dir = path.join(tmpPacks, name);
+    fs.mkdirSync(path.join(dir, 'quests'), { recursive: true });
+    ManifestLib.writeManifest(dir, {
+        'Module-Name': name, 'Module-Type': 'contentpack',
+        ...(opts.noEntry ? {} : { 'Module-Entry': entry }),
+    });
+    for (const [file, def] of Object.entries(questFiles)) {
+        const full = path.join(dir, 'quests', file);
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, typeof def === 'string' ? def : JSON.stringify(def, null, 2), 'utf-8');
+    }
+    if (!opts.noEntry) {
+        const loc = Scaffold.entryLocation(entry);
+        const full = path.join(dir, loc.path);
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, opts.entrySource || [
+            `package ${loc.pkg};`,
+            'public class QuestPack implements ContentPack {',
+            '    @Override',
+            '    public void register(ContentPackContext context) {',
+            '        // 手写逻辑（模拟真实包：工厂注册 / 命令 / 网络）',
+            ...(opts.register ? ['        context.registerQuestsFromJar();'] : []),
+            '    }',
+            '}',
+            '',
+        ].join('\n'), 'utf-8');
+    }
+    return dir;
+}
+const okQuest = (id) => ({
+    id, title: '任务 ' + id,
+    givers: [{ type: 'proximity_giver', center: [0, 64, 0], radius: 10 }],
+    goals: [{ type: 'item_present', item: 'minecraft:apple', count: 8 }],
+});
+
+test('有 quests 但入口类没调 registerQuestsFromJar → error（死数据）', () => {
+    const dir = makeQuestPack('q-noregister', { 'q1.json': okQuest('q1') });
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    assert.ok(has(r.errors, 'E-Q-NO-REGISTER'), codes(r.findings).join(','));
+});
+test('入口类调了 registerQuestsFromJar → 无 error', () => {
+    const dir = makeQuestPack('q-registered', { 'q1.json': okQuest('q1') }, { register: true });
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    assert.strictEqual(r.errors.length, 0, JSON.stringify(r.errors));
+    assert.strictEqual(r.quests.length, 1, '应回传解析到的任务定义');
+});
+test('有 quests 但 MANIFEST 没有 Module-Entry → E-DATA-NO-ENTRY 点名任务', () => {
+    const dir = makeQuestPack('q-noentry', { 'q1.json': okQuest('q1') }, { noEntry: true });
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    const f = r.errors.find((x) => x.code === 'E-DATA-NO-ENTRY');
+    assert.ok(f, codes(r.findings).join(','));
+    assert.ok(f.msg.includes('quests/*.json'), f.msg);
+});
+test('任务 JSON 语法错误 → E-Q-JSON（该文件加载期会被隔离）', () => {
+    const dir = makeQuestPack('q-badjson', { 'broken.json': '{ not json' });
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    assert.ok(has(r.errors, 'E-Q-JSON'), codes(r.findings).join(','));
+});
+test('缺 item 的任务 → E-Q-VALID（游戏里该文件会注册失败）', () => {
+    const bad = okQuest('q_bad');
+    delete bad.goals[0].item;
+    const dir = makeQuestPack('q-invalid', { 'q_bad.json': bad });
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    const f = r.errors.find((x) => x.code === 'E-Q-VALID');
+    assert.ok(f && f.msg.includes('goals[0].item'), codes(r.findings).join(','));
+});
+test('包内任务 id 重复 → E-Q-ID-DUP（后者覆盖前者）', () => {
+    const dir = makeQuestPack('q-dup', { 'a.json': okQuest('q_same'), 'b.json': okQuest('q_same') });
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    assert.ok(has(r.errors, 'E-Q-ID-DUP'), codes(r.findings).join(','));
+});
+test('quests/ 子目录里的 JSON → E-Q-NESTED（只扫第一层）', () => {
+    const dir = makeQuestPack('q-nested', { 'sub/deep.json': okQuest('q_deep') });
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    assert.ok(has(r.errors, 'E-Q-NESTED'), codes(r.findings).join(','));
+});
+test('包私有 goal 类型 → 只告警不拦（字段由包的 Java 工厂决定）', () => {
+    const q = okQuest('q_custom');
+    q.goals.push({ type: 'kill', entity: 'minecraft:zombie', count: 2 });
+    const dir = makeQuestPack('q-custom', { 'q_custom.json': q }, { register: true });
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    assert.strictEqual(r.errors.length, 0, JSON.stringify(r.errors));
+    assert.ok(has(r.warnings, 'W-Q-VALID'), codes(r.findings).join(','));
 });
 
 console.log('=== 4. 骨架文件生成 ===');

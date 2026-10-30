@@ -200,7 +200,7 @@ public class LogManager {
     }
 
     public static void serverDebug(String tag, String format, Object... args) {
-        String message = String.format(format, args);
+        String message = fmt(format, args);
         cacheDebugMessage("S:" + tag, message);
         log(LogLevel.DEBUG, LogSource.SERVER, tag, message);
     }
@@ -210,13 +210,46 @@ public class LogManager {
     }
 
     public static void serverInfo(String tag, String format, Object... args) {
-        log(LogLevel.INFO, LogSource.SERVER, tag, String.format(format, args));
+        log(LogLevel.INFO, LogSource.SERVER, tag, fmt(format, args));
+    }
+
+    /**
+     * 格式风格自动识别：
+     * <ul>
+     *   <li>含 {@code {}} → 按 slf4j 风格顺序替换（调用方绝大多数写法）；</li>
+     *   <li>否则 → 标准 {@link String#format}（{@code %s}/{@code %d} 风格）。</li>
+     * </ul>
+     * 参数多于占位符时多余参数忽略，少于时剩余占位符保留原文（与 slf4j 一致）。
+     */
+    private static String fmt(String format, Object... args) {
+        if (args == null || args.length == 0) {
+            return format;
+        }
+        int first = format.indexOf("{}");
+        if (first < 0) {
+            return String.format(format, args);
+        }
+        StringBuilder sb = new StringBuilder(format.length() + 16);
+        int argIdx = 0;
+        int i = 0;
+        while (i < format.length()) {
+            int m = format.indexOf("{}", i);
+            if (m < 0) {
+                sb.append(format, i, format.length());
+                break;
+            }
+            sb.append(format, i, m);
+            if (argIdx < args.length) {
+                sb.append(args[argIdx++]);
+            }
+            i = m + 2;
+        }
+        return sb.toString();
     }
 
     /** 支持 {} 风格的格式化日志（slf4j 风格） */
     public static void serverInfoF(String tag, String format, Object... args) {
-        String message = String.format(format.replace("{}", "%s"), args);
-        log(LogLevel.INFO, LogSource.SERVER, tag, message);
+        log(LogLevel.INFO, LogSource.SERVER, tag, fmt(format, args));
     }
 
     public static void serverWarn(String tag, String message) {
@@ -224,7 +257,7 @@ public class LogManager {
     }
 
     public static void serverWarn(String tag, String format, Object... args) {
-        log(LogLevel.WARN, LogSource.SERVER, tag, String.format(format, args));
+        log(LogLevel.WARN, LogSource.SERVER, tag, fmt(format, args));
     }
 
     public static void serverError(String tag, String message) {
@@ -232,7 +265,7 @@ public class LogManager {
     }
 
     public static void serverError(String tag, String format, Object... args) {
-        log(LogLevel.ERROR, LogSource.SERVER, tag, String.format(format, args));
+        log(LogLevel.ERROR, LogSource.SERVER, tag, fmt(format, args));
     }
 
     public static void serverError(String tag, String message, Throwable t) {
@@ -245,7 +278,7 @@ public class LogManager {
     }
 
     public static void clientDebug(String tag, String format, Object... args) {
-        String message = String.format(format, args);
+        String message = fmt(format, args);
         cacheDebugMessage("C:" + tag, message);
         log(LogLevel.DEBUG, LogSource.CLIENT, tag, message);
     }
@@ -255,7 +288,7 @@ public class LogManager {
     }
 
     public static void clientInfo(String tag, String format, Object... args) {
-        log(LogLevel.INFO, LogSource.CLIENT, tag, String.format(format, args));
+        log(LogLevel.INFO, LogSource.CLIENT, tag, fmt(format, args));
     }
 
     public static void clientWarn(String tag, String message) {
@@ -263,7 +296,7 @@ public class LogManager {
     }
 
     public static void clientWarn(String tag, String format, Object... args) {
-        log(LogLevel.WARN, LogSource.CLIENT, tag, String.format(format, args));
+        log(LogLevel.WARN, LogSource.CLIENT, tag, fmt(format, args));
     }
 
     public static void clientError(String tag, String message) {
@@ -279,7 +312,7 @@ public class LogManager {
     }
 
     public static void info(String tag, String format, Object... args) {
-        log(LogLevel.INFO, LogSource.COMMON, tag, String.format(format, args));
+        log(LogLevel.INFO, LogSource.COMMON, tag, fmt(format, args));
     }
 
     public static void serverStartup(String tag, String message) {
@@ -379,7 +412,7 @@ public class LogManager {
 
     public static void renderDebug(String format, Object... args) {
         if (isModuleEnabled(DevModule.RENDER)) {
-            clientDebug("Render", String.format(format, args));
+            clientDebug("Render", fmt(format, args));
         }
     }
 

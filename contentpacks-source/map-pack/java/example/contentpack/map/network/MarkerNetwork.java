@@ -8,7 +8,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-/** 标记网络：创建（C2S）+ 同步（S2C）。 */
+/** 标记网络：创建 / 编辑 / 删除 / 永久化（C2S）+ 同步（S2C）。 */
 public final class MarkerNetwork {
 
     private MarkerNetwork() {
@@ -25,6 +25,16 @@ public final class MarkerNetwork {
                     MarkerNetwork::handleRemove);
             registrar.playToServer(MarkerUpdatePayload.TYPE, MarkerUpdatePayload.CODEC,
                     MarkerNetwork::handleUpdate);
+            registrar.playToServer(MarkerAdoptPayload.TYPE, MarkerAdoptPayload.CODEC,
+                    MarkerNetwork::handleAdopt);
+        });
+    }
+
+    private static void handleAdopt(MarkerAdoptPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (context.player() instanceof ServerPlayer player) {
+                MarkerService.adoptByRequest(player, payload.id());
+            }
         });
     }
 
@@ -32,7 +42,9 @@ public final class MarkerNetwork {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player) {
                 MarkerService.updateByRequest(player, payload.id(), payload.icon(),
-                        payload.label(), payload.resetIcon());
+                        payload.label(), payload.resetIcon(),
+                        payload.x(), payload.y(), payload.z(),
+                        payload.showName(), payload.compass());
             }
         });
     }

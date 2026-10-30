@@ -3,6 +3,7 @@ package com.catoxide.catoxidesbattlerebuild;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackConfigBridge;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackContext;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackLoader;
+import com.catoxide.catoxidesbattlerebuild.core.quest.QuestBuiltinComponents;
 import com.catoxide.catoxidesbattlerebuild.network.ModNetworkHandler;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEvents;
@@ -62,6 +63,21 @@ public class CatoxidesBattleRebuild {
                         e,
                         com.catoxide.catoxidesbattlerebuild.registry.ModWeapons.IRON_SWORD_WEAPON.get()));
 
+        // context 无条件创建：主 mod 自身也可用批量注册接口（registerItemsAndBlocks 等），
+        // 包缺席时（R3）接口只是没有包内容可注册，行为不变。
+        contentPackContext = new ContentPackContext(
+                CatoxidesBattleRebuildConstants.MODID,
+                ModSounds.SOUNDS,
+                ModEntities.ENTITIES,
+                modEventBus,
+                modContainer
+        );
+        ModEvents.setContentPackContext(contentPackContext);
+
+        // 通用任务组件（proximity_giver / item_present / item_submit）：纯 JSON 任务包不必自写工厂。
+        // 必须在包 register() 之前注册 —— 包注册同名类型时后注册者生效（可覆盖内置实现）。
+        QuestBuiltinComponents.register();
+
         loadContentPacks(modEventBus);
 
         LogManager.serverInfo("CatoxidesBattleRebuild", "Mod initialization complete");
@@ -78,17 +94,9 @@ public class CatoxidesBattleRebuild {
         int loaded = ContentPackLoader.loadAll(scanDirs, CatoxidesBattleRebuildConstants.MOD_VERSION);
 
         if (loaded > 0) {
-            contentPackContext = new ContentPackContext(
-                    CatoxidesBattleRebuildConstants.MODID,
-                    ModSounds.SOUNDS,
-                    ModEntities.ENTITIES,
-                    modEventBus,
-                    modContainer
-            );
             // 配置声明必须先于 executeAllRegistries：包的 register() 里要能 ctx.config(id)
             ContentPackConfigBridge.registerAll(contentPackContext);
             ContentPackLoader.executeAllRegistries(contentPackContext);
-            ModEvents.setContentPackContext(contentPackContext);
             LogManager.serverStartup("CatoxidesBattleRebuild", "ContentPacks loaded: " + loaded);
         } else {
             LogManager.serverInfo("CatoxidesBattleRebuild", "No ContentPacks found in %s", scanDirs);

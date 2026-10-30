@@ -8,6 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
@@ -39,6 +40,8 @@ public final class MarkerService {
 
     /** 与客户端准星射线一致（256 格），否则远处标记会被服务端静默丢弃。 */
     private static final double MAX_CREATE_DISTANCE = 256.0;
+    /** 编辑坐标的水平上限（与原版世界边界的绝对值一致）。 */
+    private static final double MAX_COORD = 30_000_000.0;
     /** 实体标记发光：每次续 3 秒；标记消失后最多 3 秒自然过期。 */
     private static final int GLOW_DURATION_TICKS = 60;
 
@@ -73,6 +76,12 @@ public final class MarkerService {
             return;
         }
         MarkerType effective = sticky && type == MarkerType.PING ? MarkerType.STICKY : type;
+        if (effective == MarkerType.PING) {
+            // 临时标记没有名字、也不参与「名字 / 图标」呈现
+            data = data.copy();
+            data.remove(MarkerData.KEY_LABEL);
+            data.remove(MarkerData.KEY_DISPLAY);
+        }
         long now = System.currentTimeMillis();
         MarkerSavedData store = MarkerSavedData.get(player.getServer());
 
@@ -211,16 +220,26 @@ public final class MarkerService {
         }
     }
 
-    /** 编辑图标/名字：owner 或 op。{@code resetIcon} 清除手动图标覆盖。 */
+    /**
+     * 编辑图标/名字/坐标/呈现方式/罗盘开关：owner 或 op。{@code resetIcon} 清除手动图标覆盖。
+     *
+     * <p>只有永久地点标记（{@link MarkerType#editable()}）可编辑；临时标记会随 TTL 消失，
+     * 服务端直接拒绝，避免客户端绕开界面改别人的临时标记。
+     */
     public static void updateByRequest(ServerPlayer player, UUID id,
                                        ResourceLocation icon, String label,
-                                       boolean resetIcon) {
+                                       boolean resetIcon,
+                                       double x, double y, double z,
+                                       boolean showName, boolean compass) {
         MarkerSavedData store = MarkerSavedData.get(player.getServer());
         for (MarkerDto marker : store.markers()) {
             if (!marker.id().equals(id)) {
                 continue;
             }
             if (!marker.owner().equals(player.getUUID()) && !player.hasPermissions(2)) {
+                return;
+            }
+            if (!marker.type().editable()) {
                 return;
             }
             CompoundTag data = marker.data().copy();
@@ -235,12 +254,73 @@ public final class MarkerService {
                 // 只在真的换了图标时锁定，避免「没改图标」也把物品/生物图标顶掉
                 data.putBoolean(MarkerData.KEY_ICON_OVERRIDE, true);
             }
+            data.putBoolean(MarkerData.KEY_COMPASS, compass);
+
+            double newX = marker.x();
+            double newY = marker.y();
+            double newZ = marker.z();
+            data.putString(MarkerData.KEY_DISPLAY,
+                    showName ? MarkerData.DISPLAY_NAME : MarkerData.DISPLAY_ICON);
+            if (finiteCoords(x, y, z)) {
+                newX = Mth.clamp(x, -MAX_COORD, MAX_COORD);
+                newZ = Mth.clamp(z, -MAX_COORD, MAX_COORD);
+                // 超出世界高度会被画到虚空/天上，夹回建造范围
+                ServerLevel level = player.getServer() == null ? null
+                        : player.getServer().getLevel(ResourceKey.create(
+                                Registries.DIMENSION, marker.dimension()));
+                ServerLevel bounds = level == null ? player.serverLevel() : level;
+                newY = Mth.clamp(y, bounds.getMinBuildHeight(), bounds.getMaxBuildHeight());
+            }
             MarkerDto updated = new MarkerDto(marker.id(), marker.owner(), marker.type(),
-                    icon, marker.dimension(), marker.x(), marker.y(), marker.z(),
+                    icon, marker.dimension(), newX, newY, newZ,
                     marker.entityId(), marker.slot(), marker.targetKey(), data,
                     marker.createdAt(), marker.expiresAt());
             store.replace(updated);
             broadcast(player.getServer(), updated, System.currentTimeMillis());
+            return;
+        }
+    }
+
+    private static boolean finiteCoords(double x, double y, double z) {
+        return Double.isFinite(x) && Double.isFinite(y) && Double.isFinite(z);
+    }
+
+    /**
+     * 把别人分享的永久地点标记复制成自己的（「永久化」）：新 UUID、owner = 自己、永久。
+     *
+     * <p>只有 STICKY 能永久化，且必须当前可见（防止按 id 越权复制）；复制一份后原标记照旧只读。
+     * 同一来源只保留一份，重复点不会堆出一串副本。
+     */
+    public static void adoptByRequest(ServerPlayer player, UUID id) {
+        if (!MarkerServerConfig.shareMarkers()) {
+            return;
+        }
+        MarkerSavedData store = MarkerSavedData.get(player.getServer());
+        for (MarkerDto marker : store.markers()) {
+            if (!marker.id().equals(id)) {
+                continue;
+            }
+            if (!marker.type().editable() || marker.owner().equals(player.getUUID())) {
+                return;
+            }
+            if (!visibleTo(player, marker)) {
+                return;
+            }
+            String source = id.toString();
+            for (MarkerDto existing : store.markers()) {
+                if (existing.owner().equals(player.getUUID())
+                        && source.equals(existing.data().getString(MarkerData.KEY_SOURCE))) {
+                    return;
+                }
+            }
+            CompoundTag data = marker.data().copy();
+            data.putString(MarkerData.KEY_SOURCE, source);
+            long now = System.currentTimeMillis();
+            MarkerDto copy = new MarkerDto(UUID.randomUUID(), player.getUUID(), MarkerType.STICKY,
+                    marker.icon(), marker.dimension(), marker.x(), marker.y(), marker.z(),
+                    -1, -1, "", data, now, 0L);
+            store.add(copy);
+            broadcast(player.getServer(), copy, now);
             return;
         }
     }

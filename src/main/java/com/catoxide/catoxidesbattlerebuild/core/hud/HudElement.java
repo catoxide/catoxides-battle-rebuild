@@ -1,6 +1,9 @@
 package com.catoxide.catoxidesbattlerebuild.core.hud;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+
+import java.util.List;
 
 /**
  * 一个可被 HUD 布局系统拖动的内容包元素（客户端）。
@@ -35,6 +38,15 @@ public interface HudElement {
 
     /** 未应用偏移时的矩形（GUI 缩放单位）。每帧调用，可依赖屏幕尺寸与玩家状态。 */
     Bounds bounds();
+
+    /**
+     * 右键菜单条目。框架只负责显示与派发，内容完全由元素决定；默认空。
+     *
+     * @see HudAction
+     */
+    default List<HudAction> actions() {
+        return List.of();
+    }
 
     record Bounds(int x, int y, int width, int height) {
 

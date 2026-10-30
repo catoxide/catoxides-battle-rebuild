@@ -1,9 +1,6 @@
 package example.contentpack.map;
 
-import net.minecraft.client.multiplayer.ClientLevel;
-
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Comparator;
 
 /**
  * 地图层的命名与坐标换算。
@@ -22,7 +19,18 @@ public final class MapLayer {
     public static final String TOP = "top";
     public static final int SECTION_HEIGHT = 16;
 
+    /** 层列表顺序：surface 最前，切片按起始 y 从低到高，非法名排最后。 */
+    public static final Comparator<String> ORDER = Comparator.comparingInt(MapLayer::rank);
+
     private MapLayer() {
+    }
+
+    private static int rank(String layer) {
+        if (TOP.equals(layer)) {
+            return Integer.MIN_VALUE;
+        }
+        int y = absoluteY(layer);
+        return y == Integer.MIN_VALUE ? Integer.MAX_VALUE : y;
     }
 
     public static String section(int absoluteY) {
@@ -55,6 +63,20 @@ public final class MapLayer {
         return minY != Integer.MIN_VALUE && y >= minY && y < minY + SECTION_HEIGHT;
     }
 
+    /**
+     * 群系预测只对 surface 层有意义：切片是地表以下的水平切口，
+     * 把地表群系铺在洞穴层下面只会挡住洞穴。
+     */
+    public static boolean showsBiome(String layer) {
+        return TOP.equals(layer);
+    }
+
+    /** 层名是否落在该维度高度范围内（世界高度改过之后，旧存档里的层要藏起来）。 */
+    public static boolean inRange(String layer, int minBuildHeight, int maxBuildHeight) {
+        int y = absoluteY(layer);
+        return y != Integer.MIN_VALUE && y >= minBuildHeight && y < maxBuildHeight;
+    }
+
     /** 人类可读标签，用于地图界面的层提示。 */
     public static String label(String layer) {
         if (TOP.equals(layer)) {
@@ -65,14 +87,5 @@ public final class MapLayer {
             return layer;
         }
         return "y" + minY + ".." + (minY + SECTION_HEIGHT - 1);
-    }
-
-    /** 当前维度所有可切换的切片（按高度从低到高）。 */
-    public static List<String> allSections(ClientLevel level) {
-        List<String> layers = new ArrayList<>();
-        for (int y = level.getMinBuildHeight(); y < level.getMaxBuildHeight(); y += SECTION_HEIGHT) {
-            layers.add(section(y));
-        }
-        return layers;
     }
 }

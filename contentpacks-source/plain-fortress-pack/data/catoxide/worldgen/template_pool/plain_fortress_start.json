@@ -1,0 +1,15 @@
+{
+  "name": "catoxide:plain_fortress_start",
+  "fallback": "minecraft:empty",
+  "elements": [
+    {
+      "weight": 1,
+      "element": {
+        "location": "catoxide:plain_fortress/central_basin",
+        "processors": "minecraft:empty",
+        "projection": "rigid",
+        "element_type": "minecraft:single_pool_element"
+      }
+    }
+  ]
+}

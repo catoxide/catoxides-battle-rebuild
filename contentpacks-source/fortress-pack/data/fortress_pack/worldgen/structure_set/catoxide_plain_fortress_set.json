@@ -1,0 +1,15 @@
+{
+  "structures": [
+    {
+      "structure": "fortress_pack:catoxide_plain_fortress",
+      "weight": 1
+    }
+  ],
+  "placement": {
+    "type": "minecraft:random_spread",
+    "spacing": 25,
+    "separation": 18,
+    "salt": 20260128,
+    "frequency": 1
+  }
+}

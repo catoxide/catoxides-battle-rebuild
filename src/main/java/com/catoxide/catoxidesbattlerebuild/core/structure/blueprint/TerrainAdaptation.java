@@ -11,7 +11,19 @@ public enum TerrainAdaptation {
     @SerializedName("beard_thin") BEARD_THIN,
     @SerializedName("ground_hug") GROUND_HUG;
 
+    /**
+     * Map onto the values minecraft:jigsaw actually accepts:
+     * none | beard_thin | beard_box | bury | encapsulate.
+     * (This used to return name().toLowerCase(), which produced invalid values such as
+     * "beard_cut" and "ground_hug".)
+     */
     public String toVanillaString() {
-        return this.name().toLowerCase();
+        switch (this) {
+            case BEARD_CUT: return "beard_box";
+            case GROUND_HUG: return "bury";
+            case BEARD_THIN: return "beard_thin";
+            case NONE:
+            default: return "none";
+        }
     }
 }

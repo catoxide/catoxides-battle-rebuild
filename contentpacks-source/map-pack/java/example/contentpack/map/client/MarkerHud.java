@@ -2,6 +2,7 @@ package example.contentpack.map.client;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import example.contentpack.map.MapHooks;
+import example.contentpack.map.MapProjection;
 import example.contentpack.map.MapView;
 import example.contentpack.map.marker.MarkerData;
 import example.contentpack.map.marker.MarkerDto;
@@ -30,6 +31,11 @@ final class MarkerHud {
     private static final double FADE_MILLIS = 2_000.0;
     /** 超过这个距离只显示在罗盘上，不再占屏幕。 */
     private static final double MAX_SCREEN_DISTANCE = 64.0;
+    /**
+     * 「聚焦」锥半角（度）：准星离标记中心这么近才显示名称/距离。
+     * 与图标的世界屏幕角半径（0.25 / 6 rad ≈ 2.4°）对齐，看着像准星压在图标上。
+     */
+    private static final float FOCUS_CONE_DEGREES = 2.5f;
 
     private MarkerHud() {
     }
@@ -58,7 +64,7 @@ final class MarkerHud {
                 continue;
             }
             float alpha = alphaOf(marker);
-            if (marker.type().waypoint()) {
+            if (marker.type().temporaryWaypoint()) {
                 drawTriangle(graphics, px, py, 4, withAlpha(0xFFFFFFFF, alpha));
             } else {
                 drawIcon(graphics, marker, px, py, 0.5f, alpha);
@@ -66,8 +72,12 @@ final class MarkerHud {
         }
     }
 
+    /**
+     * 全屏地图：临时地点标记画三角形；永久地点标记按编辑屏选的「名字 / 图标」二选一当位置标志；
+     * 其它类型画自己的图标/头像。
+     */
     static void renderFullmap(GuiGraphics graphics, Minecraft minecraft,
-                              int left, int top, int view, int bpp,
+                              int left, int top, int view, double bpp,
                               double minWorldX, double minWorldZ, ResourceLocation dimension,
                               float partialTick) {
         ClientLevel level = minecraft.level;
@@ -79,23 +89,20 @@ final class MarkerHud {
             if (pos == null) {
                 continue;
             }
-            int px = left + (int) Math.floor((pos.x - minWorldX) / bpp);
-            int py = top + (int) Math.floor((pos.z - minWorldZ) / bpp);
+            int px = left + MapProjection.pixel(pos.x, minWorldX, bpp);
+            int py = top + MapProjection.pixel(pos.z, minWorldZ, bpp);
             if (px < left || px >= left + view || py < top || py >= top + view) {
                 continue;
             }
             float alpha = alphaOf(marker);
-            if (marker.type().waypoint()) {
-                // 尖端钉住目标点；上方优先放名字，没有名字但手动换过图标就放图标
+            if (marker.type().temporaryWaypoint()) {
                 drawTriangle(graphics, px, py, 5, withAlpha(0xFFFFFFFF, alpha));
+            } else if (marker.type().waypoint() && MarkerData.showsName(marker)) {
+                // 名字本身就是位置标志（永久标记的「名字 / 图标」二选一）
                 String label = marker.data().getString(MarkerData.KEY_LABEL);
-                if (!label.isBlank()) {
-                    graphics.drawString(minecraft.font, label,
-                            px - minecraft.font.width(label) / 2, py - 16,
-                            withAlpha(0xFFFFFFFF, alpha), true);
-                } else if (MarkerData.iconOverride(marker)) {
-                    drawIcon(graphics, marker, px, py - 11, 0.7f, alpha);
-                }
+                graphics.drawString(minecraft.font, label,
+                        px - minecraft.font.width(label) / 2, py - 4,
+                        withAlpha(0xFFFFFFFF, alpha), true);
             } else {
                 drawIcon(graphics, marker, px, py, 1.0f, alpha);
             }
@@ -103,7 +110,9 @@ final class MarkerHud {
     }
 
     /**
-     * 世界内标记的屏幕指示：视野内投影到实际方向，视野外贴屏幕边缘；下方显示距离。
+     * 世界内标记的屏幕指示：视野内投影到实际方向，视野外贴屏幕边缘。
+     * 临时标记画小三角形，其余画图标；名称/距离只在准星聚焦（{@link #FOCUS_CONE_DEGREES}）时显示，
+     * 临时标记没有名称，聚焦也只显示距离。
      */
     static void renderWorldIndicators(GuiGraphics graphics, DeltaTracker deltaTracker) {
         Minecraft minecraft = Minecraft.getInstance();
@@ -161,8 +170,18 @@ final class MarkerHud {
                 px = deltaYaw < 0 ? 18 : width - 18;
                 py = Mth.clamp((int) Math.round(height / 2.0 - deltaPitch * 6.0), 24, height - 24);
             }
-            drawIcon(graphics, marker, px, py, scale, alpha);
-            String label = marker.data().getString("label");
+            if (marker.type().temporaryWaypoint()) {
+                drawTriangle(graphics, px, py, 4, withAlpha(0xFFFFFFFF, alpha));
+            } else {
+                drawIcon(graphics, marker, px, py, scale, alpha);
+            }
+            // 名称 / 距离只在「聚焦」（准星附近）时显示，临时标记没有名字
+            if (!onScreen || Math.abs(deltaYaw) >= FOCUS_CONE_DEGREES
+                    || Math.abs(deltaPitch) >= FOCUS_CONE_DEGREES) {
+                continue;
+            }
+            String label = marker.type().temporaryWaypoint()
+                    ? "" : marker.data().getString(MarkerData.KEY_LABEL);
             String distanceText = Math.round(distance) + "m";
             String text = label.isBlank() ? distanceText : label + "  " + distanceText;
             int color = withAlpha(0xFFFFFFFF, alpha);
@@ -188,10 +207,15 @@ final class MarkerHud {
         double eyeX = minecraft.player.getX();
         double eyeZ = minecraft.player.getZ();
         int barY = top + (bottom - top) / 2;
+        float markerScale = (float) CompassConfig.markerScale();
+        int markerHalf = Math.max(2, Math.round(4.0f * markerScale));
         List<CompassOut> leftOut = new ArrayList<>();
         List<CompassOut> rightOut = new ArrayList<>();
 
         for (MarkerDto marker : MarkerClient.visibleMarkers(dimension)) {
+            if (!MarkerData.showsInCompass(marker)) {
+                continue;
+            }
             Vec3 pos = MapHooks.INSTANCE.resolveMarker(level, marker, partialTick);
             if (pos == null) {
                 continue;
@@ -212,16 +236,16 @@ final class MarkerHud {
             }
             int x = centerX + (int) Math.round(project.applyAsDouble(delta));
             x = Mth.clamp(x, left + 2, right - 2);
-            int y = barY - 4;
+            int y = barY - markerHalf;
             float alpha = alphaOf(marker);
-            if (marker.type().waypoint()) {
-                drawTriangle(graphics, x, y + 4, 4, withAlpha(0xFFFFFFFF, alpha));
+            if (marker.type().temporaryWaypoint()) {
+                drawTriangle(graphics, x, barY, markerHalf, withAlpha(0xFFFFFFFF, alpha));
             } else {
-                drawIcon(graphics, marker, x, y, 0.4f, alpha);
+                drawIcon(graphics, marker, x, y, 0.4f * markerScale, alpha);
             }
         }
-        drawOverflow(graphics, leftOut, true, left, right, barY);
-        drawOverflow(graphics, rightOut, false, left, right, barY);
+        drawOverflow(graphics, leftOut, true, left, right, barY, markerHalf, markerScale);
+        drawOverflow(graphics, rightOut, false, left, right, barY, markerHalf, markerScale);
     }
 
     private record CompassOut(MarkerDto marker, float delta) {
@@ -232,20 +256,21 @@ final class MarkerHud {
      * 地点标记画横向三角（指向溢出方向），其它标记画小图标；越往后越淡。
      */
     private static void drawOverflow(GuiGraphics graphics, List<CompassOut> out, boolean left,
-                                     int leftX, int rightX, int barY) {
+                                     int leftX, int rightX, int barY,
+                                     int markerHalf, float markerScale) {
         out.sort((a, b) -> Float.compare(Math.abs(a.delta()), Math.abs(b.delta())));
-        int x = left ? leftX + 5 : rightX - 5;
+        // 横向依次排开：符号宽 2*half，步长 = 半宽 → 三个正好占两个原宽
+        int step = Math.max(3, markerHalf);
         for (int i = 0; i < out.size(); i++) {
             CompassOut entry = out.get(i);
-            // 沿条下方依次排开（不挤在条边缘）
-            int y = barY + i * 8;
+            int x = left ? leftX + 5 + i * step : rightX - 5 - i * step;
             float fade = Math.max(0.35f, 1.0f - i * 0.14f);
             float alpha = alphaOf(entry.marker()) * fade;
-            if (entry.marker().type().waypoint()) {
-                drawSideTriangle(graphics, x, y, 4, left ? -1 : 1,
+            if (entry.marker().type().temporaryWaypoint()) {
+                drawSideTriangle(graphics, x, barY, markerHalf, left ? -1 : 1,
                         withAlpha(0xFFFFC040, alpha));
             } else {
-                drawIcon(graphics, entry.marker(), x, y, 0.35f, alpha);
+                drawIcon(graphics, entry.marker(), x, barY, 0.35f * markerScale, alpha);
             }
         }
     }
@@ -295,14 +320,23 @@ final class MarkerHud {
         }
     }
 
+    /**
+     * 生物默认画脸（玩家读皮肤、其它生物裁贴图里头部正面那块）；只有非生物/手动换过图标的标记才用图标。
+     */
     static void drawIcon(GuiGraphics graphics, MarkerDto marker, int px, int py,
                          float scale, float alpha) {
         if (alpha <= 0.02f) {
             return;
         }
-        Entity portrait = MarkerClient.portrait(marker);
-        if (portrait instanceof LivingEntity living) {
-            drawPortrait(graphics, living, px, py, scale);
+        if (MarkerData.isPlayerPortrait(marker)) {
+            drawFace(graphics, marker, px, py, Math.max(4, Math.round(8 * scale)), alpha);
+        } else if (MarkerClient.portrait(marker) instanceof LivingEntity living) {
+            MarkerFaces.Face face = MarkerFaces.of(living);
+            if (face != null) {
+                drawMobFace(graphics, face, px, py, Math.max(4, Math.round(8 * scale)), alpha);
+            } else {
+                drawPortrait(graphics, living, px, py, scale);
+            }
         } else {
             ItemStack stack = MarkerClient.iconStack(marker);
             RenderSystem.enableBlend();
@@ -327,17 +361,59 @@ final class MarkerHud {
     }
 
     /**
-     * 生物头像：把完整生物模型缩到图标框里（scissor 裁掉超出的部分）。
-     * <p>用原版背包界面的渲染路径，光照/朝向/还原都一致；模型按月龄/体型自动适配。
+     * 生物头像：只露脸。按大约 0.35×体高估头高，把头部放大到图标框里，
+     * 身体被 helper 的 scissor 裁掉，所以不会出现全身。
      */
     private static void drawPortrait(GuiGraphics graphics, LivingEntity living,
                                      int px, int py, float scale) {
-        int half = Math.max(4, Math.round(9.0f * scale));
+        // 和物品图标一样是 16×16（scale=1 时 half=8），保证图标槽对齐
+        int half = Math.max(4, Math.round(8.0f * scale));
         float height = Math.max(0.5f, living.getBbHeight());
-        int pixelsPerBlock = Math.max(1, Math.round(half * 2.0f * 0.82f / height));
+        float headHeight = Math.max(0.25f, Math.min(0.65f, height * 0.35f));
+        int pixelsPerBlock = Math.max(2, Math.round((half * 2.0f) / headHeight));
+        // helper 把 vec.y = bbHeight/2 + yOffset 的点放在框中心；这里改成头部中心
+        float yOffset = height * 0.5f - headHeight * 0.5f;
         InventoryScreen.renderEntityInInventoryFollowsAngle(graphics,
                 px - half, py - half, px + half, py + half,
-                pixelsPerBlock, 0.0625f, 0.0f, 0.0f, living);
+                pixelsPerBlock, yOffset, 0.0f, 0.0f, living);
+    }
+
+    /**
+     * 生物脸：贴图里头部正面那块（一般 8×8），按原比例塞进 16×16 的图标框（scale=1 时），
+     * 和物品图标同一尺寸、同一对齐方式。
+     */
+    private static void drawMobFace(GuiGraphics graphics, MarkerFaces.Face face,
+                                    int px, int py, int half, float alpha) {
+        int box = half * 2;
+        float width = face.width();
+        float height = face.height();
+        int drawWidth = width >= height ? box : Math.max(2, Math.round(box * width / height));
+        int drawHeight = width >= height ? Math.max(2, Math.round(box * height / width)) : box;
+        int space = MarkerFaces.TEXEL_SPACE;
+        RenderSystem.enableBlend();
+        RenderSystem.setShaderColor(1f, 1f, 1f, alpha);
+        graphics.blit(face.texture(), px - drawWidth / 2, py - drawHeight / 2, drawWidth, drawHeight,
+                face.u0() * space, face.v0() * space,
+                Math.max(1, Math.round(width * space)), Math.max(1, Math.round(height * space)),
+                space, space);
+        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+    }
+
+    /** 玩家脸：64×64 皮肤里的正面 8×8（加帽子层），铺满 16×16 图标框。 */
+    private static void drawFace(GuiGraphics graphics, MarkerDto marker,
+                                 int px, int py, int half, float alpha) {
+        if (alpha <= 0.02f) {
+            return;
+        }
+        ResourceLocation skin = MarkerClient.playerSkin(marker);
+        int size = half * 2;
+        int x = px - half;
+        int y = py - half;
+        RenderSystem.enableBlend();
+        RenderSystem.setShaderColor(1f, 1f, 1f, alpha);
+        graphics.blit(skin, x, y, size, size, 8.0f, 8.0f, 8, 8, 64, 64);
+        graphics.blit(skin, x, y, size, size, 40.0f, 8.0f, 8, 8, 64, 64);
+        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
     }
 
     /** TTL 最后 2 秒淡出；永久标记保持 1。 */

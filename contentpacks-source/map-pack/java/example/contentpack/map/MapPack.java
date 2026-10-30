@@ -72,6 +72,7 @@ public final class MapPack implements ContentPack {
         if (CatoxidesBattleRebuildConstants.CLIENT) {
             MapConfig.bind(context.config("map"));
             CompassConfig.bind(context.config("map"));
+            MapSelfTest.run();
             // 地图扩展能力：必须早于依赖 map-pack 的包 register（由 Module-Dependencies 保证顺序）
             context.provide(MapCaps.API, MapHooks.INSTANCE);
             HudElements.register(new MapHudElement());

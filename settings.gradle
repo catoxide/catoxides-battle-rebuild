@@ -40,7 +40,7 @@ dependencyResolutionManagement {
 // 取代 build-pack.ps1 的手工 classpath 文本文件。
 //
 // 只有【含 java/ 源码】的包才需要 Gradle 项目；纯数据包
-// （structure-example-pack）由 build-pack.ps1 打包即可，无需登记。
+// （只有 data/ + assets/，无 java/）由 build-pack.ps1 打包即可，无需登记。
 // 新增代码包：复制一份 5 行 build.gradle 放进包目录即【自动】成为 Gradle 包
 // （见下方自动发现），无需改动 settings.gradle —— 避免多会话抢同一个文件。
 // ============================================================

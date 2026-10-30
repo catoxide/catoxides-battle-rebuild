@@ -15,6 +15,8 @@
   "hudlayout.group.effects": "Status effects",
 
   "hudlayout.editor.title": "HUD layout",
-  "hudlayout.editor.hint": "Drag a handle to move its group. R resets the hovered group. ESC saves and closes.",
-  "hudlayout.editor.offset": "%s,%s"
+  "hudlayout.editor.hint": "Drag a handle to move its group; right-click for its menu. R resets the hovered group. ESC saves and closes.",
+  "hudlayout.editor.offset": "%s,%s",
+  "hudlayout.button.open": "HUD Layout",
+  "hudlayout.action.reset": "Reset position"
 }

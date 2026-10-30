@@ -93,6 +93,7 @@ public final class MapWorld {
         if (worldId != null && !worldId.equals(id)) {
             // 同一进程内换了世界：内存里的地图属于旧世界
             MapStore.clearAll();
+            MapMinimap.resetLayerOverride();
         }
         worldId = id;
         seed = worldSeed;

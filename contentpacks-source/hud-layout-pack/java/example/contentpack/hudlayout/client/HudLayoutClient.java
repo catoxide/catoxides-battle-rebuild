@@ -9,10 +9,17 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.gui.LayeredDraw;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.screens.options.controls.ControlsScreen;
+import net.minecraft.network.chat.CommonComponents;
+import net.minecraft.network.chat.Component;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
@@ -43,6 +50,30 @@ public final class HudLayoutClient {
             while (OPEN_EDITOR.consumeClick()) {
                 openEditor();
             }
+        });
+
+        // 一级菜单入口：原版 选项 → 操作（Controls）屏，放在 Done 左边；标题屏/无世界时置灰。
+        // F8 只是默认键，可在 控制 → 按键绑定 → HUD Layout 里改键或清空。
+        NeoForge.EVENT_BUS.addListener((ScreenEvent.Init.Post event) -> {
+            if (!(event.getScreen() instanceof ControlsScreen controls)) {
+                return;
+            }
+
+            int y = controls.height - 27;
+            for (GuiEventListener child : controls.children()) {
+                if (child instanceof AbstractWidget widget && CommonComponents.GUI_DONE.equals(widget.getMessage())) {
+                    y = widget.getY();
+                    break;
+                }
+            }
+
+            Button open = Button.builder(
+                            Component.translatable("hudlayout.button.open"),
+                            button -> Minecraft.getInstance().setScreen(new HudEditorScreen(controls)))
+                    .bounds(Math.max(4, controls.width / 2 - 204), y, 100, 20)
+                    .build();
+            open.active = Minecraft.getInstance().player != null;
+            event.addListener(open);
         });
     }
 

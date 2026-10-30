@@ -200,8 +200,28 @@ function templateToPiece(buffer, pieceName) {
             paletteAlternatives: region.paletteAlternatives || 0,
             dataVersion: region.dataVersion || null,
             format: region.format,
+            endianness: region.nbtEndianness || null,
+            complete: region.nbtComplete !== false,
         },
     };
+}
+
+/**
+ * start_height 归一（按 1.21.1 目标格式写）：
+ *   1.21.1：常数写 {absolute:n}/{above_bottom:n}，组合类型写 {type, ...params}（扁平）
+ *   1.21.2+：一切类型都包成 {type, value:{...}} —— 直接透传会让 1.21.1 解析失败
+ * @returns {{value:Object, converted:boolean}}
+ */
+function normalizeStartHeight(sh) {
+    if (!sh || typeof sh !== 'object' || Array.isArray(sh)) return { value: { absolute: 0 }, converted: false };
+    if (sh.type === undefined) return { value: sh, converted: false }; // 已是 1.21.1 形状
+    const v = sh.value;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return { value: sh, converted: false };
+    if (sh.type === 'minecraft:constant') {
+        if (Number.isInteger(v.absolute)) return { value: { absolute: v.absolute }, converted: true };
+        if (Number.isInteger(v.above_bottom)) return { value: { above_bottom: v.above_bottom }, converted: true };
+    }
+    return { value: Object.assign({ type: sh.type }, v), converted: true };
 }
 
 // ===== jigsaw 结构 → 蓝图 =====
@@ -262,6 +282,9 @@ function buildJigsawBlueprint(ctx) {
         const piece = conv.piece;
         // 来源回溯（导入 → 导出往返校验/界面提示用；导出时被忽略）
         piece.importFrom = full;
+        if (!conv.info.complete) {
+            warnings.push(`模板 ${full} 只解析出前缀（NBT 尾部有未消费字节，端序/格式可疑），已按可解析部分导入`);
+        }
         stats.pieces++;
         stats.jigsaws += conv.info.jigsaws;
         stats.blockNbt += conv.info.blockNbt;
@@ -398,6 +421,10 @@ function buildJigsawBlueprint(ctx) {
     const startPoolRef = startPoolEntry
         ? (startPoolEntry.dropped ? 'minecraft:empty' : (namespace + ':' + startPoolEntry.name))
         : (json.start_pool || '');
+    const sh = normalizeStartHeight(json.start_height);
+    if (sh.converted) {
+        warnings.push('start_height 是 1.21.2+ 的 {type, value} 分派形式 → 已按 1.21.1 目标格式改写: ' + JSON.stringify(sh.value));
+    }
     const structure = {
         step: json.step || 'surface_structures',
         terrainAdaptation: json.terrain_adaptation || 'none',
@@ -405,7 +432,7 @@ function buildJigsawBlueprint(ctx) {
         maxDistanceFromCenter: json.max_distance_from_center != null ? json.max_distance_from_center : 80,
         biomes: S.normalizeBiomes(json.biomes),
         size: json.size != null ? Math.max(S.JIGSAW_SIZE_MIN, Math.min(S.JIGSAW_SIZE_MAX, json.size)) : 7,
-        startHeight: (json.start_height && typeof json.start_height === 'object') ? json.start_height : { absolute: 0 },
+        startHeight: sh.value,
         useExpansionHack: json.use_expansion_hack !== false,
         projectStartToHeightmap: json.project_start_to_heightmap || null,
     };
@@ -509,6 +536,9 @@ function importVanilla(srcPath, opts = {}) {
             const base = path.basename(srcPath, path.extname(srcPath));
             const sid = sanitizeId(opts.structureId || base);
             const conv = templateToPiece(buf, 'main');
+            if (!conv.info.complete) {
+                result.warnings.push('模板 NBT 只解析出前缀（尾部有未消费字节，端序/格式可疑），已按可解析部分导入');
+            }
             // 模板里的 jigsaw 池引用：保留原完整 ID（单模板导入时无法解析池）
             for (const j of conv.piece.jigsaws || []) {
                 if (!j.pool) j.pool = 'minecraft:empty';
@@ -587,7 +617,16 @@ function importVanilla(srcPath, opts = {}) {
             return v;
         };
         const readPoolJson = (ns, p) => readJson(`data/${ns}/worldgen/template_pool/${p}.json`);
-        const readTemplate = (ns, p) => src.read(`data/${ns}/structure/${p}.nbt`);
+        // 模板路径万能读：1.21+ 用 data/<ns>/structure/（单数），1.20.x 及更早用 structures/（复数）。
+        // 先单数后复数；命中旧路径时记下来，最后汇总一条告警（不逐文件刷屏）。
+        const legacyTemplateDirs = new Set();
+        const readTemplate = (ns, p) => {
+            const modern = src.read(`data/${ns}/structure/${p}.nbt`);
+            if (modern) return modern;
+            const legacy = src.read(`data/${ns}/structures/${p}.nbt`);
+            if (legacy) { legacyTemplateDirs.add(ns); return legacy; }
+            return null;
+        };
         const structureSets = scanWorldgen(names, 'structure_set').map((s) => {
             const json = readJson(s.rel);
             return json ? { fullId: s.ns + ':' + s.path, json } : null;
@@ -616,19 +655,29 @@ function importVanilla(srcPath, opts = {}) {
                     listStructureSets: () => structureSets,
                     sourceLabel: srcPath,
                 });
+                // 先落告警再校验：校验失败时「哪个池的哪个模板读不到」是定位原因的唯一线索，
+                // 此前只在成功分支拼进报告 → 失败时用户只看到「至少需要一个片段」。
+                for (const w of built.warnings) result.warnings.push(`[${sid}] ${w}`);
                 const v = S.validateBlueprint(built.blueprint);
                 if (!v.valid) {
                     // 0.2.1：校验失败的蓝图不算「已导入」（此前 imported++ 仍执行 → 报告里
                     // 「写入 N 个」与实际不符，主进程二次校验时又会静默跳过）
                     result.errors.push(`${sid}: 生成的蓝图校验失败: ${v.errors.slice(0, 3).join('; ')}`);
+                    if (!built.blueprint.pieces.length) {
+                        result.errors.push(`${sid}: 没有任何模板被读到（已查找 data/<ns>/structure/ 与 data/<ns>/structures/ 下的 .nbt，见上方告警）`);
+                    }
                     continue;
                 }
                 result.blueprints.push({ blueprint: built.blueprint, warnings: built.warnings, stats: built.stats });
-                for (const w of built.warnings) result.warnings.push(`[${sid}] ${w}`);
                 imported++;
             } catch (e) {
                 result.errors.push(fullId + ': ' + (e.message || e));
             }
+        }
+        if (legacyTemplateDirs.size) {
+            result.warnings.push('来源使用 1.20.x 旧模板目录 data/<ns>/structures/（复数）：' +
+                [...legacyTemplateDirs].join(', ') +
+                ' —— 已按现代路径读取；导出时统一写成 data/<ns>/structure/（单数）');
         }
         result.ok = imported > 0;
         if (!imported) result.errors.push('没有可导入的 minecraft:jigsaw 结构');

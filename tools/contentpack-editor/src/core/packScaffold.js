@@ -149,7 +149,7 @@ function entryLocation(moduleEntry) {
  * 所以有实体时骨架必须生成这段注册代码，否则包的 JSON 是「死数据」。
  *
  * @param {{moduleEntry:string, packId?:string, displayName?:string, version?:string, entityIds?:string[],
- *          itemIds?:string[], blockIds?:string[]}} cfg
+ *          itemIds?:string[], blockIds?:string[], questIds?:string[]}} cfg
  * @returns {string|null}
  */
 /** Java 字符串字面量转义（REVIEW-M5：displayName/Module-Version 是用户输入，
@@ -174,6 +174,8 @@ function renderEntryClass(cfg) {
     const itemIds = (cfg.itemIds || []).filter((id) => ENTITY_ID_RE.test(id));
     const blockIds = (cfg.blockIds || []).filter((id) => ENTITY_ID_RE.test(id));
     const hasItemBlocks = itemIds.length + blockIds.length > 0;
+    const questIds = (cfg.questIds || []).filter((id) => ENTITY_ID_RE.test(id));
+    const hasQuests = questIds.length > 0;
     const L = [];
 
     L.push(`package ${loc.pkg};`);
@@ -214,6 +216,12 @@ function renderEntryClass(cfg) {
         L.push(' * {@code registerItemsAndBlocksFromJar()} 扫描本包 jar，按契约校验并注册');
         L.push(' * （含自定义参数 blockstate、方块实体、BlockItem、创造栏）。');
     }
+    if (hasQuests) {
+        L.push(' *');
+        L.push(' * <p>任务（quests/*.json）同样不会自动注册：{@code registerQuestsFromJar()}');
+        L.push(' * 扫描本包 jar、逐个严格解析并注册定义，注册到 1 条以上时自动安装默认驱动');
+        L.push(' * （发放 + 完成检查）。giver/goal 用基座内置类型即可，纯 JSON 任务包不必写 Java。');
+    }
     L.push(' */');
     L.push(`public class ${loc.cls} implements ContentPack {`);
     L.push('');
@@ -246,11 +254,17 @@ function renderEntryClass(cfg) {
         L.push('        context.registerItemsAndBlocksFromJar();');
         body = true;
     }
+    if (hasQuests) {
+        L.push('        // 扫描注册本包 quests/*.json（基座内置 giver/goal，纯 JSON 任务包不需要驱动代码）');
+        L.push('        context.registerQuestsFromJar();');
+        body = true;
+    }
     if (!body) {
         L.push('        // TODO 在这里注册内容，例如：');
         L.push('        // context.registerDataDrivenMob(MobDefinitionParser.parse(json));');
         L.push('        // context.registerStructure(blueprint);');
         L.push('        // context.registerItemsAndBlocksFromJar();   // 批量注册 items/ + blocks/');
+        L.push('        // context.registerQuestsFromJar();          // 扫描注册 quests/*.json');
         L.push('        // context.provide(MyCapability.INSTANCE, impl);   // 供其它包消费');
     }
     L.push('    }');
@@ -285,6 +299,107 @@ function renderEntryClass(cfg) {
     }
     L.push('}');
     return L.join('\n') + '\n';
+}
+
+// ============================================================
+// 已有入口类的外科式补丁（绝不整类重生成）
+// ============================================================
+
+/**
+ * 在已有入口类源码的 register(ContentPackContext) 方法体**末尾**补一行
+ * {@code context.registerQuestsFromJar()}。
+ *
+ * 为什么插在末尾而不是开头：registerQuestsFromJar 会【立即】解析并注册 quests/*.json，
+ * 而 JSON 里的自定义 giver/goal 类型要靠同一个 register() 里先调
+ * {@code registerGoalType(...)}。插在开头 ⇒ 自定义类型还没注册 ⇒ 解析失败、文件被隔离
+ * （quest-test-pack 就是这个形状：先注册 proximity/kill/craft 工厂，再扫 JSON）。
+ *
+ * 为什么不重生成整类：老的入口类可能已经手写了工厂注册、命令、网络包、
+ * 事件监听（参考 quest-test-pack 的 200 行 register()），重生成 = 删掉用户代码。
+ * 只在方法闭合括号前插一行，其余字节不动。
+ *
+ * 幂等：已出现 registerQuestsFromJar 调用 → changed:false / 'already'。
+ *
+ * @param {string} source 入口类源码
+ * @returns {{changed:boolean, reason:string, source:string}}
+ *          reason: already | no-register-method | unterminated | empty
+ */
+function insertQuestRegistration(source) {
+    const text = String(source == null ? '' : source);
+    if (!text.trim()) return { changed: false, reason: 'empty', source: text };
+    if (/\bregisterQuestsFromJar\s*\(/.test(text)) {
+        return { changed: false, reason: 'already', source: text };
+    }
+    // 允许形参前有 final，且签名可跨行（\s 含换行）
+    const sig = /public\s+void\s+register\s*\(\s*(?:final\s+)?ContentPackContext\s+([A-Za-z_$][\w$]*)\s*\)\s*\{/;
+    const m = sig.exec(text);
+    if (!m) return { changed: false, reason: 'no-register-method', source: text };
+    const param = m[1];
+    const bodyStart = m.index + m[0].length;
+
+    const bodyEnd = findMatchingBrace(text, bodyStart);
+    if (bodyEnd < 0) return { changed: false, reason: 'unterminated', source: text };
+
+    const nl = text.includes('\r\n') ? '\r\n' : '\n';
+    // 闭合括号所在行的行首（语句插在它前面，闭合括号原样保留在自己那行）
+    const lineStart = text.lastIndexOf('\n', bodyEnd - 1) + 1;
+    const beforeBrace = text.slice(lineStart, bodyEnd);
+    const statement = (indent) =>
+        `${indent}// 扫描注册本包 quests/*.json（基座内置 giver/goal，纯 JSON 任务包不需要驱动代码）` +
+        nl + indent + `${param}.registerQuestsFromJar();`;
+
+    if (beforeBrace.trim() === '') {
+        // 常规多行方法：按闭合括号缩进 + 4 插在括号上一行
+        const indent = /^[ \t]*/.exec(beforeBrace)[0] + '    ';
+        return {
+            changed: true,
+            reason: '',
+            source: text.slice(0, lineStart) + statement(indent) + nl + text.slice(lineStart),
+        };
+    }
+    // 单行方法体（{ a(); }）：只能就地插在括号前，用空格分隔
+    const indent = ' ';
+    return {
+        changed: true,
+        reason: '',
+        source: text.slice(0, bodyEnd) + statement(indent) + ' ' + text.slice(bodyEnd),
+    };
+}
+
+/**
+ * 从开括号之后开始找配对的闭括号下标；跳过字符串/字符字面量、行注释、块注释、文本块。
+ * 找不到（源码被截断）返回 -1。
+ */
+function findMatchingBrace(text, from) {
+    let depth = 1;
+    for (let i = from; i < text.length; i++) {
+        const c = text[i];
+        if (c === '/' && text[i + 1] === '/') {
+            const e = text.indexOf('\n', i + 2);
+            i = e < 0 ? text.length : e;
+        } else if (c === '/' && text[i + 1] === '*') {
+            const e = text.indexOf('*/', i + 2);
+            if (e < 0) return -1;
+            i = e + 1;
+        } else if (c === '"' && text.startsWith('"""', i)) {
+            const e = text.indexOf('"""', i + 3);
+            if (e < 0) return -1;
+            i = e + 2;
+        } else if (c === '"' || c === "'") {
+            const q = c;
+            i++;
+            while (i < text.length && text[i] !== q) {
+                if (text[i] === '\\') i++;
+                i++;
+            }
+        } else if (c === '{') {
+            depth++;
+        } else if (c === '}') {
+            depth--;
+            if (depth === 0) return i;
+        }
+    }
+    return -1;
 }
 
 // ============================================================
@@ -558,6 +673,7 @@ const PackScaffoldAPI = {
     canonicalizeManifest,
     renderBuildGradle,
     renderEntryClass,
+    insertQuestRegistration,
     entryLocation,
     validateManifest,
     validateEntities,

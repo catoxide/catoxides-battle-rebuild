@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "configs": [
+    {
+      "id": "sablemap",
+      "scope": "CLIENT",
+      "file": "sable-map-client",
+      "defaultTier": "HOT",
+      "sections": [
+        {
+          "key": "layer",
+          "values": [
+            {
+              "key": "enabled",
+              "type": "bool",
+              "default": true,
+              "comment": [
+                "Draw Sable sub-levels and entities standing on them on the map."
+              ]
+            },
+            {
+              "key": "showShips",
+              "type": "bool",
+              "default": true,
+              "comment": "Draw the top-down snapshot of each sub-level."
+            },
+            {
+              "key": "showEntities",
+              "type": "bool",
+              "default": true,
+              "comment": [
+                "Draw living entities standing on sub-levels, including other players.",
+                "The local player keeps the map's normal red dot."
+              ]
+            },
+            {
+              "key": "showOnMinimap",
+              "type": "bool",
+              "default": true,
+              "comment": "Also draw the layer on the corner minimap."
+            },
+            {
+              "key": "showOnFullmap",
+              "type": "bool",
+              "default": true,
+              "comment": "Also draw the layer on the full-screen world map."
+            },
+            {
+              "key": "opacity",
+              "type": "double",
+              "default": 1.0,
+              "min": 0.2,
+              "max": 1.0,
+              "comment": "Opacity of the sub-level snapshot (0.2 - 1.0)."
+            },
+            {
+              "key": "maxTexture",
+              "type": "int",
+              "default": 384,
+              "min": 64,
+              "max": 1024,
+              "comment": [
+                "Longest edge of a sub-level snapshot texture, in pixels.",
+                "Large ships are downsampled; lower values save memory."
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

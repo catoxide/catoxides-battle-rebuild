@@ -1,0 +1,13 @@
+// ============================================================
+// ContentPack: fortress-pack
+// 引用方向：本包 ──▶ core（根项目），永不反向。
+// 构建约定全部在 ../contentpack.gradle（共享单一真源）。
+// ============================================================
+plugins {
+    id 'java-library'
+    id 'net.neoforged.gradle.userdev'
+}
+apply from: '../contentpack.gradle'
+
+// 纯数据包（原版 jigsaw 结构）：无 Java 入口类，data/ 随 jar 整树收集。
+// 源形状：structures/<id>/blueprint.json（CPE 编辑用）+ data/<ns>/...（导出的原版文件）

@@ -24,6 +24,8 @@ public class QuestInstance {
     private QuestInstance parent;
     private boolean starred;
     private long startedAt;
+    /** 进入终态（完成/失败）的时刻（毫秒）；ACTIVE 为 0。可重复任务的 cooldown 从这里算 */
+    private long endedAtMillis;
     private String giverId;
 
     QuestInstance(QuestDefinition definition, UUID playerId, QuestInstance parent, String giverId) {
@@ -62,6 +64,7 @@ public class QuestInstance {
 
     void setState(QuestState state) {
         this.state = state;
+        this.endedAtMillis = state == QuestState.ACTIVE ? 0L : System.currentTimeMillis();
     }
 
     public boolean isActive() {
@@ -95,6 +98,19 @@ public class QuestInstance {
 
     public long getStartedAt() {
         return startedAt;
+    }
+
+    /** 进入终态的时刻（毫秒）；仍为 ACTIVE 时返回 0 */
+    public long getEndedAtMillis() {
+        return endedAtMillis;
+    }
+
+    /** 存档恢复用：还原发放/结束时刻（不经过 setState，避免 endedAt 被改写成当前时间） */
+    void restoreTimestamps(long startedAt, long endedAtMillis) {
+        this.startedAt = startedAt;
+        if (this.state != QuestState.ACTIVE) {
+            this.endedAtMillis = endedAtMillis;
+        }
     }
 
     // ========== 星标（UI 置顶） ==========

@@ -6,6 +6,7 @@ import com.mojang.blaze3d.platform.NativeImage;
 import example.contentpack.map.MapConfig;
 import example.contentpack.map.MapHooks;
 import example.contentpack.map.MapLayer;
+import example.contentpack.map.MapScan;
 import example.contentpack.map.MapStorage;
 import example.contentpack.map.MapStore;
 import example.contentpack.map.MapTile;
@@ -18,7 +19,9 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 右上角小地图。
@@ -45,6 +48,9 @@ public final class MapMinimap {
     private static String lastLayer;
     private static int lastSize;
     private static int lastBpp;
+
+    /** 手动选的层（null = 跟随维度默认）。跨界面保留，换世界时清空。 */
+    private static String layerOverride;
 
     private MapMinimap() {
     }
@@ -155,10 +161,16 @@ public final class MapMinimap {
     }
 
     /**
-     * 小地图当前看的层：地狱跟随玩家所在切片（top 在基岩天花板下永远是基岩），
-     * 其他维度固定 surface。
+     * 当前看的层：手动选的层（全屏地图 / PageUp/Down）优先，
+     * 否则地狱跟随玩家所在切片（top 在基岩天花板下永远是基岩），其他维度固定 surface。
+     *
+     * <p>选择存在静态字段里：全屏地图关掉再打开、小地图都看同一层，切换才「真的生效」。
      */
     static String activeLayer(ClientLevel level) {
+        String override = layerOverride;
+        if (override != null) {
+            return override;
+        }
         if (level.dimension() != Level.NETHER) {
             return MapLayer.TOP;
         }
@@ -167,12 +179,42 @@ public final class MapMinimap {
         return MapLayer.section(MapLayer.sectionStart(y, level.getMinBuildHeight()));
     }
 
-    /** 全屏地图可切换的层：surface + 当前维度所有 16 格切片。 */
-    static List<String> selectableLayers(ClientLevel level) {
-        List<String> layers = new ArrayList<>();
+    static void setLayerOverride(String layer) {
+        layerOverride = layer;
+    }
+
+    static void resetLayerOverride() {
+        layerOverride = null;
+    }
+
+    /**
+     * 可切换的层：surface + 磁盘/内存里有数据的切片 + 玩家当前所在的切片。
+     *
+     * <p>只列「有内容或正在采集」的层：切片是按玩家所在 y 采集的，
+     * 把 24 个切片全摆出来只会让人点到一整屏空白。
+     */
+    static List<String> availableLayers(ClientLevel level) {
+        ResourceLocation dimension = level.dimension().location();
+        int minBuildHeight = level.getMinBuildHeight();
+        int maxBuildHeight = level.getMaxBuildHeight();
+        Set<String> layers = new HashSet<>();
         layers.add(MapLayer.TOP);
-        layers.addAll(MapLayer.allSections(level));
-        return layers;
+        layers.addAll(MapStorage.knownLayers(dimension));
+        layers.addAll(MapStore.layers(dimension));
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player != null) {
+            layers.add(MapLayer.section(MapLayer.sectionStart(
+                    minecraft.player.getBlockY(), minBuildHeight)));
+        }
+        List<String> ordered = new ArrayList<>();
+        for (String layer : layers) {
+            if (MapLayer.TOP.equals(layer)
+                    || MapLayer.inRange(layer, minBuildHeight, maxBuildHeight)) {
+                ordered.add(layer);
+            }
+        }
+        ordered.sort(MapLayer.ORDER);
+        return ordered;
     }
 
     private static void rebuild(Minecraft minecraft, ClientLevel level, ResourceLocation dimension,
@@ -183,7 +225,7 @@ public final class MapMinimap {
         int originX = centerX - span / 2;
         int originZ = centerZ - span / 2;
         requestVisibleTiles(dimension, layer, originX, originZ, span, 64);
-        boolean prediction = MapLayer.TOP.equals(layer);
+        boolean prediction = MapLayer.showsBiome(layer) && MapConfig.showBiomePrediction();
         if (prediction) {
             MapBiomeLayer.ensureVisible(dimension, originX, originZ, span);
         }
@@ -231,34 +273,37 @@ public final class MapMinimap {
     /**
      * 可见范围内的瓦片若不在内存，异步从磁盘读。
      *
-     * @param limit 单次请求上限；视野很大时只拉中心附近，避免拖动时 IO 风暴
+     * <p>整个视口都会覆盖，按圈由内向外；磁盘上没有的瓦片由 {@link MapStorage} 的正索引挡掉，
+     * 不会产生读请求，所以 {@code limit} 只限制「真正排队」的数量，而不是扫描范围。
      */
     static void requestVisibleTiles(ResourceLocation dimension, String layer,
                                     int originX, int originZ, int span, int limit) {
+        if (limit <= 0) {
+            return;
+        }
         int minTileX = MapTile.tileCoord(originX);
         int maxTileX = MapTile.tileCoord(originX + span - 1);
         int minTileZ = MapTile.tileCoord(originZ);
         int maxTileZ = MapTile.tileCoord(originZ + span - 1);
-        int total = (maxTileX - minTileX + 1) * (maxTileZ - minTileZ + 1);
-        if (total > limit) {
-            // 只取中心附近的方形区域
-            int radius = Math.max(1, (int) Math.ceil(Math.sqrt(limit) / 2.0));
-            int centerX = (minTileX + maxTileX) / 2;
-            int centerZ = (minTileZ + maxTileZ) / 2;
-            minTileX = centerX - radius;
-            maxTileX = centerX + radius;
-            minTileZ = centerZ - radius;
-            maxTileZ = centerZ + radius;
-        }
-        int requested = 0;
-        for (int tileX = minTileX; tileX <= maxTileX; tileX++) {
-            for (int tileZ = minTileZ; tileZ <= maxTileZ; tileZ++) {
-                if (requested++ >= limit) {
-                    return;
-                }
-                MapStorage.requestLoad(dimension, layer, tileX, tileZ);
+        int centerX = (minTileX + maxTileX) / 2;
+        int centerZ = (minTileZ + maxTileZ) / 2;
+        int radius = Math.max(Math.max(maxTileX - centerX, centerX - minTileX),
+                Math.max(maxTileZ - centerZ, centerZ - minTileZ));
+        int[] requested = {0};
+        MapScan.centerOut(radius, (dx, dz) -> {
+            if (requested[0] >= limit) {
+                return false;
             }
-        }
+            int tileX = centerX + dx;
+            int tileZ = centerZ + dz;
+            if (tileX < minTileX || tileX > maxTileX || tileZ < minTileZ || tileZ > maxTileZ) {
+                return true;
+            }
+            if (MapStorage.requestLoad(dimension, layer, tileX, tileZ)) {
+                requested[0]++;
+            }
+            return true;
+        });
     }
 
     private static void releaseTexture(Minecraft minecraft) {

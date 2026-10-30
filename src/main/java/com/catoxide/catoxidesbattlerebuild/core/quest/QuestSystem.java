@@ -3,9 +3,11 @@ package com.catoxide.catoxidesbattlerebuild.core.quest;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import com.google.gson.JsonObject;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -49,7 +51,11 @@ public final class QuestSystem {
     // ========== 定义注册（内容包） ==========
 
     public void registerDefinition(QuestDefinition definition) {
-        definitions.put(definition.id(), definition);
+        QuestDefinition previous = definitions.put(definition.id(), definition);
+        if (previous != null) {
+            LogManager.serverWarn(TAG, "Quest definition '%s' overwritten by a later registration (duplicate id across packs?)",
+                    definition.id());
+        }
         LogManager.serverInfo(TAG, "Registered quest definition '%s': children=%s, goals=%s, givers=%s",
                 definition.id(), definition.children().size(), definition.goals().size(), definition.givers().size());
     }
@@ -89,6 +95,104 @@ public final class QuestSystem {
         return Optional.ofNullable(conditionFactories.get(type));
     }
 
+    // ========== 通用 tick 驱动（纯 JSON 任务包用） ==========
+
+    private static boolean defaultDriverInstalled;
+
+    /**
+     * 安装通用每 tick 驱动：对所有在线玩家评估每个定义的 {@link IQuestGiver} 自动发放，
+     * 并递归检查整棵任务树的完成/失败条件。幂等。
+     * <p>{@code ContentPackContext.registerQuestsFromJar()} 会自动安装；
+     * 手写 Java 定义的包也可主动调用，代替自己写 tick 循环。
+     */
+    public static synchronized void installDefaultDriver() {
+        if (defaultDriverInstalled) {
+            return;
+        }
+        defaultDriverInstalled = true;
+        NeoForge.EVENT_BUS.addListener((ServerTickEvent.Post event) -> INSTANCE.tickAllQuests(event.getServer()));
+        LogManager.serverInfo(TAG, "Default quest driver installed (auto-give + completion check per tick)");
+    }
+
+    private void tickAllQuests(MinecraftServer server) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            UUID playerId = player.getUUID();
+            long now = System.currentTimeMillis();
+            for (QuestDefinition def : definitions.values()) {
+                // 一次性任务：收到过就永不再发；可重复任务：终态 + cooldown 后可再发。
+                // 每次发放都新建实例（新 UUID 实例 id），终态实例由 giveQuest 剪枝封顶。
+                if (QuestGivePolicy.canAutoGive(def.repeatable(), def.cooldownTicks(),
+                        hasActive(playerId, def), hasAnyInstance(playerId, def),
+                        lastTerminalAtMillis(playerId, def.id()), now)
+                        && anyGiverWants(def, player)) {
+                    giveQuest(player, def, "tick:" + def.id().getPath());
+                }
+            }
+            checkAllQuests(player);
+        }
+    }
+
+    private boolean hasActive(UUID playerId, QuestDefinition def) {
+        return playerRootQuests.getOrDefault(playerId, List.of()).stream()
+                .anyMatch(q -> q.isActive() && q.getDefinition().id().equals(def.id()));
+    }
+
+    private boolean hasAnyInstance(UUID playerId, QuestDefinition def) {
+        return playerRootQuests.getOrDefault(playerId, List.of()).stream()
+                .anyMatch(q -> q.getDefinition().id().equals(def.id()));
+    }
+
+    /** 该玩家该定义最近一次进入终态的时刻（毫秒）；没有终态实例返回 0 */
+    private long lastTerminalAtMillis(UUID playerId, ResourceLocation defId) {
+        long latest = 0L;
+        for (QuestInstance q : playerRootQuests.getOrDefault(playerId, List.of())) {
+            if (!q.isActive() && q.getDefinition().id().equals(defId)) {
+                latest = Math.max(latest, q.getEndedAtMillis());
+            }
+        }
+        return latest;
+    }
+
+    /**
+     * 终态实例剪枝：同一玩家同一定义只保留最近 {@link QuestGivePolicy#TERMINAL_HISTORY_LIMIT} 个，
+     * 否则可重复任务每轮完成/再发都会留下一个终态实例，无限增长。
+     */
+    private void pruneTerminalHistory(UUID playerId, ResourceLocation defId) {
+        List<QuestInstance> roots = playerRootQuests.get(playerId);
+        if (roots == null) {
+            return;
+        }
+        List<QuestInstance> terminal = new ArrayList<>();
+        for (QuestInstance q : roots) {
+            if (!q.isActive() && q.getDefinition().id().equals(defId)) {
+                terminal.add(q);
+            }
+        }
+        int excess = terminal.size() - QuestGivePolicy.TERMINAL_HISTORY_LIMIT;
+        if (excess <= 0) {
+            return;
+        }
+        terminal.sort(Comparator.comparingLong(QuestInstance::getStartedAt));
+        for (int i = 0; i < excess; i++) {
+            roots.remove(terminal.get(i));
+        }
+        LogManager.serverDebug(TAG, "Pruned %d old terminal instance(s) of '%s' (player=%s)",
+                excess, defId, playerId);
+    }
+
+    private static boolean anyGiverWants(QuestDefinition def, ServerPlayer player) {
+        for (IQuestGiver giver : def.givers()) {
+            try {
+                if (giver.canGive(player)) {
+                    return true;
+                }
+            } catch (Exception e) {
+                LogManager.serverError(TAG, "giver.canGive threw: %s", e.getMessage(), e);
+            }
+        }
+        return false;
+    }
+
     // ========== 生命周期 ==========
 
     /**
@@ -110,18 +214,27 @@ public final class QuestSystem {
 
     /**
      * 发放任务（直接传定义）。
-     * <p>防重复：玩家已有该定义的激活实例时返回 null（拒绝重复发放）。
+     * <p>防重复：玩家已有该定义的 ACTIVE 实例时返回 null；
+     * 一次性定义（{@code repeatable=false}）收到过任何实例（含终态）也返回 null。
+     * 可重复定义在终态后可再次发放，每次都是新实例（新 UUID 实例 id）；
+     * 旧终态实例按 {@link QuestGivePolicy#TERMINAL_HISTORY_LIMIT} 淘汰，不会无限增长。
+     * <p>显式调用不检查 {@code cooldownTicks}（那是 tick 自动发放的节流，见 {@link QuestGivePolicy}）。
      */
     public QuestInstance giveQuest(ServerPlayer player, QuestDefinition def, String giverId) {
-        boolean hasActive = playerRootQuests.getOrDefault(player.getUUID(), List.of()).stream()
-                .anyMatch(q -> q.isActive() && q.getDefinition().id().equals(def.id()));
-        if (hasActive) {
+        UUID playerId = player.getUUID();
+        if (hasActive(playerId, def)) {
             LogManager.serverInfo(TAG, "giveQuest rejected: player {} already has active '{}'",
-                    player.getUUID(), def.id());
+                    playerId, def.id());
             return null;
         }
+        if (!def.repeatable() && hasAnyInstance(playerId, def)) {
+            LogManager.serverInfo(TAG, "giveQuest rejected: player {} already has non-repeatable '{}'",
+                    playerId, def.id());
+            return null;
+        }
+        pruneTerminalHistory(playerId, def.id());
         QuestInstance root = createInstanceTree(player, def, null, giverId);
-        playerRootQuests.computeIfAbsent(player.getUUID(), k -> new ArrayList<>()).add(root);
+        playerRootQuests.computeIfAbsent(playerId, k -> new ArrayList<>()).add(root);
         for (IQuestGiver giver : def.givers()) {
             try {
                 giver.onGive(player, root);
@@ -130,8 +243,9 @@ public final class QuestSystem {
             }
         }
         NeoForge.EVENT_BUS.post(new QuestEvents.QuestGivenEvent(root, player, giverId));
-        LogManager.serverInfo(TAG, "Quest '%s' given to player %s (giver=%s)", def.id(), player.getName().getString(), giverId);
-        markDirty(player.getUUID());
+        LogManager.serverInfo(TAG, "Quest '%s' given to player %s (giver=%s, instance=%s)",
+                def.id(), player.getName().getString(), giverId, root.getInstanceId());
+        markDirty(playerId);
         return root;
     }
 
@@ -167,7 +281,9 @@ public final class QuestSystem {
      * 仅遍历根任务（getActiveQuestsSorted）会漏掉子任务的完成检查。
      */
     public void checkAllQuests(ServerPlayer player) {
-        List<QuestInstance> roots = playerRootQuests.getOrDefault(player.getUUID(), List.of());
+        // 快照迭代：完成一个可重复任务时会在 doComplete 里剪枝根列表（remove），
+        // 直接遍历活列表会 ConcurrentModificationException
+        List<QuestInstance> roots = List.copyOf(playerRootQuests.getOrDefault(player.getUUID(), List.of()));
         for (QuestInstance root : roots) {
             checkTree(root, player);
         }
@@ -299,11 +415,19 @@ public final class QuestSystem {
         return true;
     }
 
-    /** 实际完成动作（状态 + 广播 + 父检查传播） */
+    /** 实际完成动作（状态 + 完成副作用 + 广播 + 父检查传播） */
     private void doComplete(QuestInstance quest) {
         quest.setState(QuestState.COMPLETED);
         ServerPlayer player = findPlayer(quest.getPlayerId());
         if (player != null) {
+            // 完成副作用（如 item_submit 扣物品）先于事件广播，监听者看到的是交付后的状态
+            for (IQuestGoal goal : quest.getDefinition().goals()) {
+                try {
+                    goal.onQuestCompleted(quest, player);
+                } catch (Exception e) {
+                    LogManager.serverError(TAG, "goal.onQuestCompleted threw: %s", e.getMessage(), e);
+                }
+            }
             NeoForge.EVENT_BUS.post(new QuestEvents.QuestCompletedEvent(quest, player));
         }
         LogManager.serverInfo(TAG, "Quest '%s' completed (player=%s)", quest.getDefinition().id(),
@@ -312,6 +436,10 @@ public final class QuestSystem {
         QuestInstance parent = quest.getParent();
         if (parent != null && parent.isActive()) {
             checkCompletion(parent);
+        }
+        // 可重复的根任务：完成即裁掉过老的终态历史（checkAllQuests 已用快照迭代，可安全移除）
+        if (parent == null && quest.getDefinition().repeatable()) {
+            pruneTerminalHistory(quest.getPlayerId(), quest.getDefinition().id());
         }
         markDirty(quest.getPlayerId());
     }
@@ -487,6 +615,10 @@ public final class QuestSystem {
                 : java.util.UUID.randomUUID().toString();
         QuestInstance quest = new QuestInstance(instanceId, def, playerId, parent, t.getString("giverId"));
         quest.setState(QuestState.valueOf(t.getString("state")));
+        // 时间戳必须还原：可重复任务的 cooldown 从 endedAt 算，丢失会导致重启后立即重发
+        quest.restoreTimestamps(
+                t.contains("startedAt") ? t.getLong("startedAt") : System.currentTimeMillis(),
+                t.contains("endedAt") ? t.getLong("endedAt") : 0L);
         quest.setStarred(t.getBoolean("starred"));
         net.minecraft.nbt.CompoundTag progress = t.getCompound("progress");
         for (String key : progress.getAllKeys()) {

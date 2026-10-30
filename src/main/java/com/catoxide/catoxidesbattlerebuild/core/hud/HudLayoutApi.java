@@ -10,6 +10,10 @@ import net.minecraft.resources.ResourceLocation;
  *
  * <p>读接口按元素 id 调用即可，内部按 {@link HudElement#group()} 折叠到组偏移；
  * 未登记的元素 id 直接当作组键处理。
+ *
+ * <p>todo:deprecated（2026-10-26 定标）—— 联动已收敛为 Capability 单路线
+ * （design/PACK_DEPS_AND_LINKAGE.md §3 形态 C）；本类照常工作但禁止新增使用者，迁移时机由用户定。
+ * {@link HudElements} 的元素登记表属「包→core 内容登记」轴（AGENTS §4），不在本次收敛范围。
  */
 public final class HudLayoutApi {
 

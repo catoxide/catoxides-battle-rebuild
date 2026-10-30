@@ -30,10 +30,23 @@ public enum MarkerType {
     }
 
     /**
-     * 地点标记：世界 / 罗盘 / 地图上都画成「指向位置的小三角形」。
+     * 地点标记：PING / STICKY。
      * <p>PING 与 STICKY 已经覆盖了原先 MAP 的语义，所以不再单独保留 MAP。
      */
     public boolean waypoint() {
         return this == PING || this == STICKY;
+    }
+
+    /**
+     * 临时地点标记：世界 / 罗盘 / 地图上画小三角形，没有名字、图标不可编辑。
+     * <p>永久地点标记（STICKY）必须绑定一个真实图标，用它代替三角形当位置标志。
+     */
+    public boolean temporaryWaypoint() {
+        return this == PING;
+    }
+
+    /** 可编辑（名字 / 坐标 / 图标 / 呈现方式）的只有永久地点标记。 */
+    public boolean editable() {
+        return this == STICKY;
     }
 }

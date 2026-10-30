@@ -95,6 +95,93 @@ test('物品/方块 id 非法时不触发批量注册（TODO 注释不算）', (
     const src = Scaffold.renderEntryClass({ moduleEntry: 'a.b.C', itemIds: ['Bad-Id'], blockIds: ['x y'] });
     assert.ok(!/^ {8}context\.registerItemsAndBlocksFromJar\(\);$/m.test(src), '不应生成实际调用');
 });
+test('有任务时生成 registerQuestsFromJar 调用（否则 quests/ 是死数据）', () => {
+    const src = Scaffold.renderEntryClass({
+        moduleEntry: 'example.contentpack.my.MyPack', packId: 'my_pack', questIds: ['q_intro'],
+    });
+    assert.ok(src.includes('context.registerQuestsFromJar();'));
+    assert.ok(!src.includes('context.registerItemsAndBlocksFromJar();'), '无物品/方块时不应顺带生成批量注册');
+});
+test('insertQuestRegistration：只插一行，其余源码逐字保留', () => {
+    const original = [
+        'package example.contentpack.questtest;',
+        '',
+        'public class QuestTestPack implements ContentPack {',
+        '    @Override',
+        '    public void register(ContentPackContext context) {',
+        '        QuestSystem qs = QuestSystem.getInstance();',
+        '        qs.registerGoalType("kill", json -> new KillGoal("zombie", 1f));',
+        '    }',
+        '}',
+        '',
+    ].join('\n');
+    const r = Scaffold.insertQuestRegistration(original);
+    assert.strictEqual(r.changed, true);
+    // 原文件每一行都还在，且顺序不变（插入行之外零改动）
+    const kept = r.source.split('\n').filter((l) => !l.includes('registerQuestsFromJar') && !l.includes('扫描注册本包'));
+    assert.deepStrictEqual(kept, original.split('\n'));
+    assert.ok(/^ {8}\/\/ 扫描注册本包 quests\/\*\.json/m.test(r.source), '注释缩进应跟随方法体');
+    assert.ok(/^ {8}context\.registerQuestsFromJar\(\);$/m.test(r.source));
+    assert.ok(r.source.endsWith('    }\n}\n'), '闭合括号与类结尾必须原样保留');
+});
+test('insertQuestRegistration：插在 register() 末尾（自定义工厂必须先注册）', () => {
+    // quest-test-pack 形状：JSON 里的 kill/craft 靠 register() 里先调 registerGoalType；
+    // 插到方法开头 ⇒ 扫 JSON 时类型还没注册 ⇒ 这些任务被隔离。
+    const src = [
+        'public class P implements ContentPack {',
+        '    public void register(ContentPackContext ctx) {',
+        '        ctx.modBus().registerGoalType("kill", f);',
+        '        NeoForge.EVENT_BUS.addListener((E e) -> { if (e.x) { log(); } });',
+        '    }',
+        '}',
+    ].join('\n');
+    const r = Scaffold.insertQuestRegistration(src);
+    assert.ok(r.changed);
+    const iFactory = r.source.indexOf('registerGoalType');
+    const iScan = r.source.indexOf('registerQuestsFromJar');
+    const iListener = r.source.indexOf('addListener');
+    assert.ok(iScan > iFactory, '扫描必须在工厂注册之后');
+    assert.ok(iScan > iListener, '扫描必须在方法体末尾（大括号/字符串不干扰配对）');
+});
+test('insertQuestRegistration：含字符串/字符/注释里的大括号不会打乱配对', () => {
+    const src = [
+        'public void register(ContentPackContext c) {',
+        '    String s = "} not the end {";',
+        "    char ch = '}';",
+        '    // } 行注释',
+        '    /* } 块注释 */',
+        '    if (s != null) { log("x"); }',
+        '}',
+        'class After { void x() { } }',
+    ].join('\n');
+    const r = Scaffold.insertQuestRegistration(src);
+    assert.ok(r.changed, r.reason);
+    assert.ok(r.source.indexOf('registerQuestsFromJar') < r.source.indexOf('class After'), '不能插到类外面');
+    assert.ok(r.source.includes('class After { void x() { } }'), '后面的类必须原样保留');
+});
+test('insertQuestRegistration：幂等 / 无 register 方法 / 空源码', () => {
+    const once = Scaffold.insertQuestRegistration('public void register(ContentPackContext ctx) {\n    a();\n}\n');
+    assert.strictEqual(once.changed, true);
+    assert.ok(once.source.includes('ctx.registerQuestsFromJar();'), '应使用实际形参名');
+    const twice = Scaffold.insertQuestRegistration(once.source);
+    assert.strictEqual(twice.changed, false);
+    assert.strictEqual(twice.reason, 'already');
+    assert.strictEqual(twice.source, once.source);
+
+    const noMethod = Scaffold.insertQuestRegistration('public class X { }\n');
+    assert.strictEqual(noMethod.reason, 'no-register-method');
+    assert.strictEqual(noMethod.source, 'public class X { }\n');
+
+    assert.strictEqual(Scaffold.insertQuestRegistration('').reason, 'empty');
+});
+test('insertQuestRegistration：空方法体与 CRLF 换行也正确', () => {
+    // 空方法体：唯一非空行是闭合括号，语句缩进 = 括号缩进 + 4
+    const empty = 'public class X {\r\n    public void register(ContentPackContext c) {\r\n    }\r\n}\r\n';
+    const r = Scaffold.insertQuestRegistration(empty);
+    assert.ok(r.changed);
+    assert.ok(r.source.includes('\r\n        c.registerQuestsFromJar();\r\n'), JSON.stringify(r.source));
+    assert.ok(r.source.endsWith('    }\r\n}\r\n'), '闭合括号所在行必须原样保留');
+});
 
 console.log('=== 4. MANIFEST 预检 ===');
 test('合法 MANIFEST 无 error', () => {
