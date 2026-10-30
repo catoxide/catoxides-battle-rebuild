@@ -45,7 +45,7 @@ public final class CompassOverlay {
         int screenWidth = minecraft.getWindow().getGuiScaledWidth();
         int dx = HudLayoutApi.offsetX(CompassHudElement.ID);
         int dy = HudLayoutApi.offsetY(CompassHudElement.ID);
-        int barWidth = Math.min(300, screenWidth - 24);
+        int barWidth = CompassConfig.barWidth(screenWidth);
         int left = (screenWidth - barWidth) / 2 + dx;
         int right = left + barWidth;
         int centerX = screenWidth / 2 + dx;

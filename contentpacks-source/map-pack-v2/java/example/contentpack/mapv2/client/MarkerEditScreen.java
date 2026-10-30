@@ -1,13 +1,20 @@
 package example.contentpack.mapv2.client;
 
+import example.contentpack.mapv2.MapLayer;
+import example.contentpack.mapv2.MapStore;
 import example.contentpack.mapv2.marker.MarkerData;
 import example.contentpack.mapv2.marker.MarkerDto;
+import example.contentpack.mapv2.marker.MarkerType;
+import example.contentpack.mapv2.network.MarkerCreatePayload;
 import example.contentpack.mapv2.network.MarkerUpdatePayload;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -20,13 +27,21 @@ import java.util.Locale;
 import java.util.function.Predicate;
 
 /**
- * 标记编辑：名字 + 坐标 + 地图呈现方式 + 罗盘开关 + 图标（搜索 + 候选网格 + 翻页）。
+ * 标记编辑 / 新建：名字 + 坐标 + 地图呈现方式 + 罗盘开关 + 图标（搜索 + 候选网格 + 翻页）。
  *
- * <p>只对永久地点标记（{@link example.contentpack.mapv2.marker.MarkerType#editable()}）有意义：
- * 坐标与「名字 / 图标」都只对地点标记生效，其它类型即便被打开这里也只读；
+ * <p>编辑模式只对永久地点标记（{@link example.contentpack.mapv2.marker.MarkerType#editable()}）
+ * 有意义：坐标与「名字 / 图标」都只对地点标记生效，其它类型即便被打开这里也只读；
  * 保存后走 {@link MarkerUpdatePayload}，服务端校验 owner/op。
+ *
+ * <p>新建模式（世界地图右键「设置路径点」）先打开这里再发 {@link MarkerCreatePayload}：
+ * 这样未加载区域也能设点（不走准星 256 格限制），且 X/Z 已填、Y 留空——
+ * 保存时取地图采到的地表高度，未采集就用 63。
  */
 public final class MarkerEditScreen extends Screen {
+
+    /** 新建路径点的默认图标：和旧版地图右键直接建点的图标一致。 */
+    private static final ResourceLocation DEFAULT_ICON =
+            ResourceLocation.withDefaultNamespace("nether_star");
 
     private static final int COLS = 9;
     private static final int ROWS = 4;
@@ -39,7 +54,11 @@ public final class MarkerEditScreen extends Screen {
     private static final Predicate<String> NUMBER_FILTER =
             text -> text.isEmpty() || text.matches("-?\\d*(\\.\\d*)?");
 
+    /** 编辑模式的目标；新建模式为 {@code null}。 */
     private final MarkerDto marker;
+    private final int createWorldX;
+    private final int createWorldZ;
+    private final String createLayer;
     private EditBox nameBox;
     private EditBox xBox;
     private EditBox yBox;
@@ -57,11 +76,26 @@ public final class MarkerEditScreen extends Screen {
     public MarkerEditScreen(MarkerDto marker) {
         super(Component.translatable("catoxidesbattlerebuild.map.marker.edit"));
         this.marker = marker;
+        this.createWorldX = 0;
+        this.createWorldZ = 0;
+        this.createLayer = MapLayer.TOP;
         this.selectedIcon = MarkerData.iconOverride(marker) ? marker.icon() : null;
         // 没有显式写过 display 的老标记：有名字就写名字
         this.showName = !MarkerData.DISPLAY_ICON.equals(
                 marker.data().getString(MarkerData.KEY_DISPLAY));
         this.compassOn = MarkerData.showsInCompass(marker);
+    }
+
+    /** 新建路径点：X/Z 已填、Y 留空，保存时按地图高度补。 */
+    public MarkerEditScreen(int worldX, int worldZ, String layer) {
+        super(Component.translatable("catoxidesbattlerebuild.map.marker.create"));
+        this.marker = null;
+        this.createWorldX = worldX;
+        this.createWorldZ = worldZ;
+        this.createLayer = layer;
+        this.selectedIcon = null;
+        this.showName = true;
+        this.compassOn = true;
     }
 
     @Override
@@ -73,13 +107,20 @@ public final class MarkerEditScreen extends Screen {
         nameBox = new EditBox(this.font, center - 100, 26, 200, 18,
                 Component.translatable("catoxidesbattlerebuild.map.marker.name"));
         nameBox.setMaxLength(48);
-        nameBox.setValue(marker.data().getString(MarkerData.KEY_LABEL));
+        nameBox.setValue(marker == null ? "" : marker.data().getString(MarkerData.KEY_LABEL));
         addRenderableWidget(nameBox);
 
-        boolean movable = marker.type().editable();
-        xBox = coordinateBox(center - 92, "X", marker.x(), movable);
-        yBox = coordinateBox(center - 24, "Y", marker.y(), movable);
-        zBox = coordinateBox(center + 44, "Z", marker.z(), movable);
+        boolean creating = marker == null;
+        boolean movable = creating || marker.type().editable();
+        xBox = coordinateBox(center - 92, "X",
+                creating ? Long.toString(createWorldX) : formatCoordinate(marker.x()), movable);
+        yBox = coordinateBox(center - 24, "Y",
+                creating ? "" : formatCoordinate(marker.y()), movable);
+        zBox = coordinateBox(center + 44, "Z",
+                creating ? Long.toString(createWorldZ) : formatCoordinate(marker.z()), movable);
+        if (creating) {
+            yBox.setHint(Component.translatable("catoxidesbattlerebuild.map.marker.y_auto"));
+        }
 
         Button displayButton = addRenderableWidget(Button.builder(displayText(), button -> {
             showName = !showName;
@@ -116,11 +157,11 @@ public final class MarkerEditScreen extends Screen {
         refresh();
     }
 
-    private EditBox coordinateBox(int x, String axis, double value, boolean editable) {
+    private EditBox coordinateBox(int x, String axis, String value, boolean editable) {
         EditBox box = new EditBox(this.font, x, COORD_Y, 56, 18, Component.literal(axis));
         box.setMaxLength(16);
         box.setFilter(NUMBER_FILTER);
-        box.setValue(formatCoordinate(value));
+        box.setValue(value);
         box.setEditable(editable);
         addRenderableWidget(box);
         return box;
@@ -159,6 +200,11 @@ public final class MarkerEditScreen extends Screen {
     }
 
     @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // 留空：原版会在地图界面后面糊一层世界，这里不要
+    }
+
+    @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         graphics.fill(0, 0, this.width, this.height, 0xD0101010);
         graphics.drawCenteredString(this.font, this.title, this.width / 2, 12, 0xFFFFFFFF);
@@ -180,7 +226,7 @@ public final class MarkerEditScreen extends Screen {
             boolean selected;
             if (index == 0) {
                 // 默认表现：标记自己绑定的图标（永久标记必须绑真实图标，不再用三角形）
-                graphics.renderItem(MarkerClient.iconStack(marker), x + 1, y + 1);
+                graphics.renderItem(baseIconStack(), x + 1, y + 1);
                 selected = selectedIcon == null;
             } else {
                 ResourceLocation id = filtered.get(index - 1);
@@ -221,7 +267,18 @@ public final class MarkerEditScreen extends Screen {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
+    private ItemStack baseIconStack() {
+        return marker == null
+                ? new ItemStack(BuiltInRegistries.ITEM.get(DEFAULT_ICON))
+                : MarkerClient.iconStack(marker);
+    }
+
     private void save() {
+        if (marker == null) {
+            createMarker();
+            onClose();
+            return;
+        }
         boolean resetIcon = selectedIcon == null;
         boolean movable = marker.type().editable();
         PacketDistributor.sendToServer(new MarkerUpdatePayload(
@@ -232,6 +289,43 @@ public final class MarkerEditScreen extends Screen {
                 movable ? parseCoordinate(zBox, marker.z()) : marker.z(),
                 movable && showName, compassOn));
         onClose();
+    }
+
+    private void createMarker() {
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null || Minecraft.getInstance().player == null) {
+            return;
+        }
+        double x = parseCoordinate(xBox, createWorldX) + 0.5;
+        double z = parseCoordinate(zBox, createWorldZ) + 0.5;
+        int blockX = (int) Math.floor(x);
+        int blockZ = (int) Math.floor(z);
+        double y = resolveCreateY(level, blockX, blockZ);
+        ResourceLocation icon = selectedIcon == null ? DEFAULT_ICON : selectedIcon;
+
+        CompoundTag data = new CompoundTag();
+        String label = nameBox == null ? "" : nameBox.getValue().trim();
+        if (!label.isEmpty()) {
+            data.putString(MarkerData.KEY_LABEL, label);
+        }
+        data.putString(MarkerData.KEY_DISPLAY,
+                showName ? MarkerData.DISPLAY_NAME : MarkerData.DISPLAY_ICON);
+        data.putBoolean(MarkerData.KEY_COMPASS, compassOn);
+        if (selectedIcon != null) {
+            data.putBoolean(MarkerData.KEY_ICON_OVERRIDE, true);
+        }
+        PacketDistributor.sendToServer(new MarkerCreatePayload(
+                MarkerType.STICKY.name(), icon, x, y, z, -1, -1,
+                "map:" + blockX + "," + blockZ, data, true));
+    }
+
+    /** Y 留空时用地图采到的地表高度；未采集（未加载区域）用 63。 */
+    private double resolveCreateY(ClientLevel level, int blockX, int blockZ) {
+        if (yBox != null && !yBox.getValue().trim().isEmpty()) {
+            return parseCoordinate(yBox, 63);
+        }
+        int surfaceY = MapStore.sampleHeight(level.dimension().location(), createLayer, blockX, blockZ);
+        return surfaceY == Integer.MIN_VALUE ? 63.0 : surfaceY;
     }
 
     private static double parseCoordinate(EditBox box, double fallback) {

@@ -15,8 +15,16 @@
   "hudlayout.group.effects": "Status effects",
 
   "hudlayout.editor.title": "HUD layout",
-  "hudlayout.editor.hint": "Drag a handle to move its group; right-click for its menu. R resets the hovered group. ESC saves and closes.",
+  "hudlayout.editor.hint": "Drag a box to move; drag the corner grip to resize.",
+  "hudlayout.editor.hint.menu": "Right-click a group for reset / move axis / options.",
+  "hudlayout.editor.hint.keys": "Right-click a row = default. R = reset group. ESC = save and close.",
   "hudlayout.editor.offset": "%s,%s",
   "hudlayout.button.open": "HUD Layout",
-  "hudlayout.action.reset": "Reset position"
+  "hudlayout.action.reset": "Reset position",
+  "hudlayout.action.move_axis": "Move axis: %s",
+  "hudlayout.action.options": "Options...",
+  "hudlayout.axis.free": "Free",
+  "hudlayout.axis.horizontal": "Horizontal only",
+  "hudlayout.axis.vertical": "Vertical only",
+  "hudlayout.panel.restart_hint": "Orange: written, but needs a reload or restart to apply."
 }

@@ -16,6 +16,12 @@ public final class CompassConfig {
         config = packConfig;
     }
 
+    /** 罗盘条宽度（GUI 像素），再受屏幕宽度限制，避免窄屏时溢出。 */
+    public static int barWidth(int screenWidth) {
+        int width = Math.max(120, Math.min(600, getInt("width", 300)));
+        return Math.min(width, screenWidth - 24);
+    }
+
     public static boolean fovTicks() {
         return get("fovTicks", false);
     }

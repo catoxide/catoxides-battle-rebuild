@@ -2,6 +2,7 @@ package com.catoxide.catoxidesbattlerebuild.core.hud;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -46,6 +47,29 @@ public interface HudElement {
      */
     default List<HudAction> actions() {
         return List.of();
+    }
+
+    /**
+     * 可以在布局包的面板里调的配置选项，按面板中的显示顺序排列；默认空。
+     *
+     * <p>这里是声明，不是实现：选项的类型、区间、默认值、生效档位和显示名全部来自
+     * 元素所属包自己的 {@code config-declarations.json}，布局包只是把它们渲染成控件并写回。
+     * 同一份声明因此同时服务内置配置屏和 HUD 面板，不会有两份真相。
+     *
+     * @see HudConfigOption
+     */
+    default List<HudConfigOption> options() {
+        return List.of();
+    }
+
+    /**
+     * 尺寸可由拖动边角改变的声明；返回 {@code null}（默认）表示这个元素<b>不可拉伸</b>，
+     * 布局包不给它画拉伸手柄。
+     *
+     * @see HudResize
+     */
+    default @Nullable HudResize resize() {
+        return null;
     }
 
     record Bounds(int x, int y, int width, int height) {

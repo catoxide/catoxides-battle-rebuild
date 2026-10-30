@@ -40,6 +40,8 @@ public final class MarkerService {
 
     /** 与客户端准星射线一致（256 格），否则远处标记会被服务端静默丢弃。 */
     private static final double MAX_CREATE_DISTANCE = 256.0;
+    /** 世界地图右键设点的 targetKey 前缀；这类点允许落在未加载区域。 */
+    private static final String MAP_TARGET_PREFIX = "map:";
     /** 编辑坐标的水平上限（与原版世界边界的绝对值一致）。 */
     private static final double MAX_COORD = 30_000_000.0;
     /** 实体标记发光：每次续 3 秒；标记消失后最多 3 秒自然过期。 */
@@ -72,10 +74,19 @@ public final class MarkerService {
         if (!MarkerServerConfig.shareMarkers()) {
             return;
         }
-        if (player.distanceToSqr(x, y, z) > MAX_CREATE_DISTANCE * MAX_CREATE_DISTANCE) {
+        MarkerType effective = sticky && type == MarkerType.PING ? MarkerType.STICKY : type;
+        // 世界地图设的路径点不是准星射线产物，可以在未加载/远处：距离限制只管即时标记
+        boolean mapWaypoint = effective == MarkerType.STICKY && targetKey.startsWith(MAP_TARGET_PREFIX);
+        if (!mapWaypoint
+                && player.distanceToSqr(x, y, z) > MAX_CREATE_DISTANCE * MAX_CREATE_DISTANCE) {
             return;
         }
-        MarkerType effective = sticky && type == MarkerType.PING ? MarkerType.STICKY : type;
+        if (mapWaypoint) {
+            ServerLevel level = player.serverLevel();
+            x = Mth.clamp(x, -MAX_COORD, MAX_COORD);
+            z = Mth.clamp(z, -MAX_COORD, MAX_COORD);
+            y = Mth.clamp(y, level.getMinBuildHeight(), level.getMaxBuildHeight());
+        }
         if (effective == MarkerType.PING) {
             // 临时标记没有名字、也不参与「名字 / 图标」呈现
             data = data.copy();

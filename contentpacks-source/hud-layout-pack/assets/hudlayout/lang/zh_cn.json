@@ -15,8 +15,16 @@
   "hudlayout.group.effects": "状态效果",
 
   "hudlayout.editor.title": "HUD 布局",
-  "hudlayout.editor.hint": "拖动方框移动所在组；右键打开该组菜单；R 重置鼠标下的组；ESC 保存并退出。",
+  "hudlayout.editor.hint": "拖方框移动所在组；拖角上的手柄改大小。",
+  "hudlayout.editor.hint.menu": "右键方框：重置位置 / 移动轴 / 选项。",
+  "hudlayout.editor.hint.keys": "右键面板里的行 = 恢复默认；R = 重置组；ESC = 保存退出。",
   "hudlayout.editor.offset": "%s,%s",
   "hudlayout.button.open": "HUD 布局",
-  "hudlayout.action.reset": "重置位置"
+  "hudlayout.action.reset": "重置位置",
+  "hudlayout.action.move_axis": "移动轴：%s",
+  "hudlayout.action.options": "选项",
+  "hudlayout.axis.free": "自由",
+  "hudlayout.axis.horizontal": "仅左右",
+  "hudlayout.axis.vertical": "仅上下",
+  "hudlayout.panel.restart_hint": "橙色：已写入，但要重载或重启才生效。"
 }

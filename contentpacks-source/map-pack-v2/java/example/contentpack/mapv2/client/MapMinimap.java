@@ -109,7 +109,8 @@ public final class MapMinimap {
 
         int playerX = x + size / 2;
         int playerY = y + size / 2;
-        graphics.fill(playerX - 1, playerY - 1, playerX + 2, playerY + 2, 0xFFFF4040);
+        // 玩家头像代替红点；朝向短线从头像外缘往外画，否则会被头像盖住
+        MarkerHud.drawPlayerHead(graphics, minecraft, playerX, playerY, 10);
         drawHeading(graphics, playerX, playerY, MapView.yaw(minecraft.player, partialTick));
 
         // 信息条是独立 HUD 元素：默认贴在小地图下方，但位置只由自己的偏移决定，
@@ -153,7 +154,7 @@ public final class MapMinimap {
         double radians = Math.toRadians(yaw);
         double dx = -Math.sin(radians);
         double dz = Math.cos(radians);
-        for (int step = 3; step <= 7; step++) {
+        for (int step = 6; step <= 10; step++) {
             int px = (int) Math.round(x + dx * step);
             int py = (int) Math.round(y + dz * step);
             graphics.fill(px, py, px + 1, py + 1, 0xFFFF8080);

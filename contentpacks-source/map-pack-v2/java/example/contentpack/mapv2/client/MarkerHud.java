@@ -12,6 +12,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.resources.PlayerSkin;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
@@ -404,6 +405,28 @@ final class MarkerHud {
                 Math.max(1, Math.round(width * space)), Math.max(1, Math.round(height * space)),
                 space, space);
         RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+    }
+
+    /**
+     * 本地玩家的头像（地图/小地图上代替红点）：64×64 皮肤正面的 8×8 + 帽子层。
+     *
+     * @param size 头像边长（调用方坐标系单位）
+     */
+    static void drawPlayerHead(GuiGraphics graphics, Minecraft minecraft,
+                               int centerX, int centerY, int size) {
+        PlayerSkin skin = minecraft.player == null ? null : minecraft.player.getSkin();
+        ResourceLocation texture = skin == null ? null : skin.texture();
+        if (texture == null) {
+            graphics.fill(centerX - 1, centerY - 1, centerX + 2, centerY + 2, 0xFFFF4040);
+            return;
+        }
+        int half = Math.max(1, size / 2);
+        RenderSystem.enableBlend();
+        RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+        graphics.blit(texture, centerX - half, centerY - half, size, size,
+                8.0f, 8.0f, 8, 8, 64, 64);
+        graphics.blit(texture, centerX - half, centerY - half, size, size,
+                40.0f, 8.0f, 8, 8, 64, 64);
     }
 
     /** 玩家脸：64×64 皮肤里的正面 8×8（加帽子层），铺满 16×16 图标框。 */

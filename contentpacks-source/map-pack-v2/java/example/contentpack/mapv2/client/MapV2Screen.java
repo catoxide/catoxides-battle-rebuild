@@ -135,7 +135,8 @@ public final class MapV2Screen extends Screen {
     private void buildButtons() {
         buttons.clear();
         int barY = this.height - BOTTOM_BAR_GUI + 4;
-        int bx = 10;
+        // 底部按钮整体居中：宽度 = 90 + 6 + 90 + 6 + 80
+        int bx = (this.width - (BUTTON_WIDTH * 2 + 80 + 12)) / 2;
         buttons.add(new MapUiButton(bx, barY, BUTTON_WIDTH, BUTTON_HEIGHT, "Markers",
                 () -> Minecraft.getInstance().setScreen(new MarkerListScreen())));
         bx += BUTTON_WIDTH + 6;
@@ -258,7 +259,7 @@ public final class MapV2Screen extends Screen {
         }
         if (placing) {
             graphics.drawCenteredString(minecraft.font,
-                    "Click the map to place a permanent marker",
+                    "Click the map to set a waypoint",
                     this.width / 2, MARGIN_GUI - 2, 0xFFFFCC44);
         }
         if (layerPanelOpen) {
@@ -287,7 +288,9 @@ public final class MapV2Screen extends Screen {
         }
         int x = left + MapProjection.pixel(minecraft.player.getX(), originX, bpp);
         int z = top + MapProjection.pixel(minecraft.player.getZ(), originZ, bpp);
-        graphics.fill(x - 1, z - 1, x + 2, z + 2, 0xFFFF4040);
+        // 头像是 GUI 尺寸：画布坐标里要乘 guiScale
+        int size = Math.max(6, (int) Math.round(12 * minecraft.getWindow().getGuiScale()));
+        MarkerHud.drawPlayerHead(graphics, minecraft, x, z, size);
     }
 
     /**
@@ -386,60 +389,72 @@ public final class MapV2Screen extends Screen {
         return layout.top() / layout.guiScale() + PANEL_TOP_OFFSET;
     }
 
+    /**
+     * 状态信息条：底部居中、半透明黑底压在地图上（原来在左上角，会和地图内容抢位置）。
+     * 悬停坐标行只在鼠标位于视口内时出现。
+     */
     private void drawStatus(GuiGraphics graphics, Minecraft minecraft, ClientLevel level,
                             ResourceLocation dimension, int mouseX, int mouseY,
                             Layout layout, double originX, double originZ) {
-        int guiLeft = layout.left() / layout.guiScale();
-        int y = layout.top() / layout.guiScale() + 4;
-        graphics.drawString(minecraft.font,
-                "layer " + MapLayer.label(layer) + "   " + zoomLabel() + (follow ? "   follow" : ""),
-                guiLeft + 4, y, 0xFFFFFFFF, false);
-        y += 10;
-        graphics.drawString(minecraft.font,
-                "mem " + tileMemory + "  disk " + tileDisk + "  load " + tileLoading
-                        + "  miss " + tileMissing + "  cov " + coverage + "%"
-                        + (MapStorage.indexReady() ? "" : "  (index building)"),
-                guiLeft + 4, y, 0xFFCCCCCC, false);
-        y += 10;
+        List<String> lines = new ArrayList<>();
+        lines.add("layer " + MapLayer.label(layer) + "   " + zoomLabel() + (follow ? "   follow" : ""));
+        lines.add("mem " + tileMemory + "  disk " + tileDisk + "  load " + tileLoading
+                + "  miss " + tileMissing + "  cov " + coverage + "%"
+                + (MapStorage.indexReady() ? "" : "  (index building)"));
         if (MapWorld.id() == null) {
-            graphics.drawString(minecraft.font, "waiting for world id...",
-                    guiLeft + 4, y, 0xFFFFAA00, false);
-            return;
-        }
-        int mouseCanvasX = mouseX * layout.guiScale();
-        int mouseCanvasY = mouseY * layout.guiScale();
-        if (mouseCanvasX < layout.left() || mouseCanvasX >= layout.left() + layout.viewWidth()
-                || mouseCanvasY < layout.top() || mouseCanvasY >= layout.top() + layout.viewHeight()) {
-            return;
-        }
-        int blockX = (int) Math.floor(
-                MapProjection.world(mouseCanvasX - layout.left(), originX, bpp));
-        int blockZ = (int) Math.floor(
-                MapProjection.world(mouseCanvasY - layout.top(), originZ, bpp));
-        StringBuilder text = new StringBuilder();
-        text.append(blockX).append(", ").append(blockZ);
-        if (MapConfig.showBlockInfo()) {
-            int height = MapStore.sampleHeight(dimension, layer, blockX, blockZ);
-            if (height != Integer.MIN_VALUE) {
-                text.append("  y=").append(height);
-            }
-            String block = MapStore.sampleBlock(dimension, layer, blockX, blockZ);
-            if (block != null) {
-                text.append("  ").append(block);
-            }
-        }
-        String predicted = MapBiomeLayer.biomeNameAt(dimension, blockX, blockZ);
-        if (predicted != null) {
-            text.append("  ~").append(predicted);
+            lines.add("waiting for world id...");
         } else {
-            String actual = level.getBiome(new BlockPos(blockX,
-                            Math.max(level.getMinBuildHeight(), level.getSeaLevel()), blockZ))
-                    .unwrapKey().map(key -> key.location().getPath()).orElse(null);
-            if (actual != null) {
-                text.append("  ").append(actual);
+            int mouseCanvasX = mouseX * layout.guiScale();
+            int mouseCanvasY = mouseY * layout.guiScale();
+            if (mouseCanvasX >= layout.left() && mouseCanvasX < layout.left() + layout.viewWidth()
+                    && mouseCanvasY >= layout.top()
+                    && mouseCanvasY < layout.top() + layout.viewHeight()) {
+                int blockX = (int) Math.floor(
+                        MapProjection.world(mouseCanvasX - layout.left(), originX, bpp));
+                int blockZ = (int) Math.floor(
+                        MapProjection.world(mouseCanvasY - layout.top(), originZ, bpp));
+                StringBuilder text = new StringBuilder();
+                text.append(blockX).append(", ").append(blockZ);
+                if (MapConfig.showBlockInfo()) {
+                    int height = MapStore.sampleHeight(dimension, layer, blockX, blockZ);
+                    if (height != Integer.MIN_VALUE) {
+                        text.append("  y=").append(height);
+                    }
+                    String block = MapStore.sampleBlock(dimension, layer, blockX, blockZ);
+                    if (block != null) {
+                        text.append("  ").append(block);
+                    }
+                }
+                String predicted = MapBiomeLayer.biomeNameAt(dimension, blockX, blockZ);
+                if (predicted != null) {
+                    text.append("  ~").append(predicted);
+                } else {
+                    String actual = level.getBiome(new BlockPos(blockX,
+                                    Math.max(level.getMinBuildHeight(), level.getSeaLevel()), blockZ))
+                            .unwrapKey().map(key -> key.location().getPath()).orElse(null);
+                    if (actual != null) {
+                        text.append("  ").append(actual);
+                    }
+                }
+                lines.add(text.toString());
             }
         }
-        graphics.drawString(minecraft.font, text.toString(), guiLeft + 4, y, 0xFFE0E0E0, false);
+
+        int textWidth = 0;
+        for (String line : lines) {
+            textWidth = Math.max(textWidth, minecraft.font.width(line));
+        }
+        int panelWidth = textWidth + 16;
+        int panelHeight = lines.size() * 10 + 8;
+        int x0 = (this.width - panelWidth) / 2;
+        int y0 = this.height - BOTTOM_BAR_GUI - panelHeight - 6;
+        graphics.fill(x0, y0, x0 + panelWidth, y0 + panelHeight, 0x99000000);
+        int y = y0 + 4;
+        for (int i = 0; i < lines.size(); i++) {
+            int color = i == 0 ? 0xFFFFFFFF : 0xFFE0E0E0;
+            graphics.drawString(minecraft.font, lines.get(i), x0 + 8, y, color, true);
+            y += 10;
+        }
     }
 
     private String zoomLabel() {
@@ -607,10 +622,16 @@ public final class MapV2Screen extends Screen {
         } else {
             menuEntries.add(new MenuEntry(Component.translatable(
                     "catoxidesbattlerebuild.map.menu.waypoint"),
-                    () -> createMapMarkerAt(menuWorldX, menuWorldZ, true)));
+                    () -> openCreateEditor(menuWorldX, menuWorldZ)));
             menuEntries.add(new MenuEntry(Component.translatable(
                     "catoxidesbattlerebuild.map.menu.ping"),
-                    () -> createMapMarkerAt(menuWorldX, menuWorldZ, false)));
+                    () -> createPingAt(menuWorldX, menuWorldZ)));
+        }
+        // 作弊模式才给传送；正常模式隐藏（没有权限的玩家也不会看到一条点了没反应的菜单）
+        if (canTeleport()) {
+            menuEntries.add(new MenuEntry(Component.translatable(
+                    "catoxidesbattlerebuild.map.menu.tp"),
+                    () -> teleportTo(menuWorldX, menuWorldZ)));
         }
         if (menuEntries.isEmpty()) {
             menuOpen = false;
@@ -667,16 +688,21 @@ public final class MapV2Screen extends Screen {
         PacketDistributor.sendToServer(new MarkerRemovePayload(marker.id()));
     }
 
-    private void createMapMarker(double mouseX, double mouseY, Layout layout,
-                                 double originX, double originZ, boolean permanent) {
+    /** 设置路径点不直接建：先打开编辑屏填名字/图标，保存时才发创建包（未加载区域也能设）。 */
+    private void openCreateEditor(int worldX, int worldZ) {
+        Minecraft.getInstance().setScreen(new MarkerEditScreen(worldX, worldZ, layer));
+    }
+
+    private void openCreateEditorAt(double mouseX, double mouseY, Layout layout,
+                                    double originX, double originZ) {
         int canvasX = (int) Math.round(mouseX * layout.guiScale());
         int canvasY = (int) Math.round(mouseY * layout.guiScale());
         int worldX = (int) Math.floor(MapProjection.world(canvasX - layout.left(), originX, bpp));
         int worldZ = (int) Math.floor(MapProjection.world(canvasY - layout.top(), originZ, bpp));
-        createMapMarkerAt(worldX, worldZ, permanent);
+        openCreateEditor(worldX, worldZ);
     }
 
-    private void createMapMarkerAt(int worldX, int worldZ, boolean permanent) {
+    private void createPingAt(int worldX, int worldZ) {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         if (level == null || minecraft.player == null) {
@@ -686,9 +712,27 @@ public final class MapV2Screen extends Screen {
         double y = surfaceY == Integer.MIN_VALUE ? 64.0 : surfaceY;
         ResourceLocation icon = ResourceLocation.withDefaultNamespace("nether_star");
         PacketDistributor.sendToServer(new MarkerCreatePayload(
-                permanent ? MarkerType.STICKY.name() : MarkerType.PING.name(),
-                icon, worldX + 0.5, y, worldZ + 0.5,
-                -1, -1, "map:" + worldX + "," + worldZ, new CompoundTag(), permanent));
+                MarkerType.PING.name(), icon, worldX + 0.5, y, worldZ + 0.5,
+                -1, -1, "map:" + worldX + "," + worldZ, new CompoundTag(), false));
+    }
+
+    /** 原版命令权限 2 = 单人开了作弊 / 服务器 op。 */
+    private static boolean canTeleport() {
+        Minecraft minecraft = Minecraft.getInstance();
+        return minecraft.player != null && minecraft.player.hasPermissions(2);
+    }
+
+    private void teleportTo(int worldX, int worldZ) {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        if (level == null || minecraft.player == null || minecraft.player.connection == null) {
+            return;
+        }
+        int surfaceY = MapStore.sampleHeight(level.dimension().location(), layer, worldX, worldZ);
+        // 未加载区域没有地表高度：按海平面走，落地后再微调；明确的路径点用 Y 字段
+        int y = surfaceY == Integer.MIN_VALUE ? level.getSeaLevel() : surfaceY + 1;
+        minecraft.player.connection.sendCommand(
+                "tp " + (worldX + 0.5) + " " + y + " " + (worldZ + 0.5));
     }
 
     // ---------------------------------------------------------------- input
@@ -748,7 +792,7 @@ public final class MapV2Screen extends Screen {
             if (placing) {
                 placing = false;
                 buildButtons();
-                createMapMarker(mouseX, mouseY, layout, originX, originZ, true);
+                openCreateEditorAt(mouseX, mouseY, layout, originX, originZ);
                 return true;
             }
             dragging = true;

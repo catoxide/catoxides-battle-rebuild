@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexSorting;
 import com.mojang.logging.LogUtils;
 import example.contentpack.mapv2.MapHooks;
 import example.contentpack.mapv2.marker.MarkerData;
@@ -16,9 +17,10 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.client.renderer.entity.ItemRenderer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.util.Mth;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
@@ -26,6 +28,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fStack;
+import org.joml.Vector4f;
 import org.lwjgl.opengl.GL11;
 import org.slf4j.Logger;
 
@@ -40,7 +43,8 @@ import java.util.Set;
  * GUI 之前，画进主画布）。半透明方块在 {@code AFTER_ENTITIES} 之后才画，之后还有 tripwire、
  * 粒子、云、天气，Fabulous 画质下还要整层合成一次；{@code AFTER_TRANSLUCENT_BLOCKS} 又是在
  * 区块层渲染中途触发的 —— 挂早了都会被后画的东西盖住，表现就是「方块挡住了标记」。
- * 这个阶段 entry 时相机旋转已经从 modelview 栈里弹掉了，要自己补回去（见 {@link #render}）。
+ * 这个阶段 entry 时相机旋转已经从 modelview 栈里弹掉了，所以投影到屏幕位置时直接用
+ * {@code event.getProjectionMatrix() × event.getModelViewMatrix()} 在 Java 侧算（见 {@link #render}）。
  *
  * <p><b>标记永远盖在方块上</b>：这个阶段先清一次深度缓冲（原版第一人称手也这么做），
  * 所以三角形、物品图标、生物头像都不会被不透明或半透明方块挡住，标记之间仍按深度排序。
@@ -48,21 +52,25 @@ import java.util.Set;
  * <p><b>临时地点标记（PING）</b>画成<b>向下的白色等腰直角三角形</b>，尖端钉在标记点上。
  *
  * <p><b>永久地点标记（STICKY）</b>画绑定的图标本体当位置标志（图标可能是物品、生物头像或玩家头），
- * 不再用三角形。实体标记画 {@link MarkerClient#portrait} 造出的临时生物模型，物品标记画物品本体。
+ * 不再用三角形。实体标记画 {@link MarkerClient#portrait} 造出的临时生物模型；物品/方块标记走原版
+ * GUI 渲染路径（{@link ItemDisplayContext#GUI}）：方块是快捷栏里那种等轴测三面图标，平面物品就是
+ * 它的贴图，大小是其它标记的 {@link #FLAT_ICON_SCALE} 倍。
  * 被标记的实体由服务端续原版 Glowing 效果（光灵箭描边），持续到标记结束。
  *
  * <p><b>名称 / 距离只在聚焦时显示</b>：准星（相机视线）落在标记的
  * {@value #FOCUS_CONE_DEGREES}° 锥内才画；临时标记没有名称，聚焦也只显示距离。
  *
- * <p>固定在世界坐标，视角/移动天然正确，不依赖屏幕投影；超出
- * {@value #MAX_RENDER_DISTANCE} 格不画（只留罗盘）。
+ * <p><b>屏幕空间叠层</b>：标记的世界坐标先按当前透视投影算出屏幕位置，再用<b>正交投影</b>
+ * 画成平面（屏幕半高 = 1 单位）。这样图标/文字的大小只由常量决定 —— 不随距离、FOV、镜头转动
+ * 变化，也不会有透视把图标拉歪（用户要的「拍扁的贴图」）。投影在画之前换成
+ * {@code ortho(-aspect, aspect, 1, -1)}（y 向下，和 GUI/字体坐标系一致），画完恢复。
  *
- * <p><b>屏幕恒定大小</b>：世界尺寸按距离成比例放大（{@code scale ∝ distance}），
- * 所以远近看起来一样大，不会走到跟前变成一大块。{@value #REFERENCE_DISTANCE}
- * 格处的大小 = 原来的大小；想整体调大/调小改 {@link #BASE_SCALE} 或参考距离。
+ * <p><b>物品图标</b>仍走原版 GUI 渲染路径（{@link ItemDisplayContext#GUI}）：方块是快捷栏里
+ * 那种等轴测三面图标，平面物品就是它的贴图；因为投影也是 y 向下的，所以和 GUI 完全同形。
+ * 生物头像画完整 3D 模型，需要额外把 y 翻回来抵消投影（否则会倒立且绕序/剔除反掉）。
  *
- * <p><b>文字/头像必须在同一个 billboard 空间里偏移</b>：先转到面向相机，再沿本地 +Y 抬高；
- * 否则从侧面看，文字会偏离图标、不再垂直。
+ * <p>超出 {@value #MAX_RENDER_DISTANCE} 格不画（只留罗盘）；
+ * 尺寸以 {@value #REFERENCE_DISTANCE} 格、参考 FOV 下的原值为基准。
  */
 public final class MarkerWorldRenderer {
 
@@ -70,16 +78,37 @@ public final class MarkerWorldRenderer {
     private static final double MAX_RENDER_DISTANCE = 256.0;
     /** 「聚焦」锥半角（度）：相机视线离标记这么近才显示名称/距离。 */
     private static final float FOCUS_CONE_DEGREES = 2.5f;
-    /** 参考距离处的大小 = 边长一半（面积约 1/4），其余距离按比例补偿。 */
+    /** 尺寸基准：{@value #REFERENCE_DISTANCE} 格、参考 FOV 处看起来的大小。 */
     private static final double REFERENCE_DISTANCE = 6.0;
+    /** 参考视场角（度）：原版默认 70°。只影响「基准大小」的换算，运行时尺寸恒为屏幕空间。 */
+    private static final float REFERENCE_FOV_DEGREES = 70.0f;
+    /**
+     * 1 世界单位在屏幕空间（半屏高 = 1）里占多少。
+     * 由基准距离/基准 FOV 下的透视投影换算而来，所有尺寸常量都乘它。
+     */
+    private static final float SCREEN_PER_WORLD = (float) (1.0
+            / (REFERENCE_DISTANCE * Math.tan(Math.toRadians(REFERENCE_FOV_DEGREES / 2.0))));
     private static final float BASE_SCALE = 0.25f;
+    /** 物品/方块贴图相对 {@link #BASE_SCALE} 的倍率：实测 100% 偏大，缩到 75%。 */
+    private static final float FLAT_ICON_SCALE = 0.75f;
     private static final float BASE_TEXT_SCALE = 0.015f;
     private static final int FULL_BRIGHT = 0xF000F0;
+    /**
+     * 屏幕空间里的 z：只用于标记之间的前后排序。取小值是为了避开雾（按视距算的）
+     * 和深度精度问题 —— 反正地形深度已经清掉，不需要真实距离。
+     */
+    private static final float SCREEN_DEPTH = 2.0f;
 
     /** 三角形半宽（字体单位）：宽 9 = 1.5 个字符；高 = 半宽（等腰直角，直角朝下）。 */
     private static final float TRIANGLE_HALF_WIDTH = 4.5f;
     private static final float TRIANGLE_TEXT_GAP = 2.0f;
     private static final float FONT_LINE_HEIGHT = 9.0f;
+
+    /**
+     * 物品/方块的 GUI display 变换自带 0.625 缩放。这里补回去，让调用点传入的 scale
+     * 就是最终可见尺寸（方块的等轴测外观、物品的平面外观都由原版 GUI 变换给出）。
+     */
+    private static final float ITEM_GUI_SCALE = 0.625f;
 
     /** 纯色三角形，无深度测试、不写深度：永远在方块之上。 */
     private static final RenderType TRIANGLE = RenderType.create(
@@ -113,35 +142,50 @@ public final class MarkerWorldRenderer {
             return;
         }
 
-        // AFTER_LEVEL 在 LevelRenderer 弹掉相机旋转之后，modelview 里没有视图旋转了，这里补回去。
-        // 顶点仍然用相机相对坐标（和实体渲染一致），event 给的 PoseStack 根矩阵也是单位阵。
+        // 世界坐标 → 裁剪空间：屏幕上放在哪，仍由真实透视投影决定（标记要钉在世界点上）。
+        Matrix4f worldToClip = new Matrix4f(event.getProjectionMatrix()).mul(event.getModelViewMatrix());
+        float aspect = (float) minecraft.getWindow().getWidth()
+                / Math.max(1, minecraft.getWindow().getHeight());
+
+        // 画的时候换成正交投影 + 单位 modelview：屏幕半高 = 1 单位，y 向下（和 GUI/字体一致）。
+        // 这样图标/文字是真正的平面，不随距离、FOV、镜头转动变形或缩放。
         Matrix4fStack modelView = RenderSystem.getModelViewStack();
         modelView.pushMatrix();
-        modelView.mul(event.getModelViewMatrix());
+        modelView.identity();
         RenderSystem.applyModelViewMatrix();
+        RenderSystem.backupProjectionMatrix();
+        RenderSystem.setProjectionMatrix(
+                new Matrix4f().setOrtho(-aspect, aspect, 1.0f, -1.0f, -1000.0f, 1000.0f),
+                VertexSorting.DISTANCE_TO_ORIGIN);
         // 标记是位置指示：清掉深度后图标/头像也不会被方块挡住（原版第一人称手用同样的办法）。
         RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT, Minecraft.ON_OSX);
         Recorder buffer = new Recorder(minecraft.renderBuffers().bufferSource());
         try {
-            renderMarkers(event, minecraft, markers, buffer);
+            renderMarkers(event, minecraft, markers, buffer, worldToClip, aspect);
         } finally {
             // 这个阶段之后没有原版的全局 endBatch 兜底了，而且 BufferSource 只会自动刷
             // 「最后一个共享类型」+ 固定缓冲，所以用到的类型要逐个刷掉（否则图标会被漏掉）。
+            // 必须在正交投影还生效时刷，换成屏幕坐标写入的顶点才能用对矩阵。
             buffer.flush();
+            RenderSystem.restoreProjectionMatrix();
             modelView.popMatrix();
             RenderSystem.applyModelViewMatrix();
         }
     }
 
     private static void renderMarkers(RenderLevelStageEvent event, Minecraft minecraft,
-                                      List<MarkerDto> markers, MultiBufferSource buffer) {
-        PoseStack pose = event.getPoseStack();
+                                      List<MarkerDto> markers, MultiBufferSource buffer,
+                                      Matrix4f worldToClip, float aspect) {
+        PoseStack pose = new PoseStack();
         float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
         Camera camera = event.getCamera();
         Vec3 cameraPos = camera.getPosition();
         Font font = minecraft.font;
         EntityRenderDispatcher dispatcher = minecraft.getEntityRenderDispatcher();
         float time = (System.currentTimeMillis() % 100_000L) / 1000.0f;
+
+        float glyphScale = BASE_TEXT_SCALE * SCREEN_PER_WORLD;
+        float iconScale = BASE_SCALE * FLAT_ICON_SCALE * SCREEN_PER_WORLD;
 
         for (MarkerDto marker : markers) {
             Vec3 pos = MapHooks.INSTANCE.resolveMarker(minecraft.level, marker, partialTick);
@@ -152,52 +196,56 @@ public final class MarkerWorldRenderer {
             if (distance > MAX_RENDER_DISTANCE) {
                 continue;
             }
-            // 距离补偿：世界尺寸 ∝ 距离 → 屏幕上像素大小恒定
-            float factor = (float) (Math.max(distance, 0.5) / REFERENCE_DISTANCE);
+            // 屏幕位置：用真实透视投影算出 NDC，再换算到「半屏高 = 1、y 向下」的正交空间。
+            Vec3 rel = pos.subtract(cameraPos);
+            Vector4f clip = worldToClip.transform(
+                    new Vector4f((float) rel.x, (float) rel.y, (float) rel.z, 1.0f));
+            if (clip.w <= 0.05f) {
+                continue; // 相机后方或贴脸
+            }
+            float sx = clip.x / clip.w * aspect;
+            float sy = -clip.y / clip.w;
+            if (Math.abs(sx) > aspect + 0.5f || Math.abs(sy) > 1.5f) {
+                continue; // 屏幕外
+            }
+            float sz = clip.z / clip.w * SCREEN_DEPTH;
             float pulse = MarkerClient.isFlashing(marker.id())
                     ? 1.0f + 0.15f * Mth.sin(time * 8.0f) : 1.0f;
-            float scale = BASE_SCALE * factor * pulse;
-            float glyphScale = BASE_TEXT_SCALE * factor;
-            float textY;
+            float textUp;
 
             if (marker.type().temporaryWaypoint()) {
                 // 临时标记：向下三角形，尖端钉在标记点，宽度 1.5 个字符
-                drawTriangle(pose, buffer, camera, pos, cameraPos, glyphScale * pulse);
-                textY = (TRIANGLE_HALF_WIDTH + TRIANGLE_TEXT_GAP + FONT_LINE_HEIGHT) * glyphScale;
+                drawTriangle(pose, buffer, sx, sy, glyphScale * pulse);
+                textUp = (TRIANGLE_HALF_WIDTH + TRIANGLE_TEXT_GAP + FONT_LINE_HEIGHT) * glyphScale;
             } else if (MarkerClient.portrait(marker) instanceof LivingEntity living) {
                 // 生物头像：完整模型摆到标记点上方，固定正脸（yaw 由 MarkerClient 设好）
                 float height = Math.max(0.5f, living.getBbHeight());
-                float gap = 0.2f * factor;
+                float gap = 0.2f * SCREEN_PER_WORLD;
+                float portraitScale = BASE_SCALE * SCREEN_PER_WORLD;
                 pose.pushPose();
-                pose.translate(pos.x - cameraPos.x, pos.y - cameraPos.y, pos.z - cameraPos.z);
-                // 先转向相机，再在屏幕平面内向上抬：文字/头像始终在正上方
-                pose.mulPose(camera.rotation());
-                pose.translate(0.0f, gap, 0.0f);
-                pose.scale(scale, scale, scale);
+                pose.translate(sx, sy - gap, sz);
+                // 投影是 y 向下的；实体模型是 y 向上，翻回来才正立，绕序/剔除也才和原来一致
+                pose.scale(1.0f, -1.0f, 1.0f);
+                pose.scale(portraitScale, portraitScale, portraitScale);
                 dispatcher.setRenderShadow(false);
                 dispatcher.render(living, 0.0, 0.0, 0.0, camera.getYRot(), partialTick,
                         pose, buffer, FULL_BRIGHT);
                 dispatcher.setRenderShadow(true);
                 pose.popPose();
-                textY = gap + height * scale + 0.15f * factor;
+                textUp = gap + height * portraitScale + 0.15f * SCREEN_PER_WORLD;
             } else {
-                // 永久地点标记 / 物品：图标本体当位置标志（有完整 ItemStack 时就是物品本体），面向相机
-                pose.pushPose();
-                pose.translate(pos.x - cameraPos.x, pos.y - cameraPos.y, pos.z - cameraPos.z);
-                pose.mulPose(camera.rotation());
-                pose.scale(scale, scale, scale);
-                minecraft.getItemRenderer().renderStatic(MarkerClient.iconStack(marker),
-                        ItemDisplayContext.GROUND, FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
-                        pose, buffer, minecraft.level, 0);
-                pose.popPose();
-                textY = 0.32f * factor;
+                // 永久地点标记 / 物品：和快捷栏一样的 GUI 渲染（方块是等轴测三面，物品是贴图）
+                drawItemIcon(pose, buffer, sx, sy, sz, iconScale * pulse,
+                        minecraft, MarkerClient.iconStack(marker));
+                textUp = 0.32f * SCREEN_PER_WORLD * FLAT_ICON_SCALE;
             }
 
-            // 名称 + 距离只在准星聚焦时显示；临时标记没有名称，聚焦也只给距离
-            if (!isFocused(camera, cameraPos, pos)) {
+            // 临时标记在任何距离都显示距离（带阴影）；永久标记保持「准星聚焦才显示名称+距离」。
+            boolean temporary = marker.type().temporaryWaypoint();
+            if (!temporary && !isFocused(camera, cameraPos, pos)) {
                 continue;
             }
-            String label = marker.type().temporaryWaypoint()
+            String label = temporary
                     ? "" : marker.data().getString(MarkerData.KEY_LABEL);
             if (label.isBlank() && MarkerData.hasItem(marker)) {
                 ItemStack stack = MarkerClient.iconStack(marker);
@@ -208,15 +256,12 @@ public final class MarkerWorldRenderer {
             String distanceText = Math.round(distance) + "m";
             String text = label.isBlank() ? distanceText : label + "  " + distanceText;
             pose.pushPose();
-            pose.translate(pos.x - cameraPos.x, pos.y - cameraPos.y, pos.z - cameraPos.z);
-            pose.mulPose(camera.rotation());
-            pose.translate(0.0f, textY, 0.0f);
-            // 文字跟着距离补偿，否则远处只剩一个图标、名字缩成看不清。
-            // X 必须为正：和原版名牌一致（负 X 会翻转四边形绕序，被 SEE_THROUGH 的背面剔除吃掉）
-            pose.scale(glyphScale, -glyphScale, glyphScale);
+            pose.translate(sx, sy - textUp, sz);
+            // y 向下已经和字体坐标系一致，不用再翻 Y
+            pose.scale(glyphScale, glyphScale, glyphScale);
             Matrix4f matrix = pose.last().pose();
             font.drawInBatch(text, -font.width(text) / 2.0f, 0.0f, 0xFFFFFFFF,
-                    false, matrix, buffer, Font.DisplayMode.SEE_THROUGH, 0, FULL_BRIGHT);
+                    true, matrix, buffer, Font.DisplayMode.SEE_THROUGH, 0, FULL_BRIGHT);
             pose.popPose();
         }
     }
@@ -263,21 +308,44 @@ public final class MarkerWorldRenderer {
     }
 
     /**
+     * 图标：走原版 GUI（快捷栏/背包）那条渲染路径 —— 方块是等轴测的立体图标（正面/侧面/顶面），
+     * 平面物品就是它的贴图。此处已经处于 y 向下的屏幕空间，和 GUI 的坐标系一致，所以不需要翻转。
+     *
+     * <p>GUI 变换本身带 {@link #ITEM_GUI_SCALE} 缩放，所以外部 scale 先补回 1/0.625。
+     */
+    private static void drawItemIcon(PoseStack pose, MultiBufferSource buffer,
+                                     float x, float y, float z, float scale,
+                                     Minecraft minecraft, ItemStack stack) {
+        if (stack.isEmpty()) {
+            return;
+        }
+        ItemRenderer renderer = minecraft.getItemRenderer();
+        BakedModel model = renderer.getModel(stack, minecraft.level, minecraft.player, 0);
+        pose.pushPose();
+        pose.translate(x, y, z);
+        float normalized = scale / ITEM_GUI_SCALE;
+        pose.scale(normalized, normalized, normalized);
+        renderer.render(stack, ItemDisplayContext.GUI, false, pose, buffer,
+                FULL_BRIGHT, OverlayTexture.NO_OVERLAY, model);
+        pose.popPose();
+    }
+
+    /**
      * 白色向下等腰直角三角形：尖端（直角顶点）钉在标记点，
      * 上边宽 {@code 2 * TRIANGLE_HALF_WIDTH} 个字体单位。
      * <p>RenderType 关掉深度测试，所以永远盖在方块之上。
      */
     private static void drawTriangle(PoseStack pose, MultiBufferSource buffer,
-                                     Camera camera, Vec3 pos, Vec3 cameraPos, float scale) {
+                                     float x, float y, float scale) {
         pose.pushPose();
-        pose.translate(pos.x - cameraPos.x, pos.y - cameraPos.y, pos.z - cameraPos.z);
-        pose.mulPose(camera.rotation());
+        pose.translate(x, y, 0.0f);
         pose.scale(scale, scale, scale);
         Matrix4f matrix = pose.last().pose();
         VertexConsumer vertices = buffer.getBuffer(TRIANGLE);
+        // y 向下：底边在尖端的上方（负 y）
         vertex(vertices, matrix, 0.0f, 0.0f);
-        vertex(vertices, matrix, -TRIANGLE_HALF_WIDTH, TRIANGLE_HALF_WIDTH);
-        vertex(vertices, matrix, TRIANGLE_HALF_WIDTH, TRIANGLE_HALF_WIDTH);
+        vertex(vertices, matrix, -TRIANGLE_HALF_WIDTH, -TRIANGLE_HALF_WIDTH);
+        vertex(vertices, matrix, TRIANGLE_HALF_WIDTH, -TRIANGLE_HALF_WIDTH);
         pose.popPose();
     }
 

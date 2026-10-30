@@ -54,6 +54,11 @@ public final class MapInheritScreen extends Screen {
     }
 
     @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // 留空：原版会在地图界面后面糊一层世界，这里不要
+    }
+
+    @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         graphics.fill(0, 0, this.width, this.height, 0xD0101010);
         graphics.drawCenteredString(this.font, this.title, this.width / 2, this.height / 4, 0xFFFFFFFF);

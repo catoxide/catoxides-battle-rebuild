@@ -31,6 +31,7 @@ public final class MarkerListScreen extends Screen {
     private final List<MarkerDto> markers = new ArrayList<>();
     /** 本次界面里已经点过「保存」的分享标记：按钮消失，等同步回来的副本出现在下次列表里。 */
     private final Set<UUID> adopted = new HashSet<>();
+    private int scroll;
 
     public MarkerListScreen() {
         super(Component.translatable("catoxidesbattlerebuild.map.markers.title"));
@@ -39,11 +40,20 @@ public final class MarkerListScreen extends Screen {
     @Override
     protected void init() {
         markers.clear();
-        markers.addAll(MarkerClient.allMarkers());
+        // 路径点管理：临时 PING 会自己过期，不进这个列表
+        markers.addAll(MarkerClient.allMarkers().stream()
+                .filter(marker -> !marker.type().temporaryWaypoint())
+                .toList());
         markers.sort(Comparator.comparingLong(MarkerDto::createdAt).reversed());
+        scroll = Math.max(0, Math.min(scroll, Math.max(0, markers.size() - MAX_ROWS)));
         addRenderableWidget(Button.builder(Component.translatable("gui.back"),
                         button -> Minecraft.getInstance().setScreen(new MapV2Screen()))
                 .bounds(this.width / 2 - 60, this.height - 30, 120, 20).build());
+    }
+
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // 留空：原版会在地图界面后面糊一层世界，这里不要
     }
 
     @Override
@@ -51,28 +61,20 @@ public final class MarkerListScreen extends Screen {
         graphics.fill(0, 0, this.width, this.height, 0xE0101010);
         graphics.drawCenteredString(this.font, this.title, this.width / 2, 14, 0xFFFFFFFF);
 
-        int shown = Math.min(MAX_ROWS, markers.size());
+        int shown = Math.min(MAX_ROWS, markers.size() - scroll);
         for (int i = 0; i < shown; i++) {
-            MarkerDto marker = markers.get(i);
+            MarkerDto marker = markers.get(scroll + i);
             int y = LIST_TOP + i * ROW_HEIGHT;
             if (marker.id().equals(hoveredId(mouseX, mouseY))) {
                 graphics.fill(8, y - 2, this.width - 8, y + ROW_HEIGHT - 4, 0x30FFFFFF);
             }
-            String label = marker.data().getString(MarkerData.KEY_LABEL);
-            String name;
-            if (marker.type().temporaryWaypoint()) {
-                // 临时标记：与地图/世界一致的白色三角形，没有名字
-                MarkerHud.drawTriangle(graphics, 20, y + 16, 6, 0xFFFFFFFF);
-                name = typeName(marker);
-            } else {
-                // 生物/玩家显示 16×16 的脸，和物品图标槽（12,y 起的 16×16）完全对齐
-                MarkerHud.drawIcon(graphics, marker, 20, y + 8, 1.0f, 1f);
-                name = label;
-                if (name.isBlank()) {
-                    name = MarkerData.hasItem(marker)
-                            ? MarkerClient.iconStack(marker).getHoverName().getString()
-                            : typeName(marker);
-                }
+            // 生物/玩家显示 16×16 的脸，和物品图标槽（12,y 起的 16×16）完全对齐
+            MarkerHud.drawIcon(graphics, marker, 20, y + 8, 1.0f, 1f);
+            String name = marker.data().getString(MarkerData.KEY_LABEL);
+            if (name.isBlank()) {
+                name = MarkerData.hasItem(marker)
+                        ? MarkerClient.iconStack(marker).getHoverName().getString()
+                        : typeName(marker);
             }
             graphics.drawString(this.font, name, 36, y + 4, 0xFFFFFFFF, true);
             String meta = marker.type().name() + "  " + distanceText(marker);
@@ -82,8 +84,10 @@ public final class MarkerListScreen extends Screen {
         }
 
         if (markers.size() > MAX_ROWS) {
-            graphics.drawString(this.font, "+" + (markers.size() - MAX_ROWS) + " more",
-                    12, LIST_TOP + MAX_ROWS * ROW_HEIGHT, 0xFF9A9A9A, false);
+            String footer = (scroll + 1) + "-" + (scroll + shown) + " / " + markers.size()
+                    + "   wheel scroll";
+            graphics.drawString(this.font, footer, 12, LIST_TOP + MAX_ROWS * ROW_HEIGHT,
+                    0xFF9A9A9A, false);
         }
         super.render(graphics, mouseX, mouseY, partialTick);
     }
@@ -130,9 +134,10 @@ public final class MarkerListScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
-            int shown = Math.min(MAX_ROWS, markers.size());
+            int shown = Math.min(MAX_ROWS, markers.size() - scroll);
             for (int i = 0; i < shown; i++) {
-                MarkerDto marker = markers.get(i);
+                int index = scroll + i;
+                MarkerDto marker = markers.get(index);
                 int y = LIST_TOP + i * ROW_HEIGHT;
                 if (canAdopt(marker) && inside(mouseX, mouseY,
                         adoptX(), y + 3, BUTTON_WIDTH, BUTTON_HEIGHT)) {
@@ -150,7 +155,7 @@ public final class MarkerListScreen extends Screen {
                     PacketDistributor.sendToServer(new MarkerRemovePayload(marker.id()));
                     MarkerClient.receive(new example.contentpack.mapv2.network.MarkerSyncPayload(
                             List.of(), List.of(marker.id()), false));
-                    markers.remove(i);
+                    markers.remove(index);
                     return true;
                 }
             }
@@ -159,14 +164,24 @@ public final class MarkerListScreen extends Screen {
     }
 
     private MarkerDto hoveredId(double mouseX, double mouseY) {
-        int shown = Math.min(MAX_ROWS, markers.size());
+        int shown = Math.min(MAX_ROWS, markers.size() - scroll);
         for (int i = 0; i < shown; i++) {
             int y = LIST_TOP + i * ROW_HEIGHT;
             if (mouseY >= y - 2 && mouseY < y + ROW_HEIGHT - 4) {
-                return markers.get(i);
+                return markers.get(scroll + i);
             }
         }
         return null;
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (scrollY != 0) {
+            int max = Math.max(0, markers.size() - MAX_ROWS);
+            scroll = Math.max(0, Math.min(max, scroll + (scrollY > 0 ? -1 : 1)));
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
     private static boolean inside(double mouseX, double mouseY,

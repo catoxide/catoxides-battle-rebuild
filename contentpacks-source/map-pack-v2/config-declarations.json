@@ -172,6 +172,18 @@
               "comment": "true: taller bar; false: normal/thin bar (default)."
             },
             {
+              "key": "width",
+              "type": "int",
+              "default": 300,
+              "tier": "HOT",
+              "min": 120,
+              "max": 600,
+              "comment": [
+                "Compass bar width in screen pixels, also capped by the screen width.",
+                "Drag the corner grip in the HUD layout editor to change it."
+              ]
+            },
+            {
               "key": "frostedBackground",
               "type": "bool",
               "default": true,
