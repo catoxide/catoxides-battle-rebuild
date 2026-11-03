@@ -11,16 +11,17 @@ import example.contentpack.mapv2.marker.MarkerDto;
 import example.contentpack.mapv2.marker.MarkerType;
 import example.contentpack.mapv2.network.MarkerCreatePayload;
 import example.contentpack.mapv2.network.MarkerRemovePayload;
+import example.contentpack.mapv2.structure.StructureEntry;
 import example.contentpack.mapv2.view.MapProjection;
 import example.contentpack.mapv2.view.MapZoom;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
@@ -95,7 +96,7 @@ public final class MapV2Screen extends Screen {
     }
 
     public MapV2Screen() {
-        super(Component.literal("Map"));
+        super(Component.translatable("catoxidesbattlerebuild.map.title"));
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player != null) {
             centerX = minecraft.player.getX();
@@ -135,21 +136,36 @@ public final class MapV2Screen extends Screen {
     private void buildButtons() {
         buttons.clear();
         int barY = this.height - BOTTOM_BAR_GUI + 4;
-        // 底部按钮整体居中：宽度 = 90 + 6 + 90 + 6 + 80
-        int bx = (this.width - (BUTTON_WIDTH * 2 + 80 + 12)) / 2;
-        buttons.add(new MapUiButton(bx, barY, BUTTON_WIDTH, BUTTON_HEIGHT, "Markers",
+        // 底部按钮整体居中：宽度 = 90 + 6 + 90 + 6 + 80 + 6 + 80
+        int bx = (this.width - (BUTTON_WIDTH * 2 + 80 * 2 + 18)) / 2;
+        buttons.add(new MapUiButton(bx, barY, BUTTON_WIDTH, BUTTON_HEIGHT,
+                Component.translatable("catoxidesbattlerebuild.map.ui.button.markers"),
                 () -> Minecraft.getInstance().setScreen(new MarkerListScreen())));
         bx += BUTTON_WIDTH + 6;
         buttons.add(new MapUiButton(bx, barY, BUTTON_WIDTH, BUTTON_HEIGHT,
-                placing ? "Placing..." : "Place", this::togglePlacing));
+                Component.translatable(placing
+                        ? "catoxidesbattlerebuild.map.ui.button.placing"
+                        : "catoxidesbattlerebuild.map.ui.button.place"),
+                this::togglePlacing));
         bx += BUTTON_WIDTH + 6;
-        buttons.add(new MapUiButton(bx, barY, 80, BUTTON_HEIGHT, "Layers", this::toggleLayers));
+        buttons.add(new MapUiButton(bx, barY, 80, BUTTON_HEIGHT,
+                Component.translatable("catoxidesbattlerebuild.map.ui.button.layers"),
+                this::toggleLayers));
+        bx += 80 + 6;
+        buttons.add(new MapUiButton(bx, barY, 80, BUTTON_HEIGHT,
+                Component.translatable(StructureClient.isVisible()
+                        ? "catoxidesbattlerebuild.map.ui.button.structures"
+                        : "catoxidesbattlerebuild.map.ui.button.structures_off"),
+                this::toggleStructures));
 
         int sideX = this.width - SIDE_BUTTON - 6;
         int sideY = MARGIN_GUI;
-        buttons.add(new MapUiButton(sideX, sideY, SIDE_BUTTON, SIDE_BUTTON, "+", this::zoomIn));
-        buttons.add(new MapUiButton(sideX, sideY + 26, SIDE_BUTTON, SIDE_BUTTON, "-", this::zoomOut));
-        buttons.add(new MapUiButton(sideX, sideY + 52, SIDE_BUTTON, SIDE_BUTTON, "C", this::recenter));
+        buttons.add(new MapUiButton(sideX, sideY, SIDE_BUTTON, SIDE_BUTTON,
+                Component.literal("+"), this::zoomIn));
+        buttons.add(new MapUiButton(sideX, sideY + 26, SIDE_BUTTON, SIDE_BUTTON,
+                Component.literal("-"), this::zoomOut));
+        buttons.add(new MapUiButton(sideX, sideY + 52, SIDE_BUTTON, SIDE_BUTTON,
+                Component.literal("C"), this::recenter));
     }
 
     @Override
@@ -233,6 +249,9 @@ public final class MapV2Screen extends Screen {
         // 第三遍：放大到每方块至少 16 像素时，换成各方块自己的顶面贴图
         BlockTopTextures.render(graphics, left, top, Math.max(viewWidth, viewHeight), tiles,
                 originX, originZ, bpp, minY, heightRange);
+        // 第三点五遍：结构候选点（独立叠加层，画在标记下面）
+        StructureOverlay.render(graphics, minecraft, left, top, viewWidth, viewHeight,
+                bpp, originX, originZ, dimension);
         // 第四遍：标记（在画布内绘制，随地图一起裁剪/缩放）
         MarkerHud.renderFullmap(graphics, minecraft, left, top, viewWidth, viewHeight, bpp,
                 originX, originZ, dimension, partialTick);
@@ -259,7 +278,7 @@ public final class MapV2Screen extends Screen {
         }
         if (placing) {
             graphics.drawCenteredString(minecraft.font,
-                    "Click the map to set a waypoint",
+                    Component.translatable("catoxidesbattlerebuild.map.ui.place_hint"),
                     this.width / 2, MARGIN_GUI - 2, 0xFFFFCC44);
         }
         if (layerPanelOpen) {
@@ -397,12 +416,16 @@ public final class MapV2Screen extends Screen {
                             ResourceLocation dimension, int mouseX, int mouseY,
                             Layout layout, double originX, double originZ) {
         List<String> lines = new ArrayList<>();
-        lines.add("layer " + MapLayer.label(layer) + "   " + zoomLabel() + (follow ? "   follow" : ""));
+        // 调试读数（mem/disk/...）保持英文；这里只译字段名与状态文案（D79）
+        lines.add(Component.translatable("catoxidesbattlerebuild.map.ui.layer").getString()
+                + " " + MapLayer.label(layer) + "   " + zoomLabel()
+                + (follow ? "   " + Component.translatable(
+                        "catoxidesbattlerebuild.map.ui.follow").getString() : ""));
         lines.add("mem " + tileMemory + "  disk " + tileDisk + "  load " + tileLoading
                 + "  miss " + tileMissing + "  cov " + coverage + "%"
                 + (MapStorage.indexReady() ? "" : "  (index building)"));
         if (MapWorld.id() == null) {
-            lines.add("waiting for world id...");
+            lines.add(Component.translatable("catoxidesbattlerebuild.map.waiting_world").getString());
         } else {
             int mouseCanvasX = mouseX * layout.guiScale();
             int mouseCanvasY = mouseY * layout.guiScale();
@@ -415,28 +438,33 @@ public final class MapV2Screen extends Screen {
                         MapProjection.world(mouseCanvasY - layout.top(), originZ, bpp));
                 StringBuilder text = new StringBuilder();
                 text.append(blockX).append(", ").append(blockZ);
+                int mapHeight = MapStore.sampleHeight(dimension, layer, blockX, blockZ);
                 if (MapConfig.showBlockInfo()) {
-                    int height = MapStore.sampleHeight(dimension, layer, blockX, blockZ);
-                    if (height != Integer.MIN_VALUE) {
-                        text.append("  y=").append(height);
+                    if (mapHeight != Integer.MIN_VALUE) {
+                        text.append("  y=").append(mapHeight);
                     }
-                    String block = MapStore.sampleBlock(dimension, layer, blockX, blockZ);
+                    String block = MapProbe.blockName(
+                            MapStore.sampleBlock(dimension, layer, blockX, blockZ));
                     if (block != null) {
                         text.append("  ").append(block);
                     }
                 }
-                String predicted = MapBiomeLayer.biomeNameAt(dimension, blockX, blockZ);
-                if (predicted != null) {
-                    text.append("  ~").append(predicted);
-                } else {
-                    String actual = level.getBiome(new BlockPos(blockX,
-                                    Math.max(level.getMinBuildHeight(), level.getSeaLevel()), blockZ))
-                            .unwrapKey().map(key -> key.location().getPath()).orElse(null);
-                    if (actual != null) {
-                        text.append("  ").append(actual);
+                // 已加载区块用世界真实群系（已确认）；只有未加载区域才用预测（前面缀 ~）
+                int biomeY = mapHeight != Integer.MIN_VALUE ? mapHeight
+                        : level.getHeight(Heightmap.Types.WORLD_SURFACE, blockX, blockZ) - 1;
+                String actual = MapProbe.loadedBiomeName(level, blockX, biomeY, blockZ);
+                if (actual != null) {
+                    text.append("  ").append(actual);
+                } else if (MapLayer.showsBiome(layer)) {
+                    String predicted = MapBiomeLayer.biomeNameAt(dimension, blockX, blockZ);
+                    if (predicted != null) {
+                        text.append("  ~").append(predicted);
                     }
                 }
                 lines.add(text.toString());
+            } else {
+                // 鼠标不在视口上：给一行通用操作提示（与 v1 地图底部提示同一套键）
+                lines.add(Component.translatable("catoxidesbattlerebuild.map.hint").getString());
             }
         }
 
@@ -511,7 +539,8 @@ public final class MapV2Screen extends Screen {
                     x + PANEL_WIDTH - 4 - minecraft.font.width(tiles), rowY + 1,
                     count == 0 ? 0xFFFF6666 : 0xFF999999, false);
         }
-        graphics.drawString(minecraft.font, "L close   wheel scroll",
+        graphics.drawString(minecraft.font,
+                Component.translatable("catoxidesbattlerebuild.map.ui.layer_hint").getString(),
                 x + 4, y + height + 2, 0xFF888888, false);
     }
 
@@ -562,7 +591,25 @@ public final class MapV2Screen extends Screen {
         MarkerDto hovered = markerAt(mouseX, mouseY, layout, originX, originZ);
         if (hovered != null) {
             MarkerHud.drawTooltip(graphics, minecraft, hovered, mouseX, mouseY);
+            return;
         }
+        StructureEntry structure = structureAt(mouseX, mouseY, layout, originX, originZ);
+        if (structure != null) {
+            StructureOverlay.drawTooltip(graphics, minecraft, structure, mouseX, mouseY);
+        }
+    }
+
+    private StructureEntry structureAt(double mouseX, double mouseY, Layout layout,
+                                       double originX, double originZ) {
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return null;
+        }
+        return StructureClient.entryAt(
+                (int) Math.round(mouseX * layout.guiScale()),
+                (int) Math.round(mouseY * layout.guiScale()),
+                layout.left(), layout.top(), originX, originZ, bpp,
+                layout.guiScale(), level.dimension().location());
     }
 
     private MarkerDto markerAt(double mouseX, double mouseY, Layout layout,
@@ -609,6 +656,8 @@ public final class MapV2Screen extends Screen {
         menuWorldX = (int) Math.floor(MapProjection.world(canvasX - layout.left(), originX, bpp));
         menuWorldZ = (int) Math.floor(MapProjection.world(canvasY - layout.top(), originZ, bpp));
         MarkerDto marker = markerAt(mouseX, mouseY, layout, originX, originZ);
+        StructureEntry structure = marker == null
+                ? structureAt(mouseX, mouseY, layout, originX, originZ) : null;
         menuEntries.clear();
         if (marker != null) {
             if (MarkerClient.canEdit(marker)) {
@@ -626,6 +675,12 @@ public final class MapV2Screen extends Screen {
             menuEntries.add(new MenuEntry(Component.translatable(
                     "catoxidesbattlerebuild.map.menu.ping"),
                     () -> createPingAt(menuWorldX, menuWorldZ)));
+            if (structure != null && canTeleport()) {
+                menuEntries.add(new MenuEntry(Component.translatable(
+                        "catoxidesbattlerebuild.map.menu.tp_structure",
+                        StructureClient.name(structure)),
+                        () -> teleportTo(structure.blockX(), structure.blockZ())));
+            }
         }
         // 作弊模式才给传送；正常模式隐藏（没有权限的玩家也不会看到一条点了没反应的菜单）
         if (canTeleport()) {
@@ -898,6 +953,11 @@ public final class MapV2Screen extends Screen {
 
     private void togglePlacing() {
         placing = !placing;
+        buildButtons();
+    }
+
+    private void toggleStructures() {
+        StructureClient.setVisible(!StructureClient.isVisible());
         buildButtons();
     }
 

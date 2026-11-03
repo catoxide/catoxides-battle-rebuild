@@ -123,7 +123,8 @@ public final class TileLodTextures {
         }
         int size = MapTile.SIZE >> level;
         NativeImage image = new NativeImage(size, size, true);
-        int painted = BiomeOverlay.paint(image, dimension, tileX * MapTile.SIZE, tileZ * MapTile.SIZE,
+        int painted = BiomeOverlay.paint(image, dimension, Minecraft.getInstance().level,
+                tileX * MapTile.SIZE, tileZ * MapTile.SIZE,
                 size, 1 << level, (x, z) -> false, outline);
         if (painted == 0) {
             image.close();

@@ -1,5 +1,7 @@
 package example.contentpack.mapv2;
 
+import net.minecraft.network.chat.Component;
+
 import java.util.Comparator;
 
 /**
@@ -77,10 +79,10 @@ public final class MapLayer {
         return y != Integer.MIN_VALUE && y >= minBuildHeight && y < maxBuildHeight;
     }
 
-    /** 人类可读标签，用于地图界面的层提示。 */
+    /** 人类可读标签，用于地图界面的层提示；切片层名（{@code y-64..-49}）本身是符号，不译。 */
     public static String label(String layer) {
         if (TOP.equals(layer)) {
-            return "surface";
+            return Component.translatable("catoxidesbattlerebuild.map.layer.surface").getString();
         }
         int minY = absoluteY(layer);
         if (minY == Integer.MIN_VALUE) {

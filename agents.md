@@ -50,6 +50,7 @@
 | 版本区间 / 星型依赖 | `design/NATIVE_CONTENTPACK_DEV.md` §4 | `Module-Requires` 语义、包间禁直接版本约束 |
 | 包间依赖 / 联动 | `design/PACK_DEPS_AND_LINKAGE.md`（操作手册，2026-10-26） | 硬/软依赖 MANIFEST 键、联动规范 = capability 单路线（注册表/定位器为存量 `todo:deprecated`）、外部 mod 两轴与缺失处置（shutdown+响亮，强制归 FML/CI）、禁令与配方 |
 | A7、M0–M7 | `design/CORE_TO_PACK_MIGRATION_GUIDE.md`（A7 在 `:412`，M0–M7 表在 `:348-356`） | 显式注册；迁移阶段 |
+| HUD 布局声明契约 | `design/HUD_LAYOUT_INTERFACE.md`（正本在 §2/§3/§5/§7/§12；证据索引 §13） | 元素包 ↔ 布局包：`options()` 配置引用、`resize()` 边角拉伸、轴锁定、缺席语义、变更纪律 |
 | REVIEW-L6 | `tools/contentpack-editor/src/core/structureSchema.js`（拒绝 `..` 作目录段） | 路径逃逸 |
 
 **当前不可执行的规则**：R7（`Module-Requires` 必须带上界）。`ContentPackManifest.verifyCompatibility()` 只 `split(">=")` 且要求 `parts.length == 2`，不支持区间 —— 是 core 能力缺失，不是包违规。别给 R7 加门禁：11 个有 MANIFEST 的包全写裸 `>=`，加了会全红（2026-10-25 实测）。

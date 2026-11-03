@@ -78,6 +78,16 @@ public final class MapConfig {
         return getBool("inheritPrompt", true);
     }
 
+    /** 世界地图上的结构叠加层（服务端计算的候选点）。 */
+    public static boolean structureOverlay() {
+        return getBool("structureOverlay", true);
+    }
+
+    /** 缩到比这更浅时隐藏结构层：视口方块数随 bpp 线性增长，太浅会铺满图标。 */
+    public static double structureMaxBpp() {
+        return clamp(getDouble("structureMaxBpp", 1.0), 0.125, 8.0);
+    }
+
     private static int getInt(String key, int fallback) {
         PackConfig local = config;
         return local == null ? fallback : local.getInt(key);
@@ -88,7 +98,16 @@ public final class MapConfig {
         return local == null ? fallback : local.getBoolean(key);
     }
 
+    private static double getDouble(String key, double fallback) {
+        PackConfig local = config;
+        return local == null ? fallback : local.getDouble(key);
+    }
+
     private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
     }
 }

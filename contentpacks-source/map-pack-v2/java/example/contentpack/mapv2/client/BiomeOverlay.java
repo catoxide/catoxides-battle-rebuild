@@ -2,7 +2,9 @@ package example.contentpack.mapv2.client;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import example.contentpack.mapv2.MapShade;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.function.BiPredicate;
 
@@ -12,7 +14,11 @@ import java.util.function.BiPredicate;
  * <p>只在未采集像素上画；描边按**世界坐标**比较右/下邻居的群系 ID，
  * 所以区域边缘和全屏缩放时都连续，不会在区域边界断开。
  *
- * <p>成本：每像素 3 次群系查询，只在纹理缓存失效时发生（拖动/首次看到）。
+ * <p>颜色来源分两段：客户端已加载的区块用世界真实群系（已确认），
+ * 没加载的才问 {@link MapBiomeLayer} 的预测。预测只补看不到的地方。
+ *
+ * <p>成本：每像素 1 次群系查询（已加载处按 4 格缓存）、描边再 2 次预测查询，
+ * 只在纹理缓存失效时发生（拖动/首次看到）。
  */
 final class BiomeOverlay {
 
@@ -22,13 +28,18 @@ final class BiomeOverlay {
     /**
      * @param size   纹理边长（像素）
      * @param step   每像素覆盖的方块数
+     * @param level  当前客户端世界；{@code null} 时退化为纯预测
      * @param known  (x, z) → 该像素已有真实地形（跳过，不覆盖）
      * @return 实际画上的像素数（0 = 这块没有任何群系数据）
      */
-    static int paint(NativeImage image, ResourceLocation dimension,
+    static int paint(NativeImage image, ResourceLocation dimension, @Nullable ClientLevel level,
                      int originX, int originZ, int size, double step,
                      BiPredicate<Integer, Integer> known, boolean outline) {
         int painted = 0;
+        // 群系按 4 格 quart 存储：同一夸脱内的相邻像素直接复用上次查询结果
+        int lastQuartX = Integer.MIN_VALUE;
+        int lastQuartZ = Integer.MIN_VALUE;
+        String lastActual = null;
         for (int z = 0; z < size; z++) {
             int worldZ = originZ + (int) Math.round(z * step);
             int nextZ = originZ + (int) Math.round((z + 1) * step);
@@ -37,12 +48,25 @@ final class BiomeOverlay {
                     continue;
                 }
                 int worldX = originX + (int) Math.round(x * step);
-                String biomeId = MapBiomeLayer.biomeIdAt(dimension, worldX, worldZ);
+                String biomeId;
+                if (level != null && MapProbe.isLoaded(level, worldX, worldZ)) {
+                    int quartX = worldX >> 2;
+                    int quartZ = worldZ >> 2;
+                    if (quartX != lastQuartX || quartZ != lastQuartZ) {
+                        lastQuartX = quartX;
+                        lastQuartZ = quartZ;
+                        lastActual = MapProbe.loadedSurfaceBiomeId(level, worldX, worldZ);
+                    }
+                    biomeId = lastActual;
+                } else {
+                    biomeId = MapBiomeLayer.biomeIdAt(dimension, worldX, worldZ);
+                }
                 if (biomeId == null) {
                     continue;
                 }
                 // 颜色由本地调色板决定（不同群系不同色系），未收录的用稳定哈希色
                 int color = BiomePalette.color(biomeId);
+                // 描边只看预测源：两边同属已加载时预测≈真实，边界位置不会跑
                 boolean edge = outline && (!biomeId.equals(MapBiomeLayer.biomeIdAt(
                         dimension, originX + (int) Math.round((x + 1) * step), worldZ))
                         || !biomeId.equals(MapBiomeLayer.biomeIdAt(

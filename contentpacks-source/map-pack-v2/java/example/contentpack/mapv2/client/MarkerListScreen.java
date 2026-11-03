@@ -77,7 +77,7 @@ public final class MarkerListScreen extends Screen {
                         : typeName(marker);
             }
             graphics.drawString(this.font, name, 36, y + 4, 0xFFFFFFFF, true);
-            String meta = marker.type().name() + "  " + distanceText(marker);
+            String meta = typeName(marker) + "  " + distanceText(marker);
             graphics.drawString(this.font, meta, 200, y + 4, 0xFF9A9A9A, false);
 
             drawActions(graphics, mouseX, mouseY, marker, y);
@@ -85,7 +85,8 @@ public final class MarkerListScreen extends Screen {
 
         if (markers.size() > MAX_ROWS) {
             String footer = (scroll + 1) + "-" + (scroll + shown) + " / " + markers.size()
-                    + "   wheel scroll";
+                    + "   " + Component.translatable(
+                            "catoxidesbattlerebuild.map.ui.scroll_hint").getString();
             graphics.drawString(this.font, footer, 12, LIST_TOP + MAX_ROWS * ROW_HEIGHT,
                     0xFF9A9A9A, false);
         }
@@ -107,7 +108,8 @@ public final class MarkerListScreen extends Screen {
         }
         if (MarkerClient.canModify(marker)) {
             drawSmallButton(graphics, mouseX, mouseY, deleteX(), y + 3,
-                    BUTTON_WIDTH, BUTTON_HEIGHT, "Del");
+                    BUTTON_WIDTH, BUTTON_HEIGHT, Component.translatable(
+                            "catoxidesbattlerebuild.map.markers.delete").getString());
         }
     }
 

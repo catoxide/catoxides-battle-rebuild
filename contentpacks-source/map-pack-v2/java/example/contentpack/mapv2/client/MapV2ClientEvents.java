@@ -114,6 +114,7 @@ public final class MapV2ClientEvents {
             MapCapture.tick(minecraft);
             MapWorld.tickScreen();
             MarkerClient.tick();
+            StructureClient.tick();
             SlotFlash.tick();
         });
 
@@ -151,6 +152,7 @@ public final class MapV2ClientEvents {
             MapStorage.flushAll();
             MapStorage.clear();
             MarkerClient.reset();
+            StructureClient.reset();
         });
     }
 

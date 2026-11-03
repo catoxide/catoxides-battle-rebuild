@@ -282,7 +282,12 @@ if ($Phase -in 'all', 'data') {
             'quarantined at',
             'Failed to load ContentPack',
             'problems=[1-9]',
-            'Unknown attribute'
+            'Unknown attribute',
+            # Pack self-tests (MapV2SelfTest / MarkerSelfTest / HudLayoutSelfTest ...) report a
+            # nonzero count at ERROR level. Without this line they would only be visible to
+            # someone reading latest.log by hand - the whole point of a self-test is that
+            # nobody has to read the log.
+            'FAILURES=[1-9]'
         ) `
         -InfoRegex @('Batch registration complete \(pack=', 'Successfully loaded ContentPack')
 }
@@ -296,7 +301,8 @@ if ($Phase -in 'all', 'models') {
             'quarantined at',
             'Failed to load ContentPack',
             'problems=[1-9]',
-            'Unknown attribute'
+            'Unknown attribute',
+            'FAILURES=[1-9]'   # pack self-tests, same reason as in the data phase
         ) `
         -InfoRegex @('Batch registration complete \(pack=', 'Successfully loaded ContentPack')
 }

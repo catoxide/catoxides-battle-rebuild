@@ -16,6 +16,9 @@ import org.slf4j.Logger;
  *
  * <p>渲染约定：预测色只填「未采集」像素，具体画法（柔和填色 + 描边）在
  * {@link BiomeOverlay}，这样一眼能区分「预测」和「真的走过」。
+ *
+ * <p>这里只回答<b>预测</b>。客户端已加载的区块有真实群系，走 {@link MapProbe}；
+ * 谁需要「已确认优先」，谁自己先判 {@link MapProbe#isLoaded} 再回落到这里。
  */
 final class MapBiomeLayer {
 

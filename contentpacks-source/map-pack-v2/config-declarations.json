@@ -141,6 +141,28 @@
               "default": true,
               "tier": "HOT",
               "comment": "Play a sound when another player's marker arrives."
+            },
+            {
+              "key": "structureOverlay",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": [
+                "Show structure locations on the world map.",
+                "Positions are computed by the server; no chunks are generated."
+              ]
+            },
+            {
+              "key": "structureMaxBpp",
+              "type": "double",
+              "default": 1.0,
+              "tier": "HOT",
+              "min": 0.125,
+              "max": 8.0,
+              "comment": [
+                "Hide the structure overlay when one canvas pixel covers more blocks than this.",
+                "Zoom in past this value to see structures; larger values are denser."
+              ]
             }
           ]
         },
@@ -295,6 +317,73 @@
               "min": 0.5,
               "max": 16.0,
               "comment": "A death marker disappears after its owner gets this close (blocks)."
+            }
+          ]
+        },
+        {
+          "key": "structures",
+          "values": [
+            {
+              "key": "enabled",
+              "type": "bool",
+              "default": true,
+              "comment": [
+                "Answer structure-map queries from players.",
+                "Positions come from worldgen placement maths only; no chunks are generated."
+              ]
+            },
+            {
+              "key": "minSpacing",
+              "type": "int",
+              "default": 8,
+              "min": 1,
+              "max": 128,
+              "comment": [
+                "Skip structure sets placed closer together than this (in chunks).",
+                "Buried treasures, mineshafts and nether fossils use spacing 1-2 and are ~100x denser."
+              ]
+            },
+            {
+              "key": "maxResults",
+              "type": "int",
+              "default": 256,
+              "min": 16,
+              "max": 4096,
+              "comment": "Upper bound on structure candidates returned per map cell."
+            },
+            {
+              "key": "budgetMillis",
+              "type": "int",
+              "default": 8,
+              "min": 1,
+              "max": 100,
+              "comment": "Soft time budget for one map cell scan; the result is marked truncated when exceeded."
+            },
+            {
+              "key": "requestsPerSecond",
+              "type": "int",
+              "default": 8,
+              "min": 1,
+              "max": 64,
+              "comment": "Per-player limit on structure-map queries."
+            },
+            {
+              "key": "verifyBiomes",
+              "type": "bool",
+              "default": true,
+              "comment": [
+                "Drop candidates whose biome cannot host that structure.",
+                "Sampled without generating chunks; turning this off brings back most false positives."
+              ]
+            },
+            {
+              "key": "showModdedSets",
+              "type": "bool",
+              "default": false,
+              "comment": [
+                "Also list structure sets from other namespaces (mods / datapacks).",
+                "They use the same placement maths but their icons and names are not verified yet."
+              ]
             }
           ]
         }

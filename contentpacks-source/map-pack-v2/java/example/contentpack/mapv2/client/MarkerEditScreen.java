@@ -183,7 +183,7 @@ public final class MarkerEditScreen extends Screen {
         String query = searchBox == null ? "" : searchBox.getValue().trim().toLowerCase(Locale.ROOT);
         List<ResourceLocation> all = new ArrayList<>();
         for (ResourceLocation id : BuiltInRegistries.ITEM.keySet()) {
-            if (query.isEmpty() || id.getPath().contains(query)) {
+            if (query.isEmpty() || matchesSearch(id, query)) {
                 all.add(id);
             }
         }
@@ -192,6 +192,20 @@ public final class MarkerEditScreen extends Screen {
         if (page > maxPage()) {
             page = maxPage();
         }
+    }
+
+    /**
+     * 英文 id 路径或当前语言的物品显示名，任一命中就算匹配（D82）。
+     *
+     * <p>显示名在过滤时现取，不在构造期建静态表：玩家切语言后旧表会冻住旧语言。
+     * 方块图标的物品项显示名就是 {@code block.<ns>.<path>}，所以方块也一并覆盖。
+     */
+    private static boolean matchesSearch(ResourceLocation id, String query) {
+        if (id.getPath().toLowerCase(Locale.ROOT).contains(query)) {
+            return true;
+        }
+        return new ItemStack(BuiltInRegistries.ITEM.get(id))
+                .getHoverName().getString().toLowerCase(Locale.ROOT).contains(query);
     }
 
     private int maxPage() {

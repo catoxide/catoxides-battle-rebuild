@@ -18,6 +18,9 @@ import example.contentpack.mapv2.marker.MarkerService;
 import example.contentpack.mapv2.network.MapNetwork;
 import example.contentpack.mapv2.network.MapServerSync;
 import example.contentpack.mapv2.network.MarkerNetwork;
+import example.contentpack.mapv2.structure.StructureSelfTest;
+import example.contentpack.mapv2.structure.StructureServerConfig;
+import example.contentpack.mapv2.structure.StructureVerdicts;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 
@@ -57,8 +60,11 @@ public final class MapV2Pack implements ContentPack {
         // 标记服务端逻辑在集成服务器（单机）里也必须跑：CLIENT 是 JVM 级常量，
         // 不能用来区分「这一侧是不是服务端」，否则单机没有 TTL 清理/死亡点/登录同步/实体发光。
         MarkerServerConfig.bind(context.config("server"));
+        StructureServerConfig.bind(context.config("server"));
         MarkerService.init();
+        StructureVerdicts.init();
         MarkerSelfTest.run();
+        StructureSelfTest.run();
         // 世界启动时就把世界 ID 生成/落盘，保证玩家登录前已就绪
         NeoForge.EVENT_BUS.addListener((ServerStartedEvent event) ->
                 WorldIdentity.get(event.getServer()));

@@ -2,6 +2,7 @@ package example.contentpack.mapv2.client;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 
 /**
  * 自绘地图按钮：正常 / 悬停 / 按下三档亮度 + 顶边高光，做出触控反馈。
@@ -21,10 +22,10 @@ final class MapUiButton {
     final int y;
     final int width;
     final int height;
-    private final String label;
+    private final Component label;
     private final Runnable action;
 
-    MapUiButton(int x, int y, int width, int height, String label, Runnable action) {
+    MapUiButton(int x, int y, int width, int height, Component label, Runnable action) {
         this.x = x;
         this.y = y;
         this.width = width;

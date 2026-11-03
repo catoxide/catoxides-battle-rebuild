@@ -3,6 +3,8 @@ package example.contentpack.mapv2.network;
 import com.catoxide.catoxidesbattlerebuild.core.world.WorldIdentity;
 import example.contentpack.mapv2.MapCapture;
 import example.contentpack.mapv2.client.MapWorld;
+import example.contentpack.mapv2.client.StructureClient;
+import example.contentpack.mapv2.structure.StructureService;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -34,6 +36,10 @@ public final class MapNetwork {
                     MapNetwork::handleWorldIdRequest);
             registrar.playToClient(MapWorldIdPayload.TYPE, MapWorldIdPayload.CODEC,
                     MapNetwork::handleWorldId);
+            registrar.playToServer(StructureQueryPayload.TYPE, StructureQueryPayload.CODEC,
+                    MapNetwork::handleStructureQuery);
+            registrar.playToClient(StructureResultPayload.TYPE, StructureResultPayload.CODEC,
+                    MapNetwork::handleStructureResult);
         });
     }
 
@@ -58,6 +64,21 @@ public final class MapNetwork {
     private static void handleWorldId(MapWorldIdPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> MapWorld.receive(payload.worldId(), payload.seed(),
                 payload.generator(), payload.worldName()));
+    }
+
+    /** 服务端：按单元复算结构候选点（纯计算，不生成区块）。 */
+    private static void handleStructureQuery(StructureQueryPayload payload,
+                                             IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (context.player() instanceof ServerPlayer player) {
+                StructureService.query(player, payload);
+            }
+        });
+    }
+
+    private static void handleStructureResult(StructureResultPayload payload,
+                                              IPayloadContext context) {
+        context.enqueueWork(() -> StructureClient.receive(payload));
     }
 
     private static void handleDirtyOnClient(MapDirtyPayload payload, IPayloadContext context) {

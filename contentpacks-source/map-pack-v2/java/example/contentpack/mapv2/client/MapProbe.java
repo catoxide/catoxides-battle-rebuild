@@ -34,8 +34,7 @@ final class MapProbe {
 
     static Info probe(ClientLevel level, int x, int z, String layer) {
         ResourceLocation dimension = level.dimension().location();
-        if (!(level.getChunkSource().getChunk(x >> 4, z >> 4, ChunkStatus.FULL, false)
-                instanceof LevelChunk)) {
+        if (!isLoaded(level, x, z)) {
             // 未加载：方块名来自瓦片快照（采集时记下的），群系用预测补
             String mapBlock = blockName(MapStore.sampleBlock(dimension, layer, x, z));
             String predicted = MapLayer.TOP.equals(layer)
@@ -85,7 +84,42 @@ final class MapProbe {
                 biomeName(level, pos), false);
     }
 
-    private static String blockName(String blockId) {
+    /** 客户端此刻是否加载着该坐标所在区块。 */
+    static boolean isLoaded(ClientLevel level, int x, int z) {
+        return level.getChunkSource().getChunk(x >> 4, z >> 4, ChunkStatus.FULL, false)
+                instanceof LevelChunk;
+    }
+
+    /**
+     * 已加载区块内该坐标的真实群系名（本地化）；未加载返回 {@code null}。
+     *
+     * <p>y 只影响 3D 群系（洞穴、山峰），调用方给地图上那一列的地表高度即可。
+     */
+    static String loadedBiomeName(ClientLevel level, int x, int y, int z) {
+        if (!isLoaded(level, x, z)) {
+            return null;
+        }
+        int clamped = Math.max(level.getMinBuildHeight(),
+                Math.min(level.getMaxBuildHeight() - 1, y));
+        return biomeName(level, new BlockPos(x, clamped, z));
+    }
+
+    /**
+     * 已加载区块地表那一格的真实群系 ID（如 {@code minecraft:plains}）；未加载返回 {@code null}。
+     *
+     * <p>给群系叠加层用：预测只该补未加载区域，已加载区域照世界真实群系上色。
+     */
+    static String loadedSurfaceBiomeId(ClientLevel level, int x, int z) {
+        if (!isLoaded(level, x, z)) {
+            return null;
+        }
+        int y = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
+        return level.getBiome(new BlockPos(x, Math.max(level.getMinBuildHeight(), y), z))
+                .unwrapKey().map(key -> key.location().toString()).orElse(null);
+    }
+
+    /** 瓦片快照里的方块 id → 当前语言显示名（悬停行与 {@link #probe} 共用）。 */
+    static String blockName(String blockId) {
         if (blockId == null || blockId.isBlank()) {
             return null;
         }

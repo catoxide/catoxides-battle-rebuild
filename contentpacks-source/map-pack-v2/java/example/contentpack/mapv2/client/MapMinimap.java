@@ -243,7 +243,7 @@ public final class MapMinimap {
         }
 
         if (prediction) {
-            BiomeOverlay.paint(fresh, dimension, originX, originZ, size, bpp,
+            BiomeOverlay.paint(fresh, dimension, level, originX, originZ, size, bpp,
                     (px, py) -> MapStore.sampleColor(dimension, layer,
                             originX + px * bpp, originZ + py * bpp) != 0,
                     MapConfig.predictionOutline() && bpp <= 4);
