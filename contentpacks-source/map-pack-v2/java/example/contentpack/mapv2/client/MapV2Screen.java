@@ -1,6 +1,8 @@
 package example.contentpack.mapv2.client;
 
+import com.catoxide.catoxidesbattlerebuild.core.map.MapRenderContext;
 import example.contentpack.mapv2.MapConfig;
+import example.contentpack.mapv2.MapHooks;
 import example.contentpack.mapv2.MapLayer;
 import example.contentpack.mapv2.MapLayerSelection;
 import example.contentpack.mapv2.MapStorage;
@@ -22,6 +24,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
@@ -249,6 +252,12 @@ public final class MapV2Screen extends Screen {
         // 第三遍：放大到每方块至少 16 像素时，换成各方块自己的顶面贴图
         BlockTopTextures.render(graphics, left, top, Math.max(viewWidth, viewHeight), tiles,
                 originX, originZ, bpp, minY, heightRange);
+        // 第三点二五遍：扩展叠加层（sable 船体俯视快照）——画布坐标，与地形同一视口
+        if (MapHooks.INSTANCE.hasOverlays()) {
+            MapHooks.INSTANCE.renderOverlays(new MapRenderContext(graphics, true,
+                    left, top, viewWidth, viewHeight, bpp,
+                    originX, originZ, dimension, partialTick));
+        }
         // 第三点五遍：结构候选点（独立叠加层，画在标记下面）
         StructureOverlay.render(graphics, minecraft, left, top, viewWidth, viewHeight,
                 bpp, originX, originZ, dimension);
@@ -556,8 +565,9 @@ public final class MapV2Screen extends Screen {
         if (hovered == null) {
             return;
         }
-        int px = layout.left() + MapProjection.pixel(hovered.x(), originX, bpp);
-        int py = layout.top() + MapProjection.pixel(hovered.z(), originZ, bpp);
+        Vec3 world = markerWorld(minecraft.level, hovered);
+        int px = layout.left() + MapProjection.pixel(world.x, originX, bpp);
+        int py = layout.top() + MapProjection.pixel(world.z, originZ, bpp);
         float scale = layout.guiScale();
         if (hovered.type().temporaryWaypoint()) {
             // 不要框：把白色三角直接压成灰色，像被按住
@@ -626,8 +636,9 @@ public final class MapV2Screen extends Screen {
         MarkerDto nearest = null;
         ResourceLocation dimension = level.dimension().location();
         for (MarkerDto marker : MarkerClient.visibleMarkers(dimension)) {
-            int px = layout.left() + MapProjection.pixel(marker.x(), originX, bpp);
-            int py = layout.top() + MapProjection.pixel(marker.z(), originZ, bpp);
+            Vec3 world = markerWorld(level, marker);
+            int px = layout.left() + MapProjection.pixel(world.x, originX, bpp);
+            int py = layout.top() + MapProjection.pixel(world.z, originZ, bpp);
             double distance = (double) (px - canvasX) * (px - canvasX)
                     + (double) (py - canvasY) * (py - canvasY);
             if (distance < best) {
@@ -636,6 +647,15 @@ public final class MapV2Screen extends Screen {
             }
         }
         return nearest;
+    }
+
+    /** 标记在地图上的当前世界位置：sable 锚点随船姿态重算，普通标记原样。 */
+    private static Vec3 markerWorld(ClientLevel level, MarkerDto marker) {
+        if (level == null) {
+            return new Vec3(marker.x(), marker.y(), marker.z());
+        }
+        Vec3 resolved = MapHooks.INSTANCE.resolveMarker(level, marker, 1.0f);
+        return resolved != null ? resolved : new Vec3(marker.x(), marker.y(), marker.z());
     }
 
     private void openEditor(MarkerDto marker) {
@@ -764,11 +784,16 @@ public final class MapV2Screen extends Screen {
             return;
         }
         int surfaceY = MapStore.sampleHeight(level.dimension().location(), layer, worldX, worldZ);
-        double y = surfaceY == Integer.MIN_VALUE ? 64.0 : surfaceY;
+        Double deckY = MapHooks.INSTANCE.surfaceY(level, worldX, worldZ);
+        double y = deckY != null ? deckY : (surfaceY == Integer.MIN_VALUE ? 64.0 : surfaceY);
+        // 甲板锚点用顶面下一格探测：sub-level 包围盒最高到甲板方块本身
+        Vec3 probe = new Vec3(worldX + 0.5, deckY != null ? y - 1.0 : y, worldZ + 0.5);
+        CompoundTag data = new CompoundTag();
+        Vec3 world = MapHooks.INSTANCE.resolveCreate(level, probe, null, data);
         ResourceLocation icon = ResourceLocation.withDefaultNamespace("nether_star");
         PacketDistributor.sendToServer(new MarkerCreatePayload(
-                MarkerType.PING.name(), icon, worldX + 0.5, y, worldZ + 0.5,
-                -1, -1, "map:" + worldX + "," + worldZ, new CompoundTag(), false));
+                MarkerType.PING.name(), icon, world.x, world.y, world.z,
+                -1, -1, "map:" + worldX + "," + worldZ, data, false));
     }
 
     /** 原版命令权限 2 = 单人开了作弊 / 服务器 op。 */

@@ -47,6 +47,7 @@ public final class SableMapSelfTest {
                 pose(100, 64, -200, 0, s, 0, c, 2, 3, 4, 5, 6, 7),
                 new Vec3(8.5, 9.25, 10.75), null);
         ok &= projectionCheck(service);
+        ok &= viewportCheck();
         ok &= boundsCheck();
         if (!ok) {
             LogManager.clientError(TAG, "Sable map math self-test FAILED");
@@ -89,7 +90,7 @@ public final class SableMapSelfTest {
     /** 俯视投影：位置/旋转/缩放到屏幕仿射矩阵的基向量。 */
     private static boolean projectionCheck(ISubLevelService service) {
         MapRenderContext context = new MapRenderContext(
-                null, false, 0, 0, 100, 2, 0, 0, null, 0.0f);
+                null, false, 0, 0, 100, 100, 2.0, 0, 0, null, 0.0f);
         SubLevelBounds bounds = new SubLevelBounds(0, 0, 0, 9, 0, 9);
 
         SubLevelInfo identity = new SubLevelInfo(UUID.randomUUID(), "identity",
@@ -111,8 +112,33 @@ public final class SableMapSelfTest {
         float worldYaw = SubLevelProjection.worldYaw(service, yaw90, 0.0, 0.0f);
         ok &= near(worldYaw, -90.0);
 
+        // 全屏 v2：分数 bpp（1/2）下每局部方块占 2 像素
+        MapRenderContext deep = new MapRenderContext(
+                null, true, 0, 0, 128, 64, 0.5, 0, 0, null, 0.0f);
+        SubLevelProjection p2 = SubLevelProjection.of(service, identity, deep, 1);
+        ok &= near(p2.ux(), 2.0) && near(p2.vz(), 2.0) && near(p2.originScreenX(), 0.0);
+
         if (!ok) {
             LogManager.clientError(TAG, "SubLevelProjection mapping failed");
+        }
+        return ok;
+    }
+
+    /** 矩形视口 + 分数 bpp：world→screen 与裁剪框边界。 */
+    private static boolean viewportCheck() {
+        MapRenderContext context = new MapRenderContext(
+                null, true, 10, 20, 200, 100, 0.5, -50.0, -25.0, null, 0.0f);
+        boolean ok = near(context.screenX(-50.0), 10.0)
+                && near(context.screenZ(-25.0), 20.0)
+                && near(context.screenX(50.0), 210.0)
+                && near(context.screenZ(25.0), 120.0)
+                && near(context.pixelsPerBlock(), 2.0)
+                && context.right() == 210 && context.bottom() == 120
+                && context.intersects(0, 0, 20, 30)
+                && !context.intersects(211, 0, 300, 30)
+                && !context.intersects(0, 121, 30, 200);
+        if (!ok) {
+            LogManager.clientError(TAG, "MapRenderContext viewport mapping failed");
         }
         return ok;
     }

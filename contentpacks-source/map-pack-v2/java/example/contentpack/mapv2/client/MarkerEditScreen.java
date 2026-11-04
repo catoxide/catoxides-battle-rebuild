@@ -1,5 +1,6 @@
 package example.contentpack.mapv2.client;
 
+import example.contentpack.mapv2.MapHooks;
 import example.contentpack.mapv2.MapLayer;
 import example.contentpack.mapv2.MapStore;
 import example.contentpack.mapv2.marker.MarkerData;
@@ -18,6 +19,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayList;
@@ -314,10 +316,10 @@ public final class MarkerEditScreen extends Screen {
         double z = parseCoordinate(zBox, createWorldZ) + 0.5;
         int blockX = (int) Math.floor(x);
         int blockZ = (int) Math.floor(z);
-        double y = resolveCreateY(level, blockX, blockZ);
         ResourceLocation icon = selectedIcon == null ? DEFAULT_ICON : selectedIcon;
 
         CompoundTag data = new CompoundTag();
+        Vec3 world = resolveCreatePosition(level, x, z, blockX, blockZ, data);
         String label = nameBox == null ? "" : nameBox.getValue().trim();
         if (!label.isEmpty()) {
             data.putString(MarkerData.KEY_LABEL, label);
@@ -329,17 +331,30 @@ public final class MarkerEditScreen extends Screen {
             data.putBoolean(MarkerData.KEY_ICON_OVERRIDE, true);
         }
         PacketDistributor.sendToServer(new MarkerCreatePayload(
-                MarkerType.STICKY.name(), icon, x, y, z, -1, -1,
+                MarkerType.STICKY.name(), icon, world.x, world.y, world.z, -1, -1,
                 "map:" + blockX + "," + blockZ, data, true));
     }
 
-    /** Y 留空时用地图采到的地表高度；未采集（未加载区域）用 63。 */
-    private double resolveCreateY(ClientLevel level, int blockX, int blockZ) {
+    /**
+     * 新建点的世界坐标：Y 留空时先问扩展层（sable 甲板），再回落地图地表，
+     * 未采集（未加载区域）用 63；锚点数据随解析结果写入 {@code data}。
+     */
+    private Vec3 resolveCreatePosition(ClientLevel level, double x, double z,
+                                       int blockX, int blockZ, CompoundTag data) {
+        double y;
         if (yBox != null && !yBox.getValue().trim().isEmpty()) {
-            return parseCoordinate(yBox, 63);
+            y = parseCoordinate(yBox, 63);
+            return MapHooks.INSTANCE.resolveCreate(level, new Vec3(x, y, z), null, data);
+        }
+        Double deckY = MapHooks.INSTANCE.surfaceY(level, blockX, blockZ);
+        if (deckY != null) {
+            // 甲板顶面下一格：sub-level 包围盒最高到甲板方块本身
+            return MapHooks.INSTANCE.resolveCreate(level,
+                    new Vec3(x, deckY - 1.0, z), null, data);
         }
         int surfaceY = MapStore.sampleHeight(level.dimension().location(), createLayer, blockX, blockZ);
-        return surfaceY == Integer.MIN_VALUE ? 63.0 : surfaceY;
+        y = surfaceY == Integer.MIN_VALUE ? 63.0 : surfaceY;
+        return MapHooks.INSTANCE.resolveCreate(level, new Vec3(x, y, z), null, data);
     }
 
     private static double parseCoordinate(EditBox box, double fallback) {

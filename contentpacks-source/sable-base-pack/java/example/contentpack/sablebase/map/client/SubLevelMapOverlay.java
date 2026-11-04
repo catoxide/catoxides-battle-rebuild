@@ -147,8 +147,8 @@ final class SubLevelMapOverlay implements MapOverlay {
 
             int px = (int) Math.round(context.screenX(entity.getX()));
             int py = (int) Math.round(context.screenZ(entity.getZ()));
-            if (px < context.left() - 8 || px > context.left() + context.size() + 8
-                    || py < context.top() - 8 || py > context.top() + context.size() + 8) {
+            if (px < context.left() - 8 || px > context.right() + 8
+                    || py < context.top() - 8 || py > context.bottom() + 8) {
                 continue;
             }
 

@@ -91,7 +91,7 @@ public final class MapMinimap {
         int span = size * bpp;
         int halfSpan = span / 2; // 与 rebuild() 的整数原点保持一致
         MapRenderContext overlayContext = new MapRenderContext(graphics, false,
-                x, y, size, bpp,
+                x, y, size, size, bpp,
                 centerX - halfSpan, centerZ - halfSpan,
                 dimension, partialTick);
         graphics.enableScissor(x, y, x + size, y + size);
