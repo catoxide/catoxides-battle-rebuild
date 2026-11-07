@@ -17,14 +17,16 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.FluidState;
 import org.slf4j.Logger;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * 采集：把客户端已加载区块的 16×16 列变成瓦片像素。
@@ -54,7 +56,20 @@ public final class MapCapture {
     /** 同一瓦片持续被采集时，纹理失效最多每个该间隔执行一次（初次铺图不用每 tick 重建）。 */
     private static final int REVISION_COALESCE_TICKS = 10;
 
-    private static final ArrayDeque<Job> QUEUE = new ArrayDeque<>();
+    /**
+     * 待采集区块：按入队那一刻离玩家的欧氏距离出队，近的先采。
+     *
+     * <p>距离是一次性快照，存进 {@link Queued}，比较器只读这个字段 —— 比较器不能依赖
+     * 会变的玩家位置（TreeSet 的排序不变式会乱），也不在玩家移动后整队重算：
+     * 重排会把已经排到头的近处工作又推回后面，而且队列里大部分项在被重排前就采完了。
+     * 新进来的区块自带当时的距离，插入位置自然正确。
+     */
+    private static final Comparator<Queued> NEAREST_FIRST = Comparator
+            .comparingInt(Queued::distance)
+            .thenComparingInt(queued -> queued.job().pos().x)
+            .thenComparingInt(queued -> queued.job().pos().z)
+            .thenComparing(queued -> queued.job().layer());
+    private static final NavigableSet<Queued> QUEUE = new TreeSet<>(NEAREST_FIRST);
     private static final Set<Job> SEEN = new HashSet<>();
     private static final Set<Job> DIRTY = new HashSet<>();
     /** 本窗口采过的瓦片 → 最后一次被采的 tick；满 {@link #REVISION_COALESCE_TICKS} 才 bump。 */
@@ -158,11 +173,12 @@ public final class MapCapture {
     }
 
     /**
-     * 区块刚加载（客户端主线程）→ 立刻插到队首。
+     * 区块刚加载（客户端主线程）→ 带上「此刻离玩家多远」入队。
      *
      * <p>为什么不能只靠 {@link #discover} 的周期扫描：扫描半径受视距钳制，
-     * 且队列是 FIFO —— 玩家往前走时新出现的区块排在旧积压之后，
-     * 表现出来就是「越走越远、身后反而补不上」。事件驱动让每块新区块当拍就采。
+     * 事件驱动让每块新区块当拍就能采。入队不再抢插队首 —— 原版发包本来就是近→远
+     * （{@code PlayerChunkSender} 按 distanceSquared 排序），插队首会把整批顺序反转成
+     * 远→近；按入队时的距离排队，进服/传送这种一次性涌入就是从中心向外铺。
      */
     public static void onChunkLoaded(ClientLevel current, ChunkPos pos) {
         Minecraft minecraft = Minecraft.getInstance();
@@ -180,7 +196,7 @@ public final class MapCapture {
         for (String layer : desiredLayers(minecraft, current)) {
             Job job = new Job(layer, pos);
             if (SEEN.add(job)) {
-                QUEUE.addFirst(job);
+                enqueue(job, playerChunk);
             }
         }
     }
@@ -254,7 +270,7 @@ public final class MapCapture {
             for (String layer : layers) {
                 Job job = new Job(layer, new ChunkPos(cx, cz));
                 if (SEEN.add(job)) {
-                    QUEUE.add(job);
+                    enqueue(job, center);
                 }
             }
             return true;
@@ -284,9 +300,13 @@ public final class MapCapture {
         }
         long start = System.nanoTime();
         while (!QUEUE.isEmpty()) {
-            Job job = QUEUE.poll();
+            Job job = QUEUE.pollFirst().job();
             if (!isLoaded(current, job.pos().x, job.pos().z)) {
                 SEEN.remove(job);
+                // 传送后旧位置的任务会成批在这里被丢掉；不检查预算的话单帧会超支
+                if (System.nanoTime() - start >= BUDGET_NANOS) {
+                    break;
+                }
                 continue;
             }
             captureChunk(current, job);
@@ -294,6 +314,18 @@ public final class MapCapture {
                 break;
             }
         }
+    }
+
+    /** 区块欧氏距离：与原版发包排序（{@code PlayerChunkSender} 的 distanceSquared）同口径。 */
+    private static int distanceSquared(ChunkPos origin, ChunkPos pos) {
+        int dx = pos.x - origin.x;
+        int dz = pos.z - origin.z;
+        return dx * dx + dz * dz;
+    }
+
+    /** 入队即定距：{@code origin} 是这一拍玩家所在的区块。 */
+    private static void enqueue(Job job, ChunkPos origin) {
+        QUEUE.add(new Queued(job, distanceSquared(origin, job.pos())));
     }
 
     private static boolean isLoaded(ClientLevel current, int cx, int cz) {
@@ -480,6 +512,10 @@ public final class MapCapture {
     }
 
     private record Job(String layer, ChunkPos pos) {
+    }
+
+    /** 队列项：入队那一刻算好的距离，排序只读它，不随玩家移动刷新。 */
+    private record Queued(Job job, int distance) {
     }
 
     private record TileRef(ResourceLocation dimension, String layer, int tileX, int tileZ) {
