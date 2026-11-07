@@ -5,16 +5,18 @@ import example.contentpack.mapv2.MapCapture;
 import example.contentpack.mapv2.client.MapWorld;
 import example.contentpack.mapv2.client.StructureClient;
 import example.contentpack.mapv2.structure.StructureService;
+import example.contentpack.mapv2.transfer.ClientBlobService;
+import example.contentpack.mapv2.transfer.ServerBlobService;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.handling.DirectionalPayloadHandler;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
-
-import java.util.UUID;
 
 /**
  * 地图网络包注册（双端）+ 客户端处理。
@@ -40,6 +42,17 @@ public final class MapNetwork {
                     MapNetwork::handleStructureQuery);
             registrar.playToClient(StructureResultPayload.TYPE, StructureResultPayload.CODEC,
                     MapNetwork::handleStructureResult);
+            // 通用分块传输：双端同 id（下载/上传共用），请求单独走 toServer
+            registrar.playToServer(BlobRequestPayload.TYPE, BlobRequestPayload.CODEC,
+                    MapNetwork::handleBlobRequest);
+            registrar.playBidirectional(BlobChunkPayload.TYPE, BlobChunkPayload.CODEC,
+                    new DirectionalPayloadHandler<>(
+                            MapNetwork::handleBlobChunkOnClient,
+                            MapNetwork::handleBlobChunkOnServer));
+            registrar.playToServer(MapRevealRequestPayload.TYPE, MapRevealRequestPayload.CODEC,
+                    MapNetwork::handleRevealRequest);
+            registrar.playToClient(MapRevealPayload.TYPE, MapRevealPayload.CODEC,
+                    MapNetwork::handleReveal);
         });
     }
 
@@ -48,22 +61,63 @@ public final class MapNetwork {
                                              IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player && player.getServer() != null) {
-                var server = player.getServer();
-                var overworld = server.overworld();
-                UUID worldId = WorldIdentity.get(server);
-                long seed = overworld.getSeed();
-                String generator = overworld.getChunkSource().getGenerator().getClass().getName();
-                String name = server.getWorldData().getLevelName();
-                PacketDistributor.sendToPlayer(player,
-                        new MapWorldIdPayload(worldId, seed, generator, name));
+                PacketDistributor.sendToPlayer(player, worldIdPayload(player.getServer()));
             }
         });
+    }
+
+    private static MapWorldIdPayload worldIdPayload(MinecraftServer server) {
+        var overworld = server.overworld();
+        return new MapWorldIdPayload(WorldIdentity.get(server), overworld.getSeed(),
+                overworld.getChunkSource().getGenerator().getClass().getName(),
+                server.getWorldData().getLevelName(), MapTileSync.sharing(server));
+    }
+
+    /** 共享开关翻转时重播世界信息：主机客户端据此开始上传。 */
+    public static void broadcastWorldId(MinecraftServer server) {
+        MapWorldIdPayload payload = worldIdPayload(server);
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            PacketDistributor.sendToPlayer(player, payload);
+        }
     }
 
     /** 客户端：拿到世界 ID 后才开始采集/渲染。 */
     private static void handleWorldId(MapWorldIdPayload payload, IPayloadContext context) {
         context.enqueueWork(() -> MapWorld.receive(payload.worldId(), payload.seed(),
-                payload.generator(), payload.worldName()));
+                payload.generator(), payload.worldName(), payload.tileSharing()));
+    }
+
+    private static void handleBlobRequest(BlobRequestPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (context.player() instanceof ServerPlayer player) {
+                ServerBlobService.handleRequest(player, payload);
+            }
+        });
+    }
+
+    private static void handleBlobChunkOnClient(BlobChunkPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> ClientBlobService.receive(payload));
+    }
+
+    private static void handleBlobChunkOnServer(BlobChunkPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (context.player() instanceof ServerPlayer player) {
+                ServerBlobService.handleChunk(player, payload);
+            }
+        });
+    }
+
+    private static void handleRevealRequest(MapRevealRequestPayload payload,
+                                            IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (context.player() instanceof ServerPlayer player) {
+                RevealServerService.handleRequest(player, payload);
+            }
+        });
+    }
+
+    private static void handleReveal(MapRevealPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> example.contentpack.mapv2.client.MapRevealClient.receive(payload));
     }
 
     /** 服务端：按单元复算结构候选点（纯计算，不生成区块）。 */

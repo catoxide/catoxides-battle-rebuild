@@ -57,6 +57,11 @@ public final class StructureSelfTest {
         } else {
             failed++;
         }
+        if (run("structure-variant-order", StructureSelfTest::testVariantOrder)) {
+            passed++;
+        } else {
+            failed++;
+        }
         if (run("structure-query-codec", StructureSelfTest::testQueryCodec)) {
             passed++;
         } else {
@@ -218,6 +223,38 @@ public final class StructureSelfTest {
         }
     }
 
+    /**
+     * 变体顺序必须是排列、同输入同结果，且两个等权变体在不同落点上都会出现——
+     * 这保证下界复合结构能按原版随机分出要塞和堡垒遗迹，而不是恒取第一个。
+     */
+    private static void testVariantOrder() {
+        long seed = 123456789L;
+        int[] weights = {1, 1};
+        boolean sawFirst = false;
+        boolean sawSecond = false;
+        for (int x = -40; x < 40; x++) {
+            for (int z = -40; z < 40; z += 7) {
+                int[] order = StructureScan.variantOrder(seed, x, z, weights);
+                require(order.length == weights.length, "order length");
+                boolean[] seen = new boolean[weights.length];
+                for (int index : order) {
+                    require(index >= 0 && index < weights.length, "index range: " + index);
+                    require(!seen[index], "duplicate variant index: " + index);
+                    seen[index] = true;
+                }
+                int[] again = StructureScan.variantOrder(seed, x, z, weights);
+                for (int i = 0; i < order.length; i++) {
+                    require(order[i] == again[i], "order must be deterministic");
+                }
+                sawFirst |= order[0] == 0;
+                sawSecond |= order[0] == 1;
+            }
+        }
+        require(sawFirst && sawSecond, "both variants must lead on some chunk");
+        int[] single = StructureScan.variantOrder(seed, 3, -5, new int[]{7});
+        require(single.length == 1 && single[0] == 0, "single variant stays first");
+    }
+
     private static void testQueryCodec() {
         StructureQueryPayload original = new StructureQueryPayload(OVERWORLD, -3, 7);
         ByteBuf buffer = Unpooled.buffer();
@@ -234,10 +271,10 @@ public final class StructureSelfTest {
 
     private static void testResultCodec() {
         List<StructureEntry> entries = List.of(
-                new StructureEntry("minecraft:villages", -117, 45,
+                new StructureEntry("minecraft:villages", "minecraft:plains_village", -117, 45,
                         StructureEntry.TIER_CANDIDATE),
-                new StructureEntry("minecraft:ancient_cities", 2000, -2001,
-                        StructureEntry.TIER_CONFIRMED));
+                new StructureEntry("minecraft:ancient_cities", "minecraft:ancient_city",
+                        2000, -2001, StructureEntry.TIER_CONFIRMED));
         StructureResultPayload original = new StructureResultPayload(
                 OVERWORLD, -2, 1, entries, true);
         ByteBuf buffer = Unpooled.buffer();

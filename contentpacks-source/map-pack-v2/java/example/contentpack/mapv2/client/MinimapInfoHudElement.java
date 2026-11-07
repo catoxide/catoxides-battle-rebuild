@@ -14,8 +14,9 @@ import java.util.List;
  * <p>默认位置贴着 {@link MinimapHudElement}，但分组独立：把小地图挪走或改大小时，
  * 文字不会跟着跑，玩家可以自己摆到别处。
  *
- * <p>群系行和时间行各由一个选项决定开关，所以面板开在本元素上时列的是这两个——
- * 与 {@link MinimapHudElement} 各自声明自己那一块的事，没有一份「地图包总选项表」。
+ * <p>三行各有独立开关（坐标 / 群系 / 时间），另有对齐与字号选项：
+ * 对齐决定文字落在小地图左缘、中线还是右缘，字号是系统 GUI 缩放之上的百分比。
+ * 位置偏移仍由 HUD 布局系统提供，本元素只声明自己那块尺寸。
  */
 public final class MinimapInfoHudElement implements HudElement {
 
@@ -39,14 +40,20 @@ public final class MinimapInfoHudElement implements HudElement {
     public Bounds bounds() {
         int size = MapConfig.minimapSize();
         int screenWidth = Minecraft.getInstance().getWindow().getGuiScaledWidth();
-        int lines = 1 + (MapConfig.showBiome() ? 1 : 0) + (MapConfig.showTime() ? 1 : 0);
-        return new Bounds(screenWidth - size - 6, 6 + size + 3, size, lines * LINE_HEIGHT);
+        int lines = MinimapInfoLayout.lineCount(
+                MapConfig.showCoords(), MapConfig.showBiome(), MapConfig.showTime());
+        float textScale = MapConfig.infoTextScale() / 100f;
+        int height = Math.round(lines * LINE_HEIGHT * textScale);
+        return new Bounds(screenWidth - size - 6, 6 + size + 3, size, height);
     }
 
     @Override
     public List<HudConfigOption> options() {
         return List.of(
+                HudConfigOption.of("map-pack-v2", "map", "showCoords"),
                 HudConfigOption.of("map-pack-v2", "map", "showBiome"),
-                HudConfigOption.of("map-pack-v2", "map", "showTime"));
+                HudConfigOption.of("map-pack-v2", "map", "showTime"),
+                HudConfigOption.of("map-pack-v2", "map", "infoAlign"),
+                HudConfigOption.of("map-pack-v2", "map", "infoTextScale"));
     }
 }

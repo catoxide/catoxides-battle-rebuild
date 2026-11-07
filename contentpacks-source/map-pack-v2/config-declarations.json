@@ -57,6 +57,37 @@
               "comment": [
                 "Show the current in-game time under the minimap."
               ]
+            },
+            {
+              "key": "showCoords",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": [
+                "Show the coordinate line under the minimap."
+              ]
+            },
+            {
+              "key": "infoAlign",
+              "type": "int",
+              "default": 2,
+              "tier": "HOT",
+              "min": 0,
+              "max": 2,
+              "comment": [
+                "Minimap text alignment: 0 = left edge, 1 = centre, 2 = right edge."
+              ]
+            },
+            {
+              "key": "infoTextScale",
+              "type": "int",
+              "default": 100,
+              "tier": "HOT",
+              "min": 50,
+              "max": 200,
+              "comment": [
+                "Minimap text size as a percentage of the system GUI scale. 100 and 200 stay pixel-crisp."
+              ]
             }
           ]
         },
@@ -75,6 +106,17 @@
               ]
             },
             {
+              "key": "uiScale",
+              "type": "int",
+              "default": 0,
+              "tier": "HOT",
+              "min": 0,
+              "max": 4,
+              "comment": [
+                "Map UI scale: 0 = follow the system GUI scale, 1-4 = fixed scale for the world-map chrome."
+              ]
+            },
+            {
               "key": "zoomSharpen",
               "type": "int",
               "default": 0,
@@ -84,6 +126,19 @@
               "comment": [
                 "Sharpening applied to zoomed-out map tiles (0 = off, 100 = strongest).",
                 "Zooming out averages blocks into one pixel; this restores local contrast."
+              ]
+            },
+            {
+              "key": "terrainRelief",
+              "type": "int",
+              "default": 100,
+              "tier": "HOT",
+              "min": 0,
+              "max": 200,
+              "comment": [
+                "Strength of the north-west relief shading (0 = off, 100 = default, 200 = strongest).",
+                "Terrain rising towards the north-west is brightened, terrain falling away is darkened.",
+                "Uses heights already stored in the map tiles, so explored areas shade without re-capturing."
               ]
             },
             {
@@ -102,7 +157,7 @@
               "default": true,
               "tier": "HOT",
               "comment": [
-                "Show predicted biomes for unexplored areas (needs biome-preview-pack).",
+                "Show predicted biomes for unexplored areas (built-in, limited to the configured radius).",
                 "Prediction is drawn dimmed; real explored terrain always wins."
               ]
             },
@@ -383,6 +438,110 @@
               "comment": [
                 "Also list structure sets from other namespaces (mods / datapacks).",
                 "They use the same placement maths but their icons and names are not verified yet."
+              ]
+            }
+          ]
+        },
+        {
+          "key": "sync",
+          "values": [
+            {
+              "key": "shareTiles",
+              "type": "bool",
+              "default": true,
+              "comment": [
+                "Share explored map tiles between players on a dedicated server or a LAN-published world.",
+                "Tiles are stored under <world>/map_pack_tiles; the newest upload wins."
+              ]
+            },
+            {
+              "key": "tileKbpsPerPlayer",
+              "type": "int",
+              "default": 256,
+              "min": 16,
+              "max": 4096,
+              "comment": "Outbound tile bandwidth cap per player, in KiB/s."
+            }
+          ]
+        },
+        {
+          "key": "reveal",
+          "values": [
+            {
+              "key": "revealRadiusChunks",
+              "type": "int",
+              "default": 64,
+              "min": 0,
+              "max": 256,
+              "comment": [
+                "Chunks around each player that count as explored; biome and structure predictions only show there.",
+                "The union is kept per dimension and survives restarts. 0 disables the limit entirely."
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "preview",
+      "scope": "COMMON",
+      "file": "biome-preview-pack",
+      "sections": [
+        {
+          "key": "performance",
+          "values": [
+            {
+              "key": "resolutionTier",
+              "type": "int",
+              "default": 1,
+              "tier": "HOT",
+              "min": 0,
+              "max": 3,
+              "comment": [
+                "0: off - no sampling at all.",
+                "1: 4-block cells (finest; 44 us per chunk, 181 ms per 1024x1024 tile on one thread).",
+                "2: 8-block cells (10 us per chunk).",
+                "3: 16-block cells (coarsest; 2.8 us per chunk).",
+                "Sampling always runs on a background pool at low priority and pauses itself when the server tick gets slow."
+              ]
+            }
+          ]
+        },
+        {
+          "key": "region",
+          "values": [
+            {
+              "key": "radiusBlocks",
+              "type": "int",
+              "default": 2048,
+              "tier": "HOT",
+              "min": 256,
+              "max": 8192,
+              "comment": [
+                "Biome prediction radius in blocks, measured as a circle from the request centre.",
+                "Bigger than a vanilla map but still bounded; anything outside stays blank."
+              ]
+            },
+            {
+              "key": "maxCellsPerAxis",
+              "type": "int",
+              "default": 129,
+              "tier": "HOT",
+              "min": 33,
+              "max": 513,
+              "comment": [
+                "Upper bound on samples per axis for one region.",
+                "The sampling step is coarsened automatically to fit; larger values look finer and cost more server time."
+              ]
+            },
+            {
+              "key": "persist",
+              "type": "bool",
+              "default": true,
+              "tier": "HOT",
+              "comment": [
+                "Store received biome regions on disk per world.",
+                "Revisiting an area (or reopening the world) reuses them instead of asking the server again."
               ]
             }
           ]

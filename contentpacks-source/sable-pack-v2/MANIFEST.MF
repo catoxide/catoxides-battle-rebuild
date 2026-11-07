@@ -1,0 +1,9 @@
+Manifest-Version: 1.0
+Module-Name: sable-pack-v2
+Module-Version: 2.0.0
+Module-Requires: catoxidesbattlerebuild>=0.2.0
+Module-Type: contentpack
+Module-Entry: example.contentpack.sablev2.SablePackV2
+Module-Dependencies-Optional: map-pack-v2
+Module-Mod-Requires: sable>=2.0.3
+Module-Mod-Optional: simulated>=1.3.0

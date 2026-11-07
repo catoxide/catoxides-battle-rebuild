@@ -5,7 +5,9 @@ import example.contentpack.mapv2.MapConfig;
 import example.contentpack.mapv2.MapLayerSelection;
 import example.contentpack.mapv2.MapStorage;
 import example.contentpack.mapv2.MapStore;
+import example.contentpack.mapv2.network.MapTileSync;
 import example.contentpack.mapv2.network.MapWorldIdRequestPayload;
+import example.contentpack.mapv2.transfer.ClientBlobService;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -70,6 +72,8 @@ public final class MapWorld {
         existingMap = false;
         lastRequestNanos = 0;
         pendingCandidates = List.of();
+        ClientBlobService.setEnabled(false);
+        MapTileSync.reset();
     }
 
     /** 每秒最多请求一次；连接不存在时不发。 */
@@ -86,7 +90,8 @@ public final class MapWorld {
     }
 
     /** 收到服务端下发的世界信息。 */
-    public static void receive(UUID id, long worldSeed, String worldGenerator, String name) {
+    public static void receive(UUID id, long worldSeed, String worldGenerator, String name,
+                               boolean tileSharing) {
         if (id == null) {
             return;
         }
@@ -96,11 +101,13 @@ public final class MapWorld {
             MapStore.clearAll();
             MapLayerSelection.reset();
             StructureClient.reset();
+            MapRevealClient.reset();
         }
         worldId = id;
         seed = worldSeed;
         generator = worldGenerator == null ? "" : worldGenerator;
         worldName = name == null ? "" : name;
+        ClientBlobService.setEnabled(tileSharing);
 
         boolean hadDirectory = Files.isDirectory(MapStorage.worldDir(id));
         meta = MapWorldMeta.loadOrCreate(id, seed, generator, worldName);

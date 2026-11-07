@@ -7,7 +7,9 @@ import example.contentpack.mapv2.MapConfig;
 import example.contentpack.mapv2.MapHooks;
 import example.contentpack.mapv2.MapLayer;
 import example.contentpack.mapv2.MapLayerSelection;
+import example.contentpack.mapv2.MapLayerStack;
 import example.contentpack.mapv2.MapScan;
+import example.contentpack.mapv2.MapShade;
 import example.contentpack.mapv2.MapStorage;
 import example.contentpack.mapv2.MapStore;
 import example.contentpack.mapv2.MapTile;
@@ -115,31 +117,66 @@ public final class MapMinimap {
 
         // 信息条是独立 HUD 元素：默认贴在小地图下方，但位置只由自己的偏移决定，
         // 不再叠加小地图的偏移 —— 否则挪动小地图时文字会被一起拖走（等于还是绑在一起）。
-        String coords = centerX + ", " + centerZ;
-        if (MapLayer.isSection(layer)) {
-            coords += "  " + MapLayer.label(layer);
-        }
-        int right = screenWidth - 6 + HudLayoutApi.offsetX(MinimapInfoHudElement.ID);
-        int lineY = 6 + size + 3 + HudLayoutApi.offsetY(MinimapInfoHudElement.ID);
-        drawRightAligned(graphics, minecraft, coords, right, lineY, 0xCCFFFFFF);
-        lineY += 10;
-        if (MapConfig.showBiome()) {
-            String biome = MapProbe.biomeName(level, minecraft.player.blockPosition());
-            drawRightAligned(graphics, minecraft, biome, right, lineY, 0xCCFFFFFF);
-            lineY += 10;
-        }
-        if (MapConfig.showTime()) {
-            drawRightAligned(graphics, minecraft, timeString(level), right, lineY, 0xCCFFFFFF);
-        }
+        drawInfoLines(graphics, minecraft, level, layer, centerX, centerZ, size, screenWidth);
 
         MarkerHud.renderMinimap(graphics, minecraft, x, y, size, bpp,
                 centerX, centerZ, dimension, partialTick);
     }
 
-    private static void drawRightAligned(GuiGraphics graphics, Minecraft minecraft,
-                                         String text, int right, int y, int color) {
-        graphics.drawString(minecraft.font, text,
-                right - minecraft.font.width(text), y, color, true);
+    /**
+     * 信息条：每行独立开关、统一对齐、按百分比缩放。
+     *
+     * <p>锚点先换算成缩放前坐标再交给 {@link MinimapInfoLayout}，否则字号变大时
+     * 右对齐的文字会被一起推离小地图边缘。
+     */
+    private static void drawInfoLines(GuiGraphics graphics, Minecraft minecraft, ClientLevel level,
+                                      String layer, int centerX, int centerZ, int size, int screenWidth) {
+        boolean coords = MapConfig.showCoords();
+        boolean biome = MapConfig.showBiome();
+        boolean time = MapConfig.showTime();
+        if (MinimapInfoLayout.lineCount(coords, biome, time) == 0) {
+            return;
+        }
+        float textScale = MapConfig.infoTextScale() / 100f;
+        int align = MapConfig.infoAlign();
+        int offsetX = HudLayoutApi.offsetX(MinimapInfoHudElement.ID);
+        int offsetY = HudLayoutApi.offsetY(MinimapInfoHudElement.ID);
+        int left = screenWidth - size - 6 + offsetX;
+        int right = screenWidth - 6 + offsetX;
+        int center = screenWidth - size / 2 - 6 + offsetX;
+        int top = 6 + size + 3 + offsetY;
+
+        graphics.pose().pushPose();
+        graphics.pose().scale(textScale, textScale, 1f);
+        int line = 0;
+        if (coords) {
+            String text = centerX + ", " + centerZ;
+            if (MapLayer.isSection(layer)) {
+                text += "  " + MapLayer.label(layer);
+            }
+            line = drawInfoLine(graphics, minecraft, text, align,
+                    left, center, right, textScale, top, line);
+        }
+        if (biome) {
+            line = drawInfoLine(graphics, minecraft,
+                    MapProbe.biomeName(level, minecraft.player.blockPosition()), align,
+                    left, center, right, textScale, top, line);
+        }
+        if (time) {
+            drawInfoLine(graphics, minecraft, timeString(level), align,
+                    left, center, right, textScale, top, line);
+        }
+        graphics.pose().popPose();
+    }
+
+    private static int drawInfoLine(GuiGraphics graphics, Minecraft minecraft, String text,
+                                    int align, int left, int center, int right,
+                                    float textScale, int top, int line) {
+        int width = minecraft.font.width(text);
+        int x = Math.round(MinimapInfoLayout.alignX(align, width, left, center, right) / textScale);
+        int y = Math.round(top / textScale) + line * 10;
+        graphics.drawString(minecraft.font, text, x, y, 0xCCFFFFFF, true);
+        return line + 1;
     }
 
     /** 游戏内时间 HH:MM（MC 的 0 tick 是 06:00）。 */
@@ -217,8 +254,15 @@ public final class MapMinimap {
         int span = size * bpp;
         int originX = centerX - span / 2;
         int originZ = centerZ - span / 2;
-        requestVisibleTiles(dimension, layer, originX, originZ, span, 64);
-        boolean prediction = MapLayer.showsBiome(layer) && MapConfig.showBiomePrediction();
+        // 切片留空 ⇒ 逐像素往下递归：整条栈（选中层及以下）一起读盘
+        List<String> stack = MapLayerStack.build(availableLayers(level), layer);
+        List<String> sampleOrder = stack.reversed();
+        int perLayerLimit = Math.max(1, 64 / stack.size());
+        for (String stackLayer : stack) {
+            requestVisibleTiles(dimension, stackLayer, originX, originZ, span, perLayerLimit);
+        }
+        boolean prediction = MapLayer.showsBiome(layer, level.dimension() == Level.NETHER)
+                && MapConfig.showBiomePrediction();
         if (prediction) {
             MapBiomeLayer.ensureVisible(dimension, originX, originZ, span);
         }
@@ -226,26 +270,34 @@ public final class MapMinimap {
         NativeImage fresh = new NativeImage(size, size, true);
         int minY = level.getMinBuildHeight();
         int heightRange = Math.max(1, level.getMaxBuildHeight() - minY - 1);
+        int relief = MapConfig.terrainRelief();
 
         for (int py = 0; py < size; py++) {
             int worldZ = originZ + py * bpp;
             for (int px = 0; px < size; px++) {
                 int worldX = originX + px * bpp;
-                int argb = MapStore.sampleColor(dimension, layer, worldX, worldZ);
-                if (argb == 0) {
-                    continue; // 未采集：留给预测层（BiomeOverlay）
+                MapStore.StackSample sample =
+                        MapStore.sampleStack(dimension, sampleOrder, worldX, worldZ);
+                if (!sample.known()) {
+                    continue; // 整条栈都没采集：留给预测层（BiomeOverlay）
                 }
-                int y = MapStore.sampleHeight(dimension, layer, worldX, worldZ);
-                int fluid = MapStore.sampleFluid(dimension, layer, worldX, worldZ);
-                fresh.setPixelRGBA(px, py,
-                        toNativeAbgr(applyShade(argb, y, minY, heightRange, fluid)));
+                int y = sample.height();
+                int shaded = MapShade.applyShade(sample.color(), y, minY, heightRange,
+                        sample.fluid());
+                if (relief > 0 && y != MapShade.NO_HEIGHT) {
+                    shaded = MapShade.applyRelief(shaded, y,
+                            MapStore.sampleStack(dimension, sampleOrder, worldX - bpp, worldZ).height(),
+                            MapStore.sampleStack(dimension, sampleOrder, worldX, worldZ - bpp).height(),
+                            bpp, relief);
+                }
+                fresh.setPixelRGBA(px, py, MapShade.toNativeAbgr(shaded));
             }
         }
 
         if (prediction) {
             BiomeOverlay.paint(fresh, dimension, level, originX, originZ, size, bpp,
-                    (px, py) -> MapStore.sampleColor(dimension, layer,
-                            originX + px * bpp, originZ + py * bpp) != 0,
+                    (px, py) -> MapStore.sampleStack(dimension, sampleOrder,
+                            originX + px * bpp, originZ + py * bpp).known(),
                     MapConfig.predictionOutline() && bpp <= 4);
         }
 
@@ -308,41 +360,4 @@ public final class MapMinimap {
         image = null;
     }
 
-    /**
-     * 高度明暗 + 流体修正。
-     * <p>世界底部 55% 亮度、顶部 100%；水按深度最多再压暗 45%，岩浆提亮 12%。
-     *
-     * @param fluid 正数水深、负数岩浆深度、0 非流体
-     */
-    static int applyShade(int argb, int y, int minY, int heightRange, int fluid) {
-        int r = (argb >> 16) & 0xFF;
-        int g = (argb >> 8) & 0xFF;
-        int b = argb & 0xFF;
-        float t = (y - minY) / (float) heightRange;
-        t = Math.max(0f, Math.min(1f, t));
-        float shade = 0.55f + 0.45f * t;
-        if (fluid > 0) {
-            shade *= 1f - Math.min(0.45f, fluid / 64f);
-        } else if (fluid < 0) {
-            shade *= 1.12f;
-        }
-        r = Math.min(255, (int) (r * shade));
-        g = Math.min(255, (int) (g * shade));
-        b = Math.min(255, (int) (b * shade));
-        return 0xFF000000 | (r << 16) | (g << 8) | b;
-    }
-
-    /**
-     * ARGB → NativeImage 的 ABGR 内存布局。
-     * <p>小端存储后字节序为 R,G,B,A，正好是 GPU 的 RGBA8 纹理格式。
-     * <p>1.21.1 的 {@code NativeImage.setPixelRGBA} 实际是直存内存 int（不做 RGBA→ABGR 转换），
-     * 传 RGBA 会让 R 通道被填成 alpha、整体偏红（实测），所以这里按 ABGR 传。
-     */
-    static int toNativeAbgr(int argb) {
-        int a = (argb >>> 24) & 0xFF;
-        int r = (argb >> 16) & 0xFF;
-        int g = (argb >> 8) & 0xFF;
-        int b = argb & 0xFF;
-        return (a << 24) | (b << 16) | (g << 8) | r;
-    }
 }

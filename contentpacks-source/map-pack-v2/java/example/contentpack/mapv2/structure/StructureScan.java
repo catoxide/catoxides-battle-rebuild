@@ -1,11 +1,14 @@
 package example.contentpack.mapv2.structure;
 
+import net.minecraft.world.level.levelgen.LegacyRandomSource;
+import net.minecraft.world.level.levelgen.WorldgenRandom;
+
 /**
- * 结构候选点的纯算术：区域归属、查询单元格、矩形判定、群系采样高度。
+ * 结构候选点的纯算术：区域归属、查询单元格、矩形判定、群系采样高度、变体顺序。
  *
  * <p>不读世界、不碰注册表，自检可以直接跑。候选点本身仍由原版
  * {@code RandomSpreadStructurePlacement.getPotentialStructureChunk} 计算——这里只回答
- * 「矩形覆盖了哪些区域 / 该格属于哪个缓存单元」。
+ * 「矩形覆盖了哪些区域 / 该格属于哪个缓存单元 / 多条目结构集先试哪个变体」。
  */
 public final class StructureScan {
 
@@ -63,5 +66,54 @@ public final class StructureScan {
                                  int minChunkX, int minChunkZ, int maxChunkX, int maxChunkZ) {
         return chunkX >= minChunkX && chunkX <= maxChunkX
                 && chunkZ >= minChunkZ && chunkZ <= maxChunkZ;
+    }
+
+    /**
+     * 多条目结构集的变体尝试顺序，与 {@code ChunkGenerator.createStructures} 同步：
+     * {@code WorldgenRandom.setLargeFeatureSeed(seed, chunkX, chunkZ)} 之后按权重挑，
+     * 挑中的变体生不出结构（群系不符 / 地形高度不够）时原版才试下一个。
+     *
+     * <p>所以首项就是「这个落点最可能长出来的变体」。下界复合结构集同时含要塞与堡垒遗迹，
+     * 单看结构集 id 分不出是哪个，必须按这套顺序取变体。
+     *
+     * @param weights 与结构集 {@code structures()} 同序的权重
+     * @return 条目下标数组（长度与 weights 相同，升序无重复）
+     */
+    public static int[] variantOrder(long seed, int chunkX, int chunkZ, int[] weights) {
+        WorldgenRandom random = new WorldgenRandom(new LegacyRandomSource(0L));
+        random.setLargeFeatureSeed(seed, chunkX, chunkZ);
+        int[] order = new int[weights.length];
+        boolean[] used = new boolean[weights.length];
+        int total = 0;
+        for (int weight : weights) {
+            total += weight;
+        }
+        for (int slot = 0; slot < order.length; slot++) {
+            int roll = random.nextInt(total);
+            int chosen = -1;
+            for (int i = 0; i < weights.length; i++) {
+                if (used[i]) {
+                    continue;
+                }
+                roll -= weights[i];
+                if (roll < 0) {
+                    chosen = i;
+                    break;
+                }
+            }
+            if (chosen < 0) {
+                // 权重非正时原版行为无定义；兜底取第一个未用条目，保证是排列
+                for (int i = 0; i < weights.length; i++) {
+                    if (!used[i]) {
+                        chosen = i;
+                        break;
+                    }
+                }
+            }
+            order[slot] = chosen;
+            used[chosen] = true;
+            total -= weights[chosen];
+        }
+        return order;
     }
 }

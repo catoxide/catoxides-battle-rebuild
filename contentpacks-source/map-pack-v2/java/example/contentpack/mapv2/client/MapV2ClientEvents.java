@@ -8,6 +8,7 @@ import example.contentpack.mapv2.MapStorage;
 import example.contentpack.mapv2.marker.MarkerData;
 import example.contentpack.mapv2.marker.MarkerType;
 import example.contentpack.mapv2.network.MarkerCreatePayload;
+import example.contentpack.mapv2.transfer.ClientBlobService;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -95,6 +96,9 @@ public final class MapV2ClientEvents {
         NeoForge.EVENT_BUS.addListener((ChunkEvent.Load event) -> {
             if (event.getLevel() instanceof ClientLevel level && event.getChunk() != null) {
                 MapCapture.onChunkLoaded(level, event.getChunk().getPos());
+                // 结构图标要从「推测」升级成「已确认」，得让含这一格的单元重新问一次
+                StructureClient.markChunkLoaded(level.dimension().location(),
+                        event.getChunk().getPos().x, event.getChunk().getPos().z);
             }
         });
 
@@ -113,6 +117,8 @@ public final class MapV2ClientEvents {
             }
             MapCapture.tick(minecraft);
             MapWorld.tickScreen();
+            ClientBlobService.tick();
+            MapRevealClient.tick(minecraft);
             MarkerClient.tick();
             StructureClient.tick();
             SlotFlash.tick();
@@ -151,6 +157,8 @@ public final class MapV2ClientEvents {
         NeoForge.EVENT_BUS.addListener((ClientPlayerNetworkEvent.LoggingOut event) -> {
             MapStorage.flushAll();
             MapStorage.clear();
+            ClientBlobService.reset();
+            MapRevealClient.reset();
             MarkerClient.reset();
             StructureClient.reset();
         });

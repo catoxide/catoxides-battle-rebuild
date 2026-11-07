@@ -39,8 +39,16 @@ public final class StructureVerdicts {
     /** 每个维度最多记这么多区块；超了清空重建（判定只是显示增益，丢了退回候选级）。 */
     private static final int MAX_CHUNKS_PER_DIMENSION = 1 << 15;
 
-    /** 维度 → 区块长坐标 → (结构集 id → 这个区块里是否真长出了该结构)。 */
-    private static final Map<ResourceLocation, Map<Long, Map<ResourceLocation, Boolean>>> VERDICTS =
+    /**
+     * 判定结果：{@code present=false} 表示确定没有；否则 {@code structureId} 是真正长出起点的那一变体。
+     *
+     * <p>只记布尔值不够：{@code nether_complexes} 一个落点要区分要塞和堡垒遗迹。
+     */
+    public record Verdict(boolean present, ResourceLocation structureId) {
+    }
+
+    /** 维度 → 区块长坐标 → (结构集 id → 判定)。 */
+    private static final Map<ResourceLocation, Map<Long, Map<ResourceLocation, Verdict>>> VERDICTS =
             new ConcurrentHashMap<>();
 
     private static int diagJudged = 20;
@@ -57,9 +65,9 @@ public final class StructureVerdicts {
         NeoForge.EVENT_BUS.addListener((ServerStoppedEvent event) -> VERDICTS.clear());
     }
 
-    /** {@code null} = 没判过，或这个区块不是该结构集的落点；否则值就是「长出来了 / 确定没有」。 */
-    public static Map<ResourceLocation, Boolean> get(ResourceLocation dimension, ChunkPos pos) {
-        Map<Long, Map<ResourceLocation, Boolean>> chunks = VERDICTS.get(dimension);
+    /** {@code null} = 没判过，或这个区块不是该结构集的落点。 */
+    public static Map<ResourceLocation, Verdict> get(ResourceLocation dimension, ChunkPos pos) {
+        Map<Long, Map<ResourceLocation, Verdict>> chunks = VERDICTS.get(dimension);
         return chunks == null ? null : chunks.get(pos.toLong());
     }
 
@@ -71,12 +79,12 @@ public final class StructureVerdicts {
         }
         ResourceLocation dimension = level.dimension().location();
         ChunkPos pos = chunk.getPos();
-        Map<Long, Map<ResourceLocation, Boolean>> chunks = VERDICTS.get(dimension);
+        Map<Long, Map<ResourceLocation, Verdict>> chunks = VERDICTS.get(dimension);
         if (chunks != null && chunks.containsKey(pos.toLong())) {
             return;
         }
         ChunkGeneratorStructureState state = level.getChunkSource().getGeneratorState();
-        Map<ResourceLocation, Boolean> considered = null;
+        Map<ResourceLocation, Verdict> considered = null;
         for (Holder<StructureSet> holder : state.possibleStructureSets()) {
             StructureSet set = holder.value();
             ResourceLocation id = holder.unwrapKey().map(ResourceKey::location).orElse(null);
@@ -86,7 +94,8 @@ public final class StructureVerdicts {
             if (considered == null) {
                 considered = new HashMap<>(4);
             }
-            considered.put(id, hasStart(chunk, set));
+            ResourceLocation started = startOf(chunk, set);
+            considered.put(id, new Verdict(started != null, started));
         }
         if (considered == null) {
             // 没有任何结构集把这个区块当落点：地图查询也不会在这里出条目，不必记
@@ -96,13 +105,13 @@ public final class StructureVerdicts {
         if (chunks.size() >= MAX_CHUNKS_PER_DIMENSION) {
             chunks.clear();
         }
-        Map<ResourceLocation, Boolean> verdict = Map.copyOf(considered);
+        Map<ResourceLocation, Verdict> verdict = Map.copyOf(considered);
         chunks.put(pos.toLong(), verdict);
         if (diagJudged > 0) {
             diagJudged--;
             int present = 0;
-            for (boolean value : verdict.values()) {
-                present += value ? 1 : 0;
+            for (Verdict value : verdict.values()) {
+                present += value.present() ? 1 : 0;
             }
             LOGGER.info("[MapPack] structure judged {}/{}: candidates={} present={}",
                     dimension, pos, verdict.size(), present);
@@ -123,14 +132,20 @@ public final class StructureVerdicts {
         return false;
     }
 
-    /** 区块里的结构起点是否属于这个集合的任一变体（注册表实例是单例，按引用比）。 */
-    static boolean hasStart(ChunkAccess chunk, StructureSet set) {
+    /**
+     * 区块里属于这个集合的、真正生效的变体 id；没有返回 {@code null}。
+     *
+     * <p>一个集合在同一个区块最多长一个起点，所以这里能唯一确定是要塞还是堡垒遗迹
+     * （注册表实例是单例，按引用比）。
+     */
+    static ResourceLocation startOf(ChunkAccess chunk, StructureSet set) {
         for (StructureSet.StructureSelectionEntry variant : set.structures()) {
             StructureStart start = chunk.getAllStarts().get(variant.structure().value());
             if (start != null && start.isValid()) {
-                return true;
+                return variant.structure().unwrapKey()
+                        .map(ResourceKey::location).orElse(null);
             }
         }
-        return false;
+        return null;
     }
 }

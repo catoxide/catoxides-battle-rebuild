@@ -145,34 +145,41 @@ public final class StructureService {
         int judged = 0;
         for (Candidate candidate : candidates) {
             ChunkPos pos = candidate.pos();
-            Map<ResourceLocation, Boolean> verdict = StructureVerdicts.get(dimension, pos);
-            if (verdict != null) {
-                Boolean present = verdict.get(candidate.setId());
-                if (present != null) {
+            Map<ResourceLocation, StructureVerdicts.Verdict> verdicts =
+                    StructureVerdicts.get(dimension, pos);
+            if (verdicts != null) {
+                StructureVerdicts.Verdict verdict = verdicts.get(candidate.setId());
+                if (verdict != null) {
                     judged++;
-                    if (!present) {
+                    if (!verdict.present()) {
                         dropped++;
                         continue;
                     }
                     confirmed++;
-                    entries.add(new StructureEntry(candidate.setId().toString(), pos.x, pos.z,
-                            StructureEntry.TIER_CONFIRMED));
+                    ResourceLocation started = verdict.structureId() != null
+                            ? verdict.structureId() : candidate.structureId();
+                    entries.add(new StructureEntry(candidate.setId().toString(),
+                            started.toString(), pos.x, pos.z, StructureEntry.TIER_CONFIRMED));
                     continue;
                 }
             }
             byte tier = StructureEntry.TIER_CANDIDATE;
+            String structureId = candidate.structureId().toString();
             LevelChunk chunk = level.getChunkSource().getChunkNow(pos.x, pos.z);
             if (chunk != null) {
-                if (!StructureVerdicts.hasStart(chunk, candidate.set())) {
+                ResourceLocation started = StructureVerdicts.startOf(chunk, candidate.set());
+                if (started == null) {
                     dropped++;
                     continue;
                 }
                 confirmed++;
                 tier = StructureEntry.TIER_CONFIRMED;
+                structureId = started.toString();
             } else {
                 unloaded++;
             }
-            entries.add(new StructureEntry(candidate.setId().toString(), pos.x, pos.z, tier));
+            entries.add(new StructureEntry(candidate.setId().toString(), structureId,
+                    pos.x, pos.z, tier));
         }
         if (diagResolve > 0) {
             diagResolve--;
@@ -246,7 +253,8 @@ public final class StructureService {
                     stats.inRect++;
                     // 环形位置已经过原版群系搜索；群系门仍走同一套（要塞标签 = #is_overworld）
                     stats.placementOk++;
-                    if (context.verifyBiomes() && !matchesBiome(context, biomes, pos, set)) {
+                    ResourceLocation variant = selectVariant(context, biomes, pos, set);
+                    if (variant == null) {
                         stats.biomeRejected++;
                         if (gateDetail == null) {
                             gateDetail = describeGate(biomes.get(ChunkPos.asLong(pos.x, pos.z)),
@@ -254,7 +262,7 @@ public final class StructureService {
                         }
                         continue;
                     }
-                    candidates.add(new Candidate(setId, pos, set));
+                    candidates.add(new Candidate(setId, variant, pos, set));
                     if (candidates.size() >= maxResults) {
                         truncated = true;
                         break outer;
@@ -295,8 +303,9 @@ public final class StructureService {
                         continue;
                     }
                     stats.placementOk++;
-                    // 推测级：群系不符的候选块原版最终不会长结构（Structure.java:196-198）
-                    if (context.verifyBiomes() && !matchesBiome(context, biomes, pos, set)) {
+                    // 推测级：群系不符的变体原版最终不会长结构（Structure.java:196-198）
+                    ResourceLocation variant = selectVariant(context, biomes, pos, set);
+                    if (variant == null) {
                         stats.biomeRejected++;
                         if (gateDetail == null) {
                             gateDetail = describeGate(biomes.get(ChunkPos.asLong(pos.x, pos.z)),
@@ -304,7 +313,7 @@ public final class StructureService {
                         }
                         continue;
                     }
-                    candidates.add(new Candidate(setId, pos, set));
+                    candidates.add(new Candidate(setId, variant, pos, set));
                     if (candidates.size() >= maxResults) {
                         truncated = true;
                         break outer;
@@ -346,19 +355,45 @@ public final class StructureService {
                 ? Integer.MAX_VALUE : -1;
     }
 
-    /** 采样高度里任一命中该结构集任一变体的群系集合就放行。 */
-    private static boolean matchesBiome(ScanContext context, Map<Long, List<BiomeSample>> cache,
-                                        ChunkPos pos, StructureSet set) {
-        List<BiomeSample> samples = cache.computeIfAbsent(
-                ChunkPos.asLong(pos.x, pos.z), ignored -> sampleBiomes(context, pos));
-        for (BiomeSample sample : samples) {
-            for (StructureSet.StructureSelectionEntry entry : set.structures()) {
-                if (entry.structure().value().biomes().contains(sample.biome())) {
-                    return true;
+    /**
+     * 这个落点会落成哪个变体：按原版权重随机顺序（{@link StructureScan#variantOrder}），
+     * 取第一个群系命中的；都不命中返回 {@code null}（原版也不会长）。
+     *
+     * <p>顺序很重要：{@code nether_complexes} 的要塞和堡垒遗迹接受同一套群系，
+     * 只有这套随机顺序能分出该显示哪一个。关闭群系校验时直接取首项。
+     */
+    private static ResourceLocation selectVariant(ScanContext context,
+                                                  Map<Long, List<BiomeSample>> cache,
+                                                  ChunkPos pos, StructureSet set) {
+        List<StructureSet.StructureSelectionEntry> variants = set.structures();
+        int[] weights = new int[variants.size()];
+        for (int i = 0; i < weights.length; i++) {
+            weights[i] = variants.get(i).weight();
+        }
+        int[] order = StructureScan.variantOrder(
+                context.state().getLevelSeed(), pos.x, pos.z, weights);
+        List<BiomeSample> samples = null;
+        if (context.verifyBiomes()) {
+            samples = cache.computeIfAbsent(
+                    ChunkPos.asLong(pos.x, pos.z), ignored -> sampleBiomes(context, pos));
+        }
+        for (int index : order) {
+            StructureSet.StructureSelectionEntry variant = variants.get(index);
+            ResourceLocation id = variant.structure().unwrapKey()
+                    .map(ResourceKey::location).orElse(null);
+            if (id == null) {
+                continue;
+            }
+            if (samples == null) {
+                return id;
+            }
+            for (BiomeSample sample : samples) {
+                if (variant.structure().value().biomes().contains(sample.biome())) {
+                    return id;
                 }
             }
         }
-        return false;
+        return null;
     }
 
     private static List<BiomeSample> sampleBiomes(ScanContext context, ChunkPos pos) {
@@ -451,8 +486,12 @@ public final class StructureService {
         return allowed[0];
     }
 
-    /** 扫描产出的原始候选，结构集留着给主线程做「已加载区块」核实。 */
-    private record Candidate(ResourceLocation setId, ChunkPos pos, StructureSet set) {
+    /**
+     * 扫描产出的原始候选：{@code structureId} 是按原版随机顺序算出的具体变体，
+     * 结构集留着给主线程做「已加载区块」核实。
+     */
+    private record Candidate(ResourceLocation setId, ResourceLocation structureId,
+                             ChunkPos pos, StructureSet set) {
     }
 
     private record Scan(List<Candidate> candidates, boolean truncated) {

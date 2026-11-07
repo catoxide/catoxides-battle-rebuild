@@ -18,6 +18,7 @@ import net.minecraft.world.level.material.FluidState;
 import org.slf4j.Logger;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -30,11 +31,12 @@ import java.util.Set;
  *
  * <h3>采哪些层</h3>
  * <ul>
- *   <li><b>地狱</b>：只采玩家当前 y 所在的 16 格切片 —— 基岩天花板会让 top 层永远只有基岩，
- *       没有信息量。</li>
+ *   <li><b>地狱</b>：一次采全部 16 格切片 —— 基岩天花板会让 top 层永远只有基岩，没有信息量。</li>
  *   <li><b>主世界 / 末地</b>：总是采 {@code top}；玩家处在地表以下时，额外采当前切片
  *       （挖矿到哪，地下图就长到哪）。</li>
  * </ul>
+ * 切片只记录自己 16 格窗口内的方块，窗口全空就留透明；「从这层往下看」由显示端
+ * 把选中层及以下所有已加载切片叠起来实现（见 {@link MapLayerStack}），采集端不烘焙 fallback。
  * 切片起始 y 从 {@code level.getMinBuildHeight()} 对齐，层名用绝对 y，
  * 所以改世界高度后旧存档不会错位。
  *
@@ -130,8 +132,10 @@ public final class MapCapture {
             DIRTY.add(new Job(MapLayer.TOP, chunk));
             return;
         }
+        // 切片只存自己窗口内的方块：变化点落在哪个切片，就只重采哪个切片（叠层在显示时做）
+        int changedY = pos.getY();
         for (String layer : layers) {
-            if (MapLayer.TOP.equals(layer) || MapLayer.contains(layer, pos.getY())) {
+            if (MapLayer.TOP.equals(layer) || MapLayer.contains(layer, changedY)) {
                 DIRTY.add(new Job(layer, chunk));
             }
         }
@@ -204,14 +208,17 @@ public final class MapCapture {
     }
 
     /**
-     * 当前应该采集的层。地狱只切片；其他维度 top 常驻，玩家在地表以下时加当前切片。
+     * 当前应该采集的层。
+     *
+     * <p>地狱：天花板让 top 永远只有基岩，玩家选哪一层切片都不该是空白。
+     * 其他维度：top 常驻，玩家在地表以下时加当前切片。
      */
     private static List<String> desiredLayers(Minecraft minecraft, ClientLevel current) {
         int playerY = minecraft.player.getBlockY();
         String section = MapLayer.section(
                 MapLayer.sectionStart(playerY, current.getMinBuildHeight()));
         if (current.dimension() == Level.NETHER) {
-            return List.of(section);
+            return allSections(current);
         }
         int surfaceY = current.getHeight(Heightmap.Types.WORLD_SURFACE,
                 minecraft.player.getBlockX(), minecraft.player.getBlockZ());
@@ -219,6 +226,18 @@ public final class MapCapture {
             return List.of(MapLayer.TOP, section);
         }
         return List.of(MapLayer.TOP);
+    }
+
+    /** 该维度从 minBuildHeight 对齐的全部切片层。 */
+    private static List<String> allSections(ClientLevel current) {
+        int minBuildHeight = current.getMinBuildHeight();
+        int maxBuildHeight = current.getMaxBuildHeight();
+        List<String> layers = new ArrayList<>((maxBuildHeight - minBuildHeight)
+                / MapLayer.SECTION_HEIGHT);
+        for (int y = minBuildHeight; y < maxBuildHeight; y += MapLayer.SECTION_HEIGHT) {
+            layers.add(MapLayer.section(y));
+        }
+        return layers;
     }
 
     private static void discover(Minecraft minecraft, ClientLevel current) {
@@ -332,7 +351,10 @@ public final class MapCapture {
     }
 
     /**
-     * 切片：只在该 16 格窗口内从上往下找最高非空气方块；整段空气 = 未采集（透明）。
+     * 切片：在 16 格窗口内从上往下找最高非空气方块；窗口整段空气就留透明。
+     *
+     * <p>不向更低层回落：留空是「这一层没有方块」的准确记录，叠加渲染时自然露出下层。
+     * 若在这里烘焙 fallback，同一份下层方块会被复制进每一层，改方块后要重采整列。
      */
     private static void captureSection(ClientLevel current, ChunkPos pos, int sectionMinY) {
         if (sectionMinY == Integer.MIN_VALUE) {
@@ -359,23 +381,24 @@ public final class MapCapture {
                 int y = Math.min(
                         current.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1,
                         sectionMaxY);
-                if (y < sectionMinY) {
-                    continue;
-                }
-                // 窗口内向下找第一个非空气；整段空气则该列在本层未知
+                BlockState found = null;
                 while (y >= sectionMinY) {
                     POS.set(x, y, z);
                     BlockState state = current.getBlockState(POS);
                     if (!state.isAir()) {
-                        if (tile == null) {
-                            tile = tileFor(dimension, layer, tileX, tileZ);
-                        }
-                        changed |= put(current, tile, localBaseX + dx, localBaseZ + dz,
-                                x, z, y, state, blockIds);
+                        found = state;
                         break;
                     }
                     y--;
                 }
+                if (found == null) {
+                    continue;
+                }
+                if (tile == null) {
+                    tile = tileFor(dimension, layer, tileX, tileZ);
+                }
+                changed |= put(current, tile, localBaseX + dx, localBaseZ + dz,
+                        x, z, y, found, blockIds);
             }
         }
         if (changed) {

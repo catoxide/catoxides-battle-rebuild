@@ -47,8 +47,11 @@ $srcEntities = Join-Path $srcAbs "entities"
 if (Test-Path $srcEntities) {
     Copy-Item (Join-Path $srcEntities "*") (Join-Path $temp "entities/")
 }
+# 与 contentpack.gradle 的 from(projectDir) 排除表保持一致：.gradle / build / runs / bin / out
+# 都是构建产物——在包目录里跑过 userdev 后 .gradle 会带上数百 MB 的 MC 缓存，漏排会打出 140 MB 的包。
+$junkDirs = @(".gradle", "build", "runs", "bin", "out", "entities", "java")
 Get-ChildItem $srcAbs -Directory | ForEach-Object {
-    if ($_.Name -ne "entities" -and $_.Name -ne "java") {
+    if ($junkDirs -notcontains $_.Name) {
         Copy-Item $_.FullName (Join-Path $temp $_.Name) -Recurse -Force
     }
 }

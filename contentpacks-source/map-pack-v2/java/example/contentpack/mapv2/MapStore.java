@@ -107,6 +107,41 @@ public final class MapStore {
     }
 
     /**
+     * 叠层采样：按 {@code sampleOrder}（从高到低）找第一个已采集像素。
+     *
+     * <p>切片留空像素，空处要露出下层；所以这里的层列表必须是
+     * {@link MapLayerStack#sampleOrder} 的顺序，而不是单个层。
+     */
+    public static StackSample sampleStack(ResourceLocation dimension, List<String> sampleOrder,
+                                          int blockX, int blockZ) {
+        for (String layer : sampleOrder) {
+            MapTile tile = get(dimension, layer, MapTile.tileCoord(blockX), MapTile.tileCoord(blockZ));
+            if (tile == null) {
+                continue;
+            }
+            int localX = MapTile.localCoord(blockX);
+            int localZ = MapTile.localCoord(blockZ);
+            if (!tile.isKnown(localX, localZ)) {
+                continue;
+            }
+            return new StackSample(tile.colorAt(localX, localZ), tile.heightAt(localX, localZ),
+                    tile.fluidAt(localX, localZ), tile.blockAt(localX, localZ));
+        }
+        return UNKNOWN;
+    }
+
+    /** 一个像素在叠层里看到的方块；{@link #color()} 为 0 表示整条栈都没采集。 */
+    public record StackSample(int color, int height, int fluid, String block) {
+
+        public boolean known() {
+            return color != 0;
+        }
+    }
+
+    private static final StackSample UNKNOWN =
+            new StackSample(0, Integer.MIN_VALUE, Integer.MIN_VALUE, null);
+
+    /**
      * 视口内、内存中已存在的瓦片。
      *
      * <p>按已探索瓦片迭代，而不是遍历整个矩形范围——缩到很远时矩形可能有几万个格子，

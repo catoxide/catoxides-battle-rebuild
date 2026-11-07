@@ -45,12 +45,36 @@ public final class MapConfig {
         return clamp(getInt("zoomSharpen", 0), 0, 100);
     }
 
+    /** 立体光暗强度（0 = 关，100 = 默认，200 = 最重）。只用已采集的高度，不重新采样方块。 */
+    public static int terrainRelief() {
+        return clamp(getInt("terrainRelief", 100), 0, 200);
+    }
+
+    /** 0 = 跟随系统 GUI 缩放；1..4 = 地图界面自己的绝对缩放。 */
+    public static int uiScale() {
+        return clamp(getInt("uiScale", 0), 0, 4);
+    }
+
+    public static boolean showCoords() {
+        return getBool("showCoords", true);
+    }
+
     public static boolean showBiome() {
         return getBool("showBiome", true);
     }
 
     public static boolean showTime() {
         return getBool("showTime", true);
+    }
+
+    /** 信息条对齐：0 = 左（小地图左缘），1 = 居中，2 = 右（默认）。 */
+    public static int infoAlign() {
+        return clamp(getInt("infoAlign", 2), 0, 2);
+    }
+
+    /** 信息条字号百分比；100 / 200 是位图字体的清晰档位。 */
+    public static int infoTextScale() {
+        return clamp(getInt("infoTextScale", 100), 50, 200);
     }
 
     public static boolean showBlockInfo() {

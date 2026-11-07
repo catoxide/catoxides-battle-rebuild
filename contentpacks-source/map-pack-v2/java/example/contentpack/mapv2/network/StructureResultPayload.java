@@ -37,10 +37,11 @@ public record StructureResultPayload(ResourceLocation dimension, int cellX, int 
             List<StructureEntry> entries = new ArrayList<>(count);
             for (int i = 0; i < count; i++) {
                 String setId = ByteBufCodecs.STRING_UTF8.decode(buf);
+                String structureId = ByteBufCodecs.STRING_UTF8.decode(buf);
                 int chunkX = ByteBufCodecs.VAR_INT.decode(buf);
                 int chunkZ = ByteBufCodecs.VAR_INT.decode(buf);
                 byte tier = buf.readByte();
-                entries.add(new StructureEntry(setId, chunkX, chunkZ, tier));
+                entries.add(new StructureEntry(setId, structureId, chunkX, chunkZ, tier));
             }
             boolean truncated = buf.readBoolean();
             return new StructureResultPayload(dimension, cellX, cellZ, List.copyOf(entries), truncated);
@@ -54,6 +55,7 @@ public record StructureResultPayload(ResourceLocation dimension, int cellX, int 
             ByteBufCodecs.VAR_INT.encode(buf, payload.entries().size());
             for (StructureEntry entry : payload.entries()) {
                 ByteBufCodecs.STRING_UTF8.encode(buf, entry.setId());
+                ByteBufCodecs.STRING_UTF8.encode(buf, entry.structureId());
                 ByteBufCodecs.VAR_INT.encode(buf, entry.chunkX());
                 ByteBufCodecs.VAR_INT.encode(buf, entry.chunkZ());
                 buf.writeByte(entry.tier());

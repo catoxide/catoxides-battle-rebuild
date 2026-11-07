@@ -2,6 +2,7 @@ package example.contentpack.mapv2.client;
 
 import example.contentpack.mapv2.MapHooks;
 import example.contentpack.mapv2.MapLayer;
+import example.contentpack.mapv2.MapLayerStack;
 import example.contentpack.mapv2.MapStore;
 import example.contentpack.mapv2.marker.MarkerData;
 import example.contentpack.mapv2.marker.MarkerDto;
@@ -352,7 +353,10 @@ public final class MarkerEditScreen extends Screen {
             return MapHooks.INSTANCE.resolveCreate(level,
                     new Vec3(x, deckY - 1.0, z), null, data);
         }
-        int surfaceY = MapStore.sampleHeight(level.dimension().location(), createLayer, blockX, blockZ);
+        int surfaceY = MapStore.sampleStack(level.dimension().location(),
+                        MapLayerStack.sampleOrder(MapMinimap.availableLayers(level), createLayer),
+                        blockX, blockZ)
+                .height();
         y = surfaceY == Integer.MIN_VALUE ? 63.0 : surfaceY;
         return MapHooks.INSTANCE.resolveCreate(level, new Vec3(x, y, z), null, data);
     }

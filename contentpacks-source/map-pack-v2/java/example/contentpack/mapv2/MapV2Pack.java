@@ -4,9 +4,16 @@ import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPack;
 import com.catoxide.catoxidesbattlerebuild.core.contentpack.ContentPackContext;
 import com.catoxide.catoxidesbattlerebuild.core.hud.HudElements;
+import com.catoxide.catoxidesbattlerebuild.core.map.MapBiomeSources;
 import com.catoxide.catoxidesbattlerebuild.core.map.MapCaps;
 import com.catoxide.catoxidesbattlerebuild.core.world.WorldIdentity;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
+import example.contentpack.biomepreview.PreviewAutoTest;
+import example.contentpack.biomepreview.client.MapBiomeClientSource;
+import example.contentpack.biomepreview.command.BiomePreviewCommand;
+import example.contentpack.biomepreview.network.BiomePreviewNetwork;
+import example.contentpack.biomepreview.preview.PreviewScheduler;
+import example.contentpack.biomepreview.preview.PreviewSettings;
 import example.contentpack.mapv2.client.CompassConfig;
 import example.contentpack.mapv2.client.CompassHudElement;
 import example.contentpack.mapv2.client.MapV2ClientEvents;
@@ -17,11 +24,17 @@ import example.contentpack.mapv2.marker.MarkerServerConfig;
 import example.contentpack.mapv2.marker.MarkerService;
 import example.contentpack.mapv2.network.MapNetwork;
 import example.contentpack.mapv2.network.MapServerSync;
+import example.contentpack.mapv2.network.MapTileSync;
 import example.contentpack.mapv2.network.MarkerNetwork;
+import example.contentpack.mapv2.network.RevealConfig;
+import example.contentpack.mapv2.network.RevealServerService;
+import example.contentpack.mapv2.network.TileSyncConfig;
 import example.contentpack.mapv2.structure.StructureSelfTest;
 import example.contentpack.mapv2.structure.StructureServerConfig;
 import example.contentpack.mapv2.structure.StructureVerdicts;
+import example.contentpack.mapv2.transfer.ServerBlobService;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 
 /**
@@ -31,7 +44,9 @@ import net.neoforged.neoforge.event.server.ServerStartedEvent;
  * {@link example.contentpack.mapv2.view.MapZoom#lod} 一并决定，不再依赖 Minecraft 的 GUI scale。
  * 见 {@code design/MAP_PACK_V2_DESIGN.md}。
  *
- * <p>当前阶段：世界地图（P1）+ 小地图/罗盘/标记（P3）。群系预测的视距式控制（P2）与多实例同步（P4）待做。
+ * <p>当前阶段：世界地图（P1）+ 小地图/罗盘/标记（P3）+ 群系预测（P2，原 biome-preview-pack
+ * 已并入本包）。预测按配置半径圆形采样，收到的区域按世界 UUID 固化到磁盘，同一份数据同时
+ * 供地图着色和建筑/结构查询；多实例同步（P4）待做。
  */
 public final class MapV2Pack implements ContentPack {
 
@@ -57,20 +72,35 @@ public final class MapV2Pack implements ContentPack {
         MarkerNetwork.register(context.getModEventBus());
 
         MapConfig.bind(context.config("map"));
+        PreviewSettings.bind(context.config("preview"));
+        PreviewScheduler.register();
+        BiomePreviewNetwork.register(context.getModEventBus());
+        NeoForge.EVENT_BUS.addListener((RegisterCommandsEvent event) ->
+                BiomePreviewCommand.register(event.getDispatcher()));
+        PreviewAutoTest.register();
         // 标记服务端逻辑在集成服务器（单机）里也必须跑：CLIENT 是 JVM 级常量，
         // 不能用来区分「这一侧是不是服务端」，否则单机没有 TTL 清理/死亡点/登录同步/实体发光。
         MarkerServerConfig.bind(context.config("server"));
         StructureServerConfig.bind(context.config("server"));
+        TileSyncConfig.bind(context.config("server"));
+        RevealConfig.bind(context.config("server"));
         MarkerService.init();
         StructureVerdicts.init();
         MarkerSelfTest.run();
         StructureSelfTest.run();
-        // 世界启动时就把世界 ID 生成/落盘，保证玩家登录前已就绪
-        NeoForge.EVENT_BUS.addListener((ServerStartedEvent event) ->
-                WorldIdentity.get(event.getServer()));
+        // 世界启动时就把世界 ID 生成/落盘，保证玩家登录前已就绪；专用服务器顺手挂上瓦片存储
+        NeoForge.EVENT_BUS.addListener((ServerStartedEvent event) -> {
+            WorldIdentity.get(event.getServer());
+            // 带宽配置是 COLD：注册期读取会抛「config not loaded」，必须等服务端起来后再读
+            ServerBlobService.init(TileSyncConfig.bytesPerSecond());
+            MapTileSync.initServer(event.getServer());
+            RevealServerService.init(event.getServer());
+        });
 
         if (CatoxidesBattleRebuildConstants.CLIENT) {
             CompassConfig.bind(context.config("map"));
+            MapBiomeSources.register(MapBiomeClientSource.INSTANCE);
+            MapTileSync.registerClient();
             MapV2SelfTest.run();
             // 地图扩展能力：必须早于依赖 map-pack-v2 的包 register（由 Module-Dependencies 保证顺序）
             context.provide(MapCaps.API, MapHooks.INSTANCE);

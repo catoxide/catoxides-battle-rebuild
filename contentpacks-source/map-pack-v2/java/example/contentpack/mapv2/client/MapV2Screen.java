@@ -5,6 +5,7 @@ import example.contentpack.mapv2.MapConfig;
 import example.contentpack.mapv2.MapHooks;
 import example.contentpack.mapv2.MapLayer;
 import example.contentpack.mapv2.MapLayerSelection;
+import example.contentpack.mapv2.MapLayerStack;
 import example.contentpack.mapv2.MapStorage;
 import example.contentpack.mapv2.MapStore;
 import example.contentpack.mapv2.MapTile;
@@ -16,6 +17,7 @@ import example.contentpack.mapv2.network.MarkerRemovePayload;
 import example.contentpack.mapv2.structure.StructureEntry;
 import example.contentpack.mapv2.view.MapProjection;
 import example.contentpack.mapv2.view.MapZoom;
+import example.contentpack.mapv2.view.UiScale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -23,6 +25,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -111,19 +114,41 @@ public final class MapV2Screen extends Screen {
         }
     }
 
-    /** 画布矩形（帧缓冲像素）。左右/上下边距一致，视口比例 = 屏幕比例减去底部工具栏。 */
-    private record Layout(int guiScale, int viewWidth, int viewHeight, int left, int top) {
+    /**
+     * 画布矩形（帧缓冲像素）。左右/上下边距一致，视口比例 = 屏幕比例减去底部工具栏。
+     *
+     * <p>两套缩放同时存在：{@code guiScale} 是系统的（画布 = 帧缓冲像素，贴图清晰度靠它），
+     * {@code uiScale} 是地图界面自己的（边距、按钮、文字）。{@code uiWidth/uiHeight}
+     * 是界面坐标空间的大小，绘制时整体乘 {@link #chromeScale()}。
+     */
+    private record Layout(int guiScale, int uiScale, int viewWidth, int viewHeight,
+                          int left, int top, int uiWidth, int uiHeight) {
+
+        float chromeScale() {
+            return this.uiScale / (float) this.guiScale;
+        }
+
+        /** 系统鼠标坐标 → 界面坐标（与 {@link #chromeScale()} 互逆）。 */
+        double toUiX(double mouseX) {
+            return mouseX * this.guiScale / this.uiScale;
+        }
+
+        double toUiY(double mouseY) {
+            return mouseY * this.guiScale / this.uiScale;
+        }
     }
 
     private static Layout layout(Minecraft minecraft, int width, int height) {
         int guiScale = Math.max(1, (int) minecraft.getWindow().getGuiScale());
+        int uiScale = UiScale.resolve(MapConfig.uiScale(), guiScale);
         int canvasWidth = width * guiScale;
         int canvasHeight = height * guiScale;
-        int margin = MARGIN_GUI * guiScale;
-        int bar = BOTTOM_BAR_GUI * guiScale;
+        int margin = MARGIN_GUI * uiScale;
+        int bar = BOTTOM_BAR_GUI * uiScale;
         int viewWidth = Math.max(64, canvasWidth - 2 * margin);
         int viewHeight = Math.max(64, canvasHeight - 2 * margin - bar);
-        return new Layout(guiScale, viewWidth, viewHeight, margin, margin);
+        return new Layout(guiScale, uiScale, viewWidth, viewHeight, margin, margin,
+                canvasWidth / uiScale, canvasHeight / uiScale);
     }
 
     @Override
@@ -138,9 +163,10 @@ public final class MapV2Screen extends Screen {
 
     private void buildButtons() {
         buttons.clear();
-        int barY = this.height - BOTTOM_BAR_GUI + 4;
+        Layout layout = layout(Minecraft.getInstance(), this.width, this.height);
+        int barY = layout.uiHeight() - BOTTOM_BAR_GUI + 4;
         // 底部按钮整体居中：宽度 = 90 + 6 + 90 + 6 + 80 + 6 + 80
-        int bx = (this.width - (BUTTON_WIDTH * 2 + 80 * 2 + 18)) / 2;
+        int bx = (layout.uiWidth() - (BUTTON_WIDTH * 2 + 80 * 2 + 18)) / 2;
         buttons.add(new MapUiButton(bx, barY, BUTTON_WIDTH, BUTTON_HEIGHT,
                 Component.translatable("catoxidesbattlerebuild.map.ui.button.markers"),
                 () -> Minecraft.getInstance().setScreen(new MarkerListScreen())));
@@ -161,7 +187,7 @@ public final class MapV2Screen extends Screen {
                         : "catoxidesbattlerebuild.map.ui.button.structures_off"),
                 this::toggleStructures));
 
-        int sideX = this.width - SIDE_BUTTON - 6;
+        int sideX = layout.uiWidth() - SIDE_BUTTON - 6;
         int sideY = MARGIN_GUI;
         buttons.add(new MapUiButton(sideX, sideY, SIDE_BUTTON, SIDE_BUTTON,
                 Component.literal("+"), this::zoomIn));
@@ -178,6 +204,8 @@ public final class MapV2Screen extends Screen {
         if (level == null) {
             return;
         }
+        // 上一帧的 blit 已提交完，这时回收淘汰的纹理才不会让本帧指向已注销的贴图
+        TileLodTextures.beginFrame();
         ResourceLocation dimension = level.dimension().location();
         Layout layout = layout(minecraft, this.width, this.height);
         int guiScale = layout.guiScale();
@@ -202,8 +230,8 @@ public final class MapV2Screen extends Screen {
         int heightRange = Math.max(1, level.getMaxBuildHeight() - minY - 1);
         int lod = MapZoom.lod(bpp);
         int lodSize = MapZoom.lodTextureSize(lod);
-        boolean prediction = MapLayer.showsBiome(layer) && MapConfig.showBiomePrediction()
-                && !layerPanelOpen;
+        boolean prediction = MapLayer.showsBiome(layer, level.dimension() == Level.NETHER)
+                && MapConfig.showBiomePrediction() && !layerPanelOpen;
         if (prediction) {
             MapBiomeLayer.ensureVisible(dimension,
                     (int) Math.floor(originX), (int) Math.floor(originZ),
@@ -225,9 +253,12 @@ public final class MapV2Screen extends Screen {
                 (left + viewWidth + guiScale - 1) / guiScale,
                 (top + viewHeight + guiScale - 1) / guiScale);
 
-        List<MapStore.TileAt> tiles = MapStore.visibleTiles(
-                dimension, layer, minTileX, maxTileX, minTileZ, maxTileZ);
-        long biomeVersion = prediction ? MapBiomeLayer.version() : 0L;
+        // 切片留空像素 ⇒ 从低到高把选中层及以下有数据的切片叠起来，空处露出下层
+        List<String> stack = MapLayerStack.build(layers, layer);
+        List<String> sampleOrder = stack.reversed();
+        // 探明范围一变，预测纹理的可见像素就变了，缓存必须跟着失效
+        long biomeVersion = prediction
+                ? MapBiomeLayer.version() + MapRevealClient.version() : 0L;
 
         // 第一遍：群系预测——按视口矩形整片铺，没采过的分区也要有底
         if (prediction) {
@@ -243,15 +274,20 @@ public final class MapV2Screen extends Screen {
                 }
             }
         }
-        // 第二遍：真实地形（未采集像素透明，露出下面的预测层）
+        // 第二遍：真实地形——整条栈合成一张瓦片纹理（空像素露出下层），每块瓦片只 blit 一次
         int sharpen = MapConfig.zoomSharpen();
-        for (MapStore.TileAt at : tiles) {
-            blitTile(graphics, textures.get(at, dimension, layer, minY, heightRange, lod, sharpen),
-                    at.x(), at.z(), left, top, originX, originZ, lodSize);
+        int relief = MapConfig.terrainRelief();
+        for (long coord : stackedTileCoords(dimension, stack,
+                minTileX, maxTileX, minTileZ, maxTileZ)) {
+            int tileX = (int) (coord >> 32);
+            int tileZ = (int) coord;
+            blitTile(graphics, textures.get(dimension, stack, tileX, tileZ,
+                            minY, heightRange, lod, sharpen, relief),
+                    tileX, tileZ, left, top, originX, originZ, lodSize);
         }
-        // 第三遍：放大到每方块至少 16 像素时，换成各方块自己的顶面贴图
-        BlockTopTextures.render(graphics, left, top, Math.max(viewWidth, viewHeight), tiles,
-                originX, originZ, bpp, minY, heightRange);
+        // 第三遍：放大到每方块至少 16 像素时，换成各方块自己的顶面贴图（同样按叠层采样）
+        BlockTopTextures.render(graphics, left, top, Math.max(viewWidth, viewHeight),
+                dimension, sampleOrder, originX, originZ, bpp, minY, heightRange);
         // 第三点二五遍：扩展叠加层（sable 船体俯视快照）——画布坐标，与地形同一视口
         if (MapHooks.INSTANCE.hasOverlays()) {
             MapHooks.INSTANCE.renderOverlays(new MapRenderContext(graphics, true,
@@ -272,31 +308,43 @@ public final class MapV2Screen extends Screen {
         graphics.pose().popPose();
 
         countTiles(dimension, minTileX, maxTileX, minTileZ, maxTileZ);
-        requestVisibleLoads(dimension, minTileX, maxTileX, minTileZ, maxTileZ);
+        for (String stackLayer : stack) {
+            requestVisibleLoads(dimension, stackLayer, minTileX, maxTileX, minTileZ, maxTileZ);
+        }
+
+        // 界面层（文字/面板/按钮）：独立于系统 GUI 缩放的坐标空间
+        double uiMouseX = layout.toUiX(mouseX);
+        double uiMouseY = layout.toUiY(mouseY);
+        int uiWidth = layout.uiWidth();
+        int uiHeight = layout.uiHeight();
+        graphics.pose().pushPose();
+        graphics.pose().scale(layout.chromeScale(), layout.chromeScale(), 1f);
 
         drawStatus(graphics, minecraft, level, dimension, mouseX, mouseY, layout, originX, originZ);
+
         String scaleLabel = scaleBlocks + " b";
         graphics.drawString(minecraft.font, scaleLabel,
-                (barLeft + barRight) / 2 / guiScale - minecraft.font.width(scaleLabel) / 2,
-                barY / guiScale - 10, 0xFFFFFFFF, false);
+                (barLeft + barRight) / 2 / layout.uiScale() - minecraft.font.width(scaleLabel) / 2,
+                barY / layout.uiScale() - 10, 0xFFFFFFFF, false);
 
         // 底部工具栏 + 右侧缩放按钮
-        graphics.fill(0, this.height - BOTTOM_BAR_GUI, this.width, this.height, 0xC0101010);
+        graphics.fill(0, uiHeight - BOTTOM_BAR_GUI, uiWidth, uiHeight, 0xC0101010);
         for (MapUiButton button : buttons) {
-            button.render(graphics, minecraft.font, mouseX, mouseY, mouseDown);
+            button.render(graphics, minecraft.font, (int) uiMouseX, (int) uiMouseY, mouseDown);
         }
         if (placing) {
             graphics.drawCenteredString(minecraft.font,
                     Component.translatable("catoxidesbattlerebuild.map.ui.place_hint"),
-                    this.width / 2, MARGIN_GUI - 2, 0xFFFFCC44);
+                    uiWidth / 2, MARGIN_GUI - 2, 0xFFFFCC44);
         }
         if (layerPanelOpen) {
             drawLayerPanel(graphics, minecraft, dimension, layout);
         }
         if (menuOpen) {
-            renderMenu(graphics, minecraft, mouseX, mouseY);
+            renderMenu(graphics, minecraft, (int) uiMouseX, (int) uiMouseY);
         }
         drawHoveredTooltip(graphics, minecraft, mouseX, mouseY, layout, originX, originZ);
+        graphics.pose().popPose();
     }
 
     /** 拉伸到画布上的瓦片：目标尺寸与源区域必须分开给，9 参 blit 会平铺（旧包的实崩教训）。 */
@@ -307,6 +355,20 @@ public final class MapV2Screen extends Screen {
         int x = left + MapProjection.pixel(tileX * MapTile.SIZE, originX, bpp);
         int z = top + MapProjection.pixel(tileZ * MapTile.SIZE, originZ, bpp);
         graphics.blit(texture, x, z, size, size, 0.0f, 0.0f, lodSize, lodSize, lodSize, lodSize);
+    }
+
+    /** 视口内任一叠层有数据的瓦片坐标（瓦片坐标打包成 long，避免同一块被合成两次）。 */
+    private static Set<Long> stackedTileCoords(ResourceLocation dimension, List<String> stack,
+                                               int minTileX, int maxTileX,
+                                               int minTileZ, int maxTileZ) {
+        Set<Long> coords = new LinkedHashSet<>();
+        for (String stackLayer : stack) {
+            for (MapStore.TileAt at : MapStore.visibleTiles(dimension, stackLayer,
+                    minTileX, maxTileX, minTileZ, maxTileZ)) {
+                coords.add(((long) at.x() << 32) ^ (at.z() & 0xFFFFFFFFL));
+            }
+        }
+        return coords;
     }
 
     private void drawPlayerMarker(GuiGraphics graphics, Minecraft minecraft,
@@ -357,7 +419,7 @@ public final class MapV2Screen extends Screen {
     }
 
     /** 磁盘上有、内存里没有的可见瓦片排进读队列；视口大到离谱时整帧跳过，别塞爆 IO 队列。 */
-    private void requestVisibleLoads(ResourceLocation dimension,
+    private void requestVisibleLoads(ResourceLocation dimension, String targetLayer,
                                      int minTileX, int maxTileX, int minTileZ, int maxTileZ) {
         long tileCount = (long) (maxTileX - minTileX + 1) * (maxTileZ - minTileZ + 1);
         if (!MapStorage.indexReady() || tileCount > MAX_TILES_FOR_LOADS) {
@@ -365,8 +427,9 @@ public final class MapV2Screen extends Screen {
         }
         for (int tileX = minTileX; tileX <= maxTileX; tileX++) {
             for (int tileZ = minTileZ; tileZ <= maxTileZ; tileZ++) {
-                if (MapStorage.status(dimension, layer, tileX, tileZ) == MapStorage.TileStatus.DISK) {
-                    MapStorage.requestLoad(dimension, layer, tileX, tileZ);
+                if (MapStorage.status(dimension, targetLayer, tileX, tileZ)
+                        == MapStorage.TileStatus.DISK) {
+                    MapStorage.requestLoad(dimension, targetLayer, tileX, tileZ);
                 }
             }
         }
@@ -408,13 +471,14 @@ public final class MapV2Screen extends Screen {
     }
 
     private int panelRows() {
-        int maxHeight = this.height - (PANEL_TOP_OFFSET + 20);
+        Layout layout = layout(Minecraft.getInstance(), this.width, this.height);
+        int maxHeight = layout.uiHeight() - (PANEL_TOP_OFFSET + 20);
         return Math.max(3, maxHeight / PANEL_ROW);
     }
 
     private int panelTop(Minecraft minecraft) {
         Layout layout = layout(minecraft, this.width, this.height);
-        return layout.top() / layout.guiScale() + PANEL_TOP_OFFSET;
+        return layout.top() / layout.uiScale() + PANEL_TOP_OFFSET;
     }
 
     /**
@@ -447,13 +511,14 @@ public final class MapV2Screen extends Screen {
                         MapProjection.world(mouseCanvasY - layout.top(), originZ, bpp));
                 StringBuilder text = new StringBuilder();
                 text.append(blockX).append(", ").append(blockZ);
-                int mapHeight = MapStore.sampleHeight(dimension, layer, blockX, blockZ);
+                MapStore.StackSample sample = MapStore.sampleStack(dimension,
+                        MapLayerStack.sampleOrder(layers, layer), blockX, blockZ);
+                int mapHeight = sample.height();
                 if (MapConfig.showBlockInfo()) {
-                    if (mapHeight != Integer.MIN_VALUE) {
+                    if (sample.known()) {
                         text.append("  y=").append(mapHeight);
                     }
-                    String block = MapProbe.blockName(
-                            MapStore.sampleBlock(dimension, layer, blockX, blockZ));
+                    String block = MapProbe.blockName(sample.block());
                     if (block != null) {
                         text.append("  ").append(block);
                     }
@@ -464,7 +529,7 @@ public final class MapV2Screen extends Screen {
                 String actual = MapProbe.loadedBiomeName(level, blockX, biomeY, blockZ);
                 if (actual != null) {
                     text.append("  ").append(actual);
-                } else if (MapLayer.showsBiome(layer)) {
+                } else if (MapLayer.showsBiome(layer, level.dimension() == Level.NETHER)) {
                     String predicted = MapBiomeLayer.biomeNameAt(dimension, blockX, blockZ);
                     if (predicted != null) {
                         text.append("  ~").append(predicted);
@@ -483,8 +548,8 @@ public final class MapV2Screen extends Screen {
         }
         int panelWidth = textWidth + 16;
         int panelHeight = lines.size() * 10 + 8;
-        int x0 = (this.width - panelWidth) / 2;
-        int y0 = this.height - BOTTOM_BAR_GUI - panelHeight - 6;
+        int x0 = (layout.uiWidth() - panelWidth) / 2;
+        int y0 = layout.uiHeight() - BOTTOM_BAR_GUI - panelHeight - 6;
         graphics.fill(x0, y0, x0 + panelWidth, y0 + panelHeight, 0x99000000);
         int y = y0 + 4;
         for (int i = 0; i < lines.size(); i++) {
@@ -600,12 +665,14 @@ public final class MapV2Screen extends Screen {
         }
         MarkerDto hovered = markerAt(mouseX, mouseY, layout, originX, originZ);
         if (hovered != null) {
-            MarkerHud.drawTooltip(graphics, minecraft, hovered, mouseX, mouseY);
+            MarkerHud.drawTooltip(graphics, minecraft, hovered,
+                    (int) layout.toUiX(mouseX), (int) layout.toUiY(mouseY));
             return;
         }
         StructureEntry structure = structureAt(mouseX, mouseY, layout, originX, originZ);
         if (structure != null) {
-            StructureOverlay.drawTooltip(graphics, minecraft, structure, mouseX, mouseY);
+            StructureOverlay.drawTooltip(graphics, minecraft, structure,
+                    (int) layout.toUiX(mouseX), (int) layout.toUiY(mouseY));
         }
     }
 
@@ -713,9 +780,11 @@ public final class MapV2Screen extends Screen {
             return;
         }
         int menuWidth = menuWidth();
-        menuX = Math.max(4, Math.min((int) mouseX, this.width - menuWidth - 4));
-        menuY = Math.max(4, Math.min((int) mouseY,
-                this.height - BOTTOM_BAR_GUI - menuHeight() - 4));
+        int uiX = (int) Math.round(layout.toUiX(mouseX));
+        int uiY = (int) Math.round(layout.toUiY(mouseY));
+        menuX = Math.max(4, Math.min(uiX, layout.uiWidth() - menuWidth - 4));
+        menuY = Math.max(4, Math.min(uiY,
+                layout.uiHeight() - BOTTOM_BAR_GUI - menuHeight() - 4));
         layerPanelOpen = false;
         menuOpen = true;
     }
@@ -783,7 +852,9 @@ public final class MapV2Screen extends Screen {
         if (level == null || minecraft.player == null) {
             return;
         }
-        int surfaceY = MapStore.sampleHeight(level.dimension().location(), layer, worldX, worldZ);
+        MapStore.StackSample sample = MapStore.sampleStack(level.dimension().location(),
+                MapLayerStack.sampleOrder(layers, layer), worldX, worldZ);
+        int surfaceY = sample.height();
         Double deckY = MapHooks.INSTANCE.surfaceY(level, worldX, worldZ);
         double y = deckY != null ? deckY : (surfaceY == Integer.MIN_VALUE ? 64.0 : surfaceY);
         // 甲板锚点用顶面下一格探测：sub-level 包围盒最高到甲板方块本身
@@ -808,7 +879,9 @@ public final class MapV2Screen extends Screen {
         if (level == null || minecraft.player == null || minecraft.player.connection == null) {
             return;
         }
-        int surfaceY = MapStore.sampleHeight(level.dimension().location(), layer, worldX, worldZ);
+        MapStore.StackSample sample = MapStore.sampleStack(level.dimension().location(),
+                MapLayerStack.sampleOrder(layers, layer), worldX, worldZ);
+        int surfaceY = sample.height();
         // 未加载区域没有地表高度：按海平面走，落地后再微调；明确的路径点用 Y 字段
         int y = surfaceY == Integer.MIN_VALUE ? level.getSeaLevel() : surfaceY + 1;
         minecraft.player.connection.sendCommand(
@@ -829,9 +902,11 @@ public final class MapV2Screen extends Screen {
         Minecraft minecraft = Minecraft.getInstance();
         mouseDown = true;
         Layout layout = layout(minecraft, this.width, this.height);
+        double uiMouseX = layout.toUiX(mouseX);
+        double uiMouseY = layout.toUiY(mouseY);
 
         if (menuOpen) {
-            int row = menuRowAt(mouseX, mouseY);
+            int row = menuRowAt(uiMouseX, uiMouseY);
             MenuEntry entry = row >= 0 ? menuEntries.get(row) : null;
             menuOpen = false;
             if (entry != null) {
@@ -841,7 +916,7 @@ public final class MapV2Screen extends Screen {
         }
 
         for (MapUiButton widget : buttons) {
-            if (widget.click(mouseX, mouseY, button)) {
+            if (widget.click(uiMouseX, uiMouseY, button)) {
                 return true;
             }
         }
@@ -849,9 +924,9 @@ public final class MapV2Screen extends Screen {
         if (layerPanelOpen && button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             int panelTop = panelTop(minecraft);
             int rows = Math.min(panelRows(), layers.size());
-            if (mouseX >= PANEL_X && mouseX < PANEL_X + PANEL_WIDTH
-                    && mouseY >= panelTop + 2 && mouseY < panelTop + 2 + rows * PANEL_ROW) {
-                int row = layerScroll + (int) ((mouseY - (panelTop + 2)) / PANEL_ROW);
+            if (uiMouseX >= PANEL_X && uiMouseX < PANEL_X + PANEL_WIDTH
+                    && uiMouseY >= panelTop + 2 && uiMouseY < panelTop + 2 + rows * PANEL_ROW) {
+                int row = layerScroll + (int) ((uiMouseY - (panelTop + 2)) / PANEL_ROW);
                 if (row >= 0 && row < layers.size()) {
                     layer = layers.get(row);
                     MapLayerSelection.select(layer);
@@ -934,12 +1009,13 @@ public final class MapV2Screen extends Screen {
             return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
         }
         Minecraft minecraft = Minecraft.getInstance();
-        if (layerPanelOpen && mouseX >= PANEL_X && mouseX < PANEL_X + PANEL_WIDTH
-                && mouseY >= panelTop(minecraft)) {
+        Layout layout = layout(minecraft, this.width, this.height);
+        if (layerPanelOpen && layout.toUiX(mouseX) >= PANEL_X
+                && layout.toUiX(mouseX) < PANEL_X + PANEL_WIDTH
+                && layout.toUiY(mouseY) >= panelTop(minecraft)) {
             layerScroll = Math.max(0, Math.min(layers.size() - 1, layerScroll + (scrollY > 0 ? -1 : 1)));
             return true;
         }
-        Layout layout = layout(minecraft, this.width, this.height);
         double mouseCanvasX = mouseX * layout.guiScale() - layout.left();
         double mouseCanvasY = mouseY * layout.guiScale() - layout.top();
         double originX = MapProjection.origin(centerX, layout.viewWidth(), bpp);

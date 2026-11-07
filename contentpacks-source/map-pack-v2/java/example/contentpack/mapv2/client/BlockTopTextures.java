@@ -1,8 +1,8 @@
 package example.contentpack.mapv2.client;
 
+import example.contentpack.mapv2.MapConfig;
 import example.contentpack.mapv2.MapShade;
 import example.contentpack.mapv2.MapStore;
-import example.contentpack.mapv2.MapTile;
 import example.contentpack.mapv2.view.MapProjection;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -29,7 +29,7 @@ import java.util.Map;
 /**
  * 最深几档缩放下的「方块顶面纹理」层。
  *
- * <p>地图瓦片本来就按像素存了方块 ID（{@link MapTile#blockAt}），放大到每方块十几个像素时
+ * <p>地图瓦片本来就按像素存了方块 ID（{@link MapStore.StackSample#block()}），放大到每方块十几个像素时
  * 直接把该方块模型朝上的那面贴图铺在格子位置，比一个纯色方块好看得多。
  *
  * <p><b>颜色不丢</b>：贴图用顶点色乘一次「瓦片记录的最终颜色 ÷ 贴图平均色」——
@@ -81,17 +81,13 @@ public final class BlockTopTextures {
     }
 
     static void render(GuiGraphics graphics, int left, int top, int view,
-                       List<MapStore.TileAt> tiles,
+                       ResourceLocation dimension, List<String> sampleOrder,
                        double minWorldX, double minWorldZ, double bpp,
                        int minY, int heightRange) {
-        if (!applies(bpp) || tiles.isEmpty()) {
+        if (!applies(bpp) || sampleOrder.isEmpty()) {
             return;
         }
-        Map<Long, MapTile> byTile = new HashMap<>(tiles.size() * 2);
-        for (MapStore.TileAt at : tiles) {
-            byTile.put(tileKey(at.x(), at.z()), at.tile());
-        }
-
+        int relief = MapConfig.terrainRelief();
         int minBlockX = (int) Math.floor(minWorldX);
         int minBlockZ = (int) Math.floor(minWorldZ);
         int maxBlockX = (int) Math.ceil(minWorldX + view * bpp);
@@ -103,16 +99,12 @@ public final class BlockTopTextures {
                 continue;
             }
             for (int blockX = minBlockX; blockX <= maxBlockX; blockX++) {
-                MapTile column = tileFor(byTile, blockX, blockZ);
-                if (column == null) {
+                // 叠层采样：空像素露出下层，顶层是流体就保持平面色（流体有自己的渲染）
+                MapStore.StackSample sample = MapStore.sampleStack(dimension, sampleOrder, blockX, blockZ);
+                if (!sample.known() || sample.fluid() != 0) {
                     continue;
                 }
-                int localX = MapTile.localCoord(blockX);
-                int localZ = MapTile.localCoord(blockZ);
-                if (!column.isKnown(localX, localZ) || column.fluidAt(localX, localZ) != 0) {
-                    continue;
-                }
-                String blockId = column.blockAt(localX, localZ);
+                String blockId = sample.block();
                 if (blockId == null) {
                     continue;
                 }
@@ -125,8 +117,10 @@ public final class BlockTopTextures {
                 if (px1 <= left || px0 >= left + view) {
                     continue;
                 }
-                float[] tint = tintOf(column.colorAt(localX, localZ),
-                        column.heightAt(localX, localZ), minY, heightRange, entry);
+                float[] tint = tintOf(sample.color(), sample.height(),
+                        heightAt(dimension, sampleOrder, blockX - 1, blockZ),
+                        heightAt(dimension, sampleOrder, blockX, blockZ - 1),
+                        minY, heightRange, relief, entry);
                 graphics.blit(px0, py0, 0,
                         Math.max(1, px1 - px0), Math.max(1, py1 - py0),
                         entry.sprite(), tint[0], tint[1], tint[2], 1.0f);
@@ -134,21 +128,21 @@ public final class BlockTopTextures {
         }
     }
 
-    private static long tileKey(int tileX, int tileZ) {
-        return ((long) tileX << 32) ^ (tileZ & 0xFFFFFFFFL);
-    }
-
-    @Nullable
-    private static MapTile tileFor(Map<Long, MapTile> byTile, int blockX, int blockZ) {
-        return byTile.get(tileKey(MapTile.tileCoord(blockX), MapTile.tileCoord(blockZ)));
+    /** 相邻方块高度（按叠层从高到低采样）；整条栈都未采集返回 {@link MapShade#NO_HEIGHT}。 */
+    private static int heightAt(ResourceLocation dimension, List<String> sampleOrder,
+                                int blockX, int blockZ) {
+        MapStore.StackSample sample = MapStore.sampleStack(dimension, sampleOrder, blockX, blockZ);
+        return sample.known() ? sample.height() : MapShade.NO_HEIGHT;
     }
 
     /**
      * 顶点色 = 记录色 ÷ 贴图平均色（让「贴图均值」回到地图上原本的颜色）。
      * 某个通道会超过 1 时整体等比压暗，避免偏色。
      */
-    private static float[] tintOf(int argb, int height, int minY, int heightRange, Entry entry) {
+    private static float[] tintOf(int argb, int height, int westHeight, int northHeight,
+                                  int minY, int heightRange, int relief, Entry entry) {
         int shaded = MapShade.applyShade(argb, height, minY, heightRange, 0);
+        shaded = MapShade.applyRelief(shaded, height, westHeight, northHeight, 1, relief);
         float r = ((shaded >> 16) & 0xFF) / 255f;
         float g = ((shaded >> 8) & 0xFF) / 255f;
         float b = (shaded & 0xFF) / 255f;

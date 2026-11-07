@@ -1,0 +1,14 @@
+{
+  "catoxidesbattlerebuild.configuration.section.sable.map.client.toml": "Sable Map",
+  "catoxidesbattlerebuild.configuration.section.sable.map.client.toml.title": "Sable Map",
+
+  "catoxidesbattlerebuild.configuration.sable-pack-v2.sablemap.layer": "Sub-level layer",
+  "catoxidesbattlerebuild.configuration.sable-pack-v2.sablemap.layer.button": "Sub-level layer",
+  "catoxidesbattlerebuild.configuration.sable-pack-v2.sablemap.layer.enabled": "Enable Sable map layer",
+  "catoxidesbattlerebuild.configuration.sable-pack-v2.sablemap.layer.showShips": "Show sub-level snapshots",
+  "catoxidesbattlerebuild.configuration.sable-pack-v2.sablemap.layer.showEntities": "Show entities on sub-levels",
+  "catoxidesbattlerebuild.configuration.sable-pack-v2.sablemap.layer.showOnMinimap": "Show on minimap",
+  "catoxidesbattlerebuild.configuration.sable-pack-v2.sablemap.layer.showOnFullmap": "Show on world map",
+  "catoxidesbattlerebuild.configuration.sable-pack-v2.sablemap.layer.opacity": "Snapshot opacity",
+  "catoxidesbattlerebuild.configuration.sable-pack-v2.sablemap.layer.maxTexture": "Snapshot texture size"
+}

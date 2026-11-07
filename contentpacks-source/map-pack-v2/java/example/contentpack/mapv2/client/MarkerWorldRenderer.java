@@ -154,9 +154,11 @@ public final class MarkerWorldRenderer {
         modelView.identity();
         RenderSystem.applyModelViewMatrix();
         RenderSystem.backupProjectionMatrix();
+        // 排序只能用 z：文字批次上传时按排序重排四边形，DISTANCE_TO_ORIGIN 会把 x/y 也算进去 ——
+        // 屏幕左半 x 为负，阴影（比字形少 +0.03 z、x/y 各 +1）反而更近原点，被排到字形后面画上来。
         RenderSystem.setProjectionMatrix(
                 new Matrix4f().setOrtho(-aspect, aspect, 1.0f, -1.0f, -1000.0f, 1000.0f),
-                VertexSorting.DISTANCE_TO_ORIGIN);
+                VertexSorting.ORTHOGRAPHIC_Z);
         // 标记是位置指示：清掉深度后图标/头像也不会被方块挡住（原版第一人称手用同样的办法）。
         RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT, Minecraft.ON_OSX);
         Recorder buffer = new Recorder(minecraft.renderBuffers().bufferSource());

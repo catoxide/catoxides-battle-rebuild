@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.NativeImage;
 import example.contentpack.mapv2.MapShade;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.Level;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.function.BiPredicate;
@@ -22,6 +23,9 @@ import java.util.function.BiPredicate;
  */
 final class BiomeOverlay {
 
+    /** 末地不做群系底图：群系铺满整片虚空，图上全是假的陆地色；悬停与结构照旧。 */
+    private static final ResourceLocation END_DIMENSION = Level.END.location();
+
     private BiomeOverlay() {
     }
 
@@ -35,6 +39,9 @@ final class BiomeOverlay {
     static int paint(NativeImage image, ResourceLocation dimension, @Nullable ClientLevel level,
                      int originX, int originZ, int size, double step,
                      BiPredicate<Integer, Integer> known, boolean outline) {
+        if (END_DIMENSION.equals(dimension)) {
+            return 0;
+        }
         int painted = 0;
         // 群系按 4 格 quart 存储：同一夸脱内的相邻像素直接复用上次查询结果
         int lastQuartX = Integer.MIN_VALUE;
@@ -66,11 +73,16 @@ final class BiomeOverlay {
                 }
                 // 颜色由本地调色板决定（不同群系不同色系），未收录的用稳定哈希色
                 int color = BiomePalette.color(biomeId);
-                // 描边只看预测源：两边同属已加载时预测≈真实，边界位置不会跑
-                boolean edge = outline && (!biomeId.equals(MapBiomeLayer.biomeIdAt(
-                        dimension, originX + (int) Math.round((x + 1) * step), worldZ))
-                        || !biomeId.equals(MapBiomeLayer.biomeIdAt(
-                        dimension, worldX, nextZ)));
+                // 描边只看预测源：两边同属已加载时预测≈真实，边界位置不会跑。
+                // 邻居没有预测（探明范围外）时不描边，否则范围边界会被画成一圈假群系边界。
+                boolean edge = false;
+                if (outline) {
+                    String right = MapBiomeLayer.biomeIdAt(dimension,
+                            originX + (int) Math.round((x + 1) * step), worldZ);
+                    String down = MapBiomeLayer.biomeIdAt(dimension, worldX, nextZ);
+                    edge = (right != null && !biomeId.equals(right))
+                            || (down != null && !biomeId.equals(down));
+                }
                 int argb = edge ? outline(color) : jelly(color);
                 image.setPixelRGBA(x, z, MapShade.toNativeAbgr(argb));
                 painted++;

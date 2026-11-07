@@ -16,10 +16,12 @@ import java.util.UUID;
  *   <li>{@code worldId} —— 存档级 UUID，正常情况直接用它匹配地图目录；</li>
  *   <li>{@code seed + generator} —— UUID 对不上时（复制存档/回档/打包部署），
  *       用来找「地形可能一致的已有地图」并让玩家选择是否继承；</li>
- *   <li>{@code worldName} —— 候选列表里给人看的名字。</li>
+ *   <li>{@code worldName} —— 候选列表里给人看的名字；</li>
+ *   <li>{@code tileSharing} —— 服务端是否开启瓦片共享（专用服务器 + 配置打开）。</li>
  * </ul>
  */
-public record MapWorldIdPayload(UUID worldId, long seed, String generator, String worldName)
+public record MapWorldIdPayload(UUID worldId, long seed, String generator, String worldName,
+                                boolean tileSharing)
         implements CustomPacketPayload {
 
     public static final Type<MapWorldIdPayload> TYPE = new Type<>(
@@ -33,7 +35,8 @@ public record MapWorldIdPayload(UUID worldId, long seed, String generator, Strin
             long seed = buf.readLong();
             String generator = ByteBufCodecs.STRING_UTF8.decode(buf);
             String name = ByteBufCodecs.STRING_UTF8.decode(buf);
-            return new MapWorldIdPayload(worldId, seed, generator, name);
+            boolean tileSharing = buf.readBoolean();
+            return new MapWorldIdPayload(worldId, seed, generator, name, tileSharing);
         }
 
         @Override
@@ -43,6 +46,7 @@ public record MapWorldIdPayload(UUID worldId, long seed, String generator, Strin
             buf.writeLong(payload.seed());
             ByteBufCodecs.STRING_UTF8.encode(buf, payload.generator());
             ByteBufCodecs.STRING_UTF8.encode(buf, payload.worldName());
+            buf.writeBoolean(payload.tileSharing());
         }
     };
 

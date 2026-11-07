@@ -3,10 +3,12 @@ package example.contentpack.mapv2.structure;
 /**
  * 结构图层的一条候选点，坐标以<b>区块</b>为单位（D95）。
  *
- * <p>{@code setId} 是结构集的注册表 id（如 {@code minecraft:villages}），不是单个结构变体：
- * 多条目结构集（村庄有 5 个变体）在候选级还没走到群系/权重判定，按集合显示才不会给出假精度。
+ * <p>{@code setId} 是结构集的注册表 id（如 {@code minecraft:villages}），
+ * {@code structureId} 是这个落点算出来的具体变体（如 {@code minecraft:fortress} /
+ * {@code minecraft:bastion_remnant}）。显示优先用变体 id；没有变体词条/图标时退回结构集，
+ * 所以村庄那 5 个变体仍统一显示成「村庄」。
  */
-public record StructureEntry(String setId, int chunkX, int chunkZ, byte tier) {
+public record StructureEntry(String setId, String structureId, int chunkX, int chunkZ, byte tier) {
 
     /** 纯落点计算，未做群系 / 结构和其它结构的排除检查。 */
     public static final byte TIER_CANDIDATE = 1;

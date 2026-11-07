@@ -11,8 +11,8 @@ import org.slf4j.Logger;
 /**
  * 群系预测叠加层的薄封装。
  *
- * <p>数据源由 biome-preview-pack 通过 core 的 {@link MapBiomeSources} 注册；
- * 没装那个包时全部返回 0，地图行为与之前完全一致。
+ * <p>数据源由 {@code MapV2Pack} 通过 core 的 {@link MapBiomeSources} 注册（同包的
+ * {@code biomepreview} 模块）；没有数据源时全部返回 0，地图行为与之前完全一致。
  *
  * <p>渲染约定：预测色只填「未采集」像素，具体画法（柔和填色 + 描边）在
  * {@link BiomeOverlay}，这样一眼能区分「预测」和「真的走过」。
@@ -34,7 +34,7 @@ final class MapBiomeLayer {
         }
         IMapBiomeSource source = MapBiomeSources.get();
         if (source == null) {
-            logThrottled("[MapPack] prediction enabled but no biome source registered (biome-preview-pack missing?)");
+            logThrottled("[MapPack] prediction enabled but no biome source registered");
             return;
         }
         source.ensureArea(dimension, minBlockX, minBlockZ, span);
@@ -51,7 +51,8 @@ final class MapBiomeLayer {
     }
 
     static int colorAt(ResourceLocation dimension, int blockX, int blockZ) {
-        if (!MapConfig.showBiomePrediction()) {
+        if (!MapConfig.showBiomePrediction()
+                || !MapRevealClient.isRevealed(dimension, blockX, blockZ)) {
             return 0;
         }
         IMapBiomeSource source = MapBiomeSources.get();
@@ -63,18 +64,20 @@ final class MapBiomeLayer {
         return source == null ? 0L : source.version();
     }
 
-    /** 预测群系 ID；null = 没有预测数据或功能关闭。 */
+    /** 预测群系 ID；null = 没有预测数据、功能关闭，或不在服务端探明范围内。 */
     static String biomeIdAt(ResourceLocation dimension, int blockX, int blockZ) {
-        if (!MapConfig.showBiomePrediction()) {
+        if (!MapConfig.showBiomePrediction()
+                || !MapRevealClient.isRevealed(dimension, blockX, blockZ)) {
             return null;
         }
         IMapBiomeSource source = MapBiomeSources.get();
         return source == null ? null : source.biomeIdAt(dimension, blockX, blockZ);
     }
 
-    /** 预测群系的本地化名；null = 没有预测数据或功能关闭。 */
+    /** 预测群系的本地化名；null = 没有预测数据、功能关闭，或不在探明范围内。 */
     static String biomeNameAt(ResourceLocation dimension, int blockX, int blockZ) {
-        if (!MapConfig.showBiomePrediction() || !MapConfig.predictionHover()) {
+        if (!MapConfig.showBiomePrediction() || !MapConfig.predictionHover()
+                || !MapRevealClient.isRevealed(dimension, blockX, blockZ)) {
             return null;
         }
         IMapBiomeSource source = MapBiomeSources.get();

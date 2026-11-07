@@ -46,7 +46,7 @@ test('readEntry 找不到条目返回 null', () => {
 });
 
 console.log('=== 2. 真实包的预检 ===');
-for (const name of ['durability-pack', 'test-mob-pack', 'quest-test-pack', 'sable-base-pack', 'modular-zombie-3']) {
+for (const name of ['durability-pack', 'test-mob-pack', 'quest-test-pack', 'sable-pack-v2', 'modular-zombie-3']) {
     test(`${name} 预检无 error`, () => {
         const r = Preflight.preflightPack(path.join(PACKS_SOURCE, name), { root: ROOT });
         assert.strictEqual(r.errors.length, 0, `意外的 error: ${JSON.stringify(r.errors, null, 2)}`);

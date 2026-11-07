@@ -10,7 +10,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.Resource;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.material.MapColor;
 import org.slf4j.Logger;
 
@@ -54,7 +57,10 @@ public final class MapColors {
         Entry entry = ENTRIES.get(id);
 
         if (entry != null && entry.tint()) {
-            int tint = Minecraft.getInstance().getBlockColors().getColor(state, level, pos, 0);
+            int tint = biomeTint(state, level, pos);
+            if (tint < 0) {
+                tint = Minecraft.getInstance().getBlockColors().getColor(state, level, pos, 0);
+            }
             if (tint >= 0) {
                 return 0xFF000000 | (tint & 0xFFFFFF);
             }
@@ -71,6 +77,44 @@ public final class MapColors {
         MapColor mapColor = state.getMapColor(level, pos);
         int rgb = mapColor == null ? 0x808080 : mapColor.col;
         return 0xFF000000 | (rgb & 0xFFFFFF);
+    }
+
+    /**
+     * 直接取「本格所在 quart」的群系色，绕开 {@code BlockColors}。
+     *
+     * <p>不能用 {@code BlockColors/ClientLevel.getBlockTint}：它按
+     * {@code biomeBlendRadius} 平均 (2r+1)² 个采样点，每个采样点又走
+     * {@code BiomeManager.getBiome} 的 8 角模糊查找，能落到相邻区块的 quart；
+     * 邻块还没进 {@code ClientChunkCache} 时 {@code LevelReader.getNoiseBiome}
+     * 回落到 {@code ClientLevel.getUncachedNoiseBiome}，那里固定返回平原
+     * （1.21.1 源码 {@code ClientLevel.java:747}）。于是区块边缘 1~2 格的群系色
+     * 被拉向平原水色 #3f76e4，并且随 5×5 窗口向里渗 3~4 格。
+     * 这个值还会被 BlockTintCache 按区块缓存，采集时烘进瓦片就永久留下方格边。
+     *
+     * <p>{@code getNoiseBiomeAtPosition} 不做模糊、不跨区块：quart 一定落在
+     * 当前区块（采集入口已保证它 FULL），查到的就是真实群系。
+     *
+     * @return 24 位 RGB；不在下表里的方块返回 -1，交回 {@code BlockColors}
+     */
+    private static int biomeTint(BlockState state, ClientLevel level, BlockPos pos) {
+        Block block = state.getBlock();
+        Biome biome = level.getBiomeManager().getNoiseBiomeAtPosition(pos).value();
+        if (block == Blocks.WATER || block == Blocks.BUBBLE_COLUMN
+                || block == Blocks.WATER_CAULDRON) {
+            return biome.getWaterColor();
+        }
+        if (block == Blocks.GRASS_BLOCK || block == Blocks.SHORT_GRASS
+                || block == Blocks.TALL_GRASS || block == Blocks.FERN
+                || block == Blocks.LARGE_FERN || block == Blocks.POTTED_FERN
+                || block == Blocks.SUGAR_CANE) {
+            return biome.getGrassColor(pos.getX(), pos.getZ());
+        }
+        if (block == Blocks.OAK_LEAVES || block == Blocks.JUNGLE_LEAVES
+                || block == Blocks.ACACIA_LEAVES || block == Blocks.DARK_OAK_LEAVES
+                || block == Blocks.MANGROVE_LEAVES || block == Blocks.VINE) {
+            return biome.getFoliageColor();
+        }
+        return -1;
     }
 
     /** 资源包重载/换世界时由调用方清空。 */

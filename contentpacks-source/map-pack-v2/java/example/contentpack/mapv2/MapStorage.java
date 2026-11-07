@@ -1,20 +1,26 @@
 package example.contentpack.mapv2;
 
 import com.mojang.logging.LogUtils;
+import example.contentpack.mapv2.network.MapTileSync;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileTime;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
@@ -88,6 +94,7 @@ public final class MapStorage {
 
     private static int tickCounter;
     private static long generation;
+    private static int remoteDiag = 10;
 
     private MapStorage() {
     }
@@ -213,6 +220,11 @@ public final class MapStorage {
         }
         TileKey key = new TileKey(dimension, layer, tileX, tileZ);
         if (!indexReady || !EXISTING.contains(key)) {
+            // 本地没有这块：问服务端要（多人共享地图）；单机/未开启时为空操作。
+            // 索引没扫完时先不问，否则会把磁盘上已有的瓦片也当缺失重下。
+            if (indexReady) {
+                MapTileSync.requestTile(dimension, layer, tileX, tileZ);
+            }
             return false;
         }
         if (!LOADING.add(key)) {
@@ -236,6 +248,98 @@ public final class MapStorage {
         TileKey key = new TileKey(dimension, layer, tileX, tileZ);
         if (LOADING.add(key)) {
             IO.execute(() -> load(key));
+        }
+    }
+
+    /**
+     * 接收服务端发来的同构瓦片：校验 → 原子落盘 → 主线程合入内存。
+     *
+     * <p>只在本地缺失时才会请求（{@link #requestLoad}），所以直接写文件；
+     * 内存里若恰好已有采集结果，只补未知像素，不覆盖新采集。
+     */
+    public static void acceptRemoteTile(ResourceLocation dimension, String layer,
+                                        int tileX, int tileZ, long revision, byte[] bytes) {
+        java.util.UUID worldId = example.contentpack.mapv2.client.MapWorld.id();
+        if (worldId == null || bytes == null || bytes.length == 0) {
+            return;
+        }
+        TileKey key = new TileKey(dimension, layer, tileX, tileZ);
+        IO.execute(() -> {
+            RawTile raw;
+            try {
+                raw = decodeTile(bytes);
+            } catch (IOException | RuntimeException ex) {
+                LOGGER.warn("[MapPack] remote tile {}/{} {},{} rejected: {}",
+                        dimension, layer, tileX, tileZ, ex.getMessage());
+                return;
+            }
+            if (raw.size() != MapTile.SIZE) {
+                return;
+            }
+            MapTile remote = MapTile.fromData(raw.argb(), raw.height(), raw.fluid(), raw.known(),
+                    raw.blockIndex(), raw.blockPalette());
+            // 下载在途期间玩家可能又采了同一块：磁盘上的本地像素也要保住
+            MapTile existing = readDiskTile(worldId, key);
+            if (existing != null) {
+                remote.fillUnknownFrom(existing);
+            }
+            Path path = path(worldId, key);
+            try {
+                Files.createDirectories(path.getParent());
+                Path temp = Files.createTempFile(path.getParent(), "remote-", ".tmp");
+                try {
+                    Files.write(temp, encode(remote));
+                    moveReplace(temp, path);
+                } finally {
+                    Files.deleteIfExists(temp);
+                }
+                if (revision > 0) {
+                    Files.setLastModifiedTime(path, FileTime.fromMillis(revision));
+                }
+            } catch (IOException ex) {
+                LOGGER.warn("[MapPack] save remote tile {}/{} {},{} failed: {}",
+                        dimension, layer, tileX, tileZ, ex.getMessage());
+                return;
+            }
+            EXISTING.add(key);
+            Minecraft.getInstance().execute(() -> {
+                if (!worldId.equals(example.contentpack.mapv2.client.MapWorld.id())) {
+                    return;
+                }
+                MapTile memory = MapStore.get(dimension, layer, tileX, tileZ);
+                if (memory == null) {
+                    MapStore.putIfAbsent(dimension, layer, tileX, tileZ, remote);
+                } else if (memory.fillUnknownFrom(remote) > 0) {
+                    memory.bumpRevision();
+                }
+                generation++;
+                if (remoteDiag > 0) {
+                    remoteDiag--;
+                    LOGGER.info("[MapPack] remote tile {}/{} {},{} accepted ({} bytes)",
+                            dimension, layer, tileX, tileZ, bytes.length);
+                }
+            });
+        });
+    }
+
+    /** 只读压缩头：能否当作瓦片接受（服务端在上传入库前也用它挡坏数据）。 */
+    public static boolean looksLikeTile(byte[] bytes) {
+        if (bytes == null || bytes.length < 7) {
+            return false;
+        }
+        try (DataInputStream in = new DataInputStream(
+                new InflaterInputStream(new ByteArrayInputStream(bytes)))) {
+            if (in.readInt() != MAGIC) {
+                return false;
+            }
+            int version = in.readUnsignedByte();
+            if (version < 1 || version > VERSION) {
+                return false;
+            }
+            int size = in.readUnsignedShort();
+            return size > 0 && size <= MapTile.SIZE;
+        } catch (IOException | RuntimeException ex) {
+            return false;
         }
     }
 
@@ -466,14 +570,23 @@ public final class MapStorage {
             tile.fillUnknownFrom(disk);
         }
         Path path = path(job.worldId(), job.key());
+        byte[] bytes;
         try {
-            serialize(path, tile);
+            bytes = serialize(path, tile);
         } catch (IOException ex) {
             LOGGER.warn("[MapPack] save {} failed: {}", path, ex.getMessage());
             return;
         }
         EXISTING.add(job.key());
         retireLegacy(job.worldId(), job.key());
+        // 上传排回主线程，并确认还是同一个世界（异步落盘期间可能已退/换服）
+        TileKey key = job.key();
+        java.util.UUID worldId = job.worldId();
+        Minecraft.getInstance().execute(() -> {
+            if (worldId.equals(example.contentpack.mapv2.client.MapWorld.id())) {
+                MapTileSync.offerUpload(key.dimension(), key.layer(), key.x(), key.z(), bytes);
+            }
+        });
     }
 
     /**
@@ -516,10 +629,20 @@ public final class MapStorage {
         return true;
     }
 
-    private static void serialize(Path path, MapTile tile) throws IOException {
+    /** 落盘并返回压缩后的字节：同一份字节既写本地，也用于上传共享。 */
+    private static byte[] serialize(Path path, MapTile tile) throws IOException {
+        byte[] bytes = encode(tile);
         Files.createDirectories(path.getParent());
-        try (OutputStream file = new BufferedOutputStream(Files.newOutputStream(path));
-             DataOutputStream out = new DataOutputStream(new DeflaterOutputStream(file))) {
+        try (OutputStream file = new BufferedOutputStream(Files.newOutputStream(path))) {
+            file.write(bytes);
+        }
+        return bytes;
+    }
+
+    /** 压缩成 MPT1 字节（版本 2 格式，见类注释）。 */
+    private static byte[] encode(MapTile tile) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream(3 * 1024 * 1024);
+        try (DataOutputStream out = new DataOutputStream(new DeflaterOutputStream(buffer))) {
             out.writeInt(MAGIC);
             out.writeByte(VERSION);
             out.writeShort(MapTile.SIZE);
@@ -540,6 +663,7 @@ public final class MapStorage {
                 out.writeShort(index);
             }
         }
+        return buffer.toByteArray();
     }
 
     private static void load(TileKey key) {
@@ -578,42 +702,63 @@ public final class MapStorage {
     private static RawTile readTile(Path path) throws IOException {
         try (InputStream file = new BufferedInputStream(Files.newInputStream(path));
              DataInputStream in = new DataInputStream(new InflaterInputStream(file))) {
-            if (in.readInt() != MAGIC) {
-                throw new IOException("bad magic");
-            }
-            int version = in.readUnsignedByte();
-            if (version < 1 || version > VERSION) {
-                throw new IOException("unsupported version " + version);
-            }
-            int size = in.readUnsignedShort();
-            if (size <= 0 || size > MapTile.SIZE) {
-                throw new IOException("bad tile size " + size);
-            }
-            int pixels = size * size;
-            boolean[] known = unpackKnown(in.readNBytes((pixels + 7) / 8), pixels);
-            int[] argb = new int[pixels];
-            for (int i = 0; i < pixels; i++) {
-                argb[i] = in.readInt();
-            }
-            short[] height = new short[pixels];
-            for (int i = 0; i < pixels; i++) {
-                height[i] = in.readShort();
-            }
-            byte[] fluid = new byte[pixels];
-            in.readFully(fluid);
+            return decodeTile(in);
+        }
+    }
 
-            java.util.List<String> blockPalette = new java.util.ArrayList<>();
-            short[] blockIndex = new short[pixels];
-            if (version >= 2) {
-                int paletteSize = in.readUnsignedShort();
-                for (int i = 0; i < paletteSize; i++) {
-                    blockPalette.add(in.readUTF());
-                }
-                for (int i = 0; i < pixels; i++) {
-                    blockIndex[i] = in.readShort();
-                }
+    /** 解一段网络收到的压缩字节；与读盘共用同一份格式校验。 */
+    private static RawTile decodeTile(byte[] bytes) throws IOException {
+        try (DataInputStream in = new DataInputStream(
+                new InflaterInputStream(new ByteArrayInputStream(bytes)))) {
+            return decodeTile(in);
+        }
+    }
+
+    private static RawTile decodeTile(DataInputStream in) throws IOException {
+        if (in.readInt() != MAGIC) {
+            throw new IOException("bad magic");
+        }
+        int version = in.readUnsignedByte();
+        if (version < 1 || version > VERSION) {
+            throw new IOException("unsupported version " + version);
+        }
+        int size = in.readUnsignedShort();
+        if (size <= 0 || size > MapTile.SIZE) {
+            throw new IOException("bad tile size " + size);
+        }
+        int pixels = size * size;
+        boolean[] known = unpackKnown(in.readNBytes((pixels + 7) / 8), pixels);
+        int[] argb = new int[pixels];
+        for (int i = 0; i < pixels; i++) {
+            argb[i] = in.readInt();
+        }
+        short[] height = new short[pixels];
+        for (int i = 0; i < pixels; i++) {
+            height[i] = in.readShort();
+        }
+        byte[] fluid = new byte[pixels];
+        in.readFully(fluid);
+
+        java.util.List<String> blockPalette = new java.util.ArrayList<>();
+        short[] blockIndex = new short[pixels];
+        if (version >= 2) {
+            int paletteSize = in.readUnsignedShort();
+            for (int i = 0; i < paletteSize; i++) {
+                blockPalette.add(in.readUTF());
             }
-            return new RawTile(size, argb, height, fluid, known, blockIndex, blockPalette);
+            for (int i = 0; i < pixels; i++) {
+                blockIndex[i] = in.readShort();
+            }
+        }
+        return new RawTile(size, argb, height, fluid, known, blockIndex, blockPalette);
+    }
+
+    private static void moveReplace(Path from, Path to) throws IOException {
+        try {
+            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ex) {
+            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 
@@ -771,7 +916,11 @@ public final class MapStorage {
             }
             try (var stream = Files.walk(source)) {
                 stream.filter(Files::isRegularFile)
-                        .filter(path -> path.getFileName().toString().endsWith(".mpt"))
+                        .filter(path -> {
+                            String name = path.getFileName().toString();
+                            // 地图瓦片 + 群系预测区域：继承时两份一起走
+                            return name.endsWith(".mpt") || name.endsWith(".mpb");
+                        })
                         .forEach(path -> {
                             Path destination = target.resolve(source.relativize(path));
                             if (Files.exists(destination)) {

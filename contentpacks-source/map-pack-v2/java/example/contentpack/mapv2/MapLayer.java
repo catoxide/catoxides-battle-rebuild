@@ -66,11 +66,14 @@ public final class MapLayer {
     }
 
     /**
-     * 群系预测只对 surface 层有意义：切片是地表以下的水平切口，
-     * 把地表群系铺在洞穴层下面只会挡住洞穴。
+     * 群系预测是否该铺在这一层上。
+     *
+     * <p>主世界/末地只有 surface：切片是地表以下的水平切口，把地表群系铺在洞穴层下面
+     * 只会挡住洞穴。地狱没有 surface（天花板挡死），每个切片都是唯一的可见层，
+     * 群系按列采样，铺在哪一层语义都一样。
      */
-    public static boolean showsBiome(String layer) {
-        return TOP.equals(layer);
+    public static boolean showsBiome(String layer, boolean nether) {
+        return nether || TOP.equals(layer);
     }
 
     /** 层名是否落在该维度高度范围内（世界高度改过之后，旧存档里的层要藏起来）。 */

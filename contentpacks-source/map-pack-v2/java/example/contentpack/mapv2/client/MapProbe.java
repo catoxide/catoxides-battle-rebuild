@@ -5,11 +5,13 @@ import example.contentpack.mapv2.MapStore;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.QuartPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -114,8 +116,28 @@ final class MapProbe {
             return null;
         }
         int y = level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
-        return level.getBiome(new BlockPos(x, Math.max(level.getMinBuildHeight(), y), z))
-                .unwrapKey().map(key -> key.location().toString()).orElse(null);
+        return loadedBiomeId(level, x, y, z);
+    }
+
+    /**
+     * 已加载区块里的真实群系 ID；区块不在客户端缓存里返回 {@code null}。
+     *
+     * <p>不走 {@code level.getBiome(BlockPos)}：它经 {@code BiomeManager} 做 8 角模糊采样，
+     * 会采样到相邻区块；相邻区块还没进客户端缓存时 {@code ClientLevel.getUncachedNoiseBiome}
+     * 恒返回平原（1.21.1 {@code ClientLevel.java:762}），于是传送后的第一帧、区块边缘都会
+     * 读出「平原」。这里直接读该区块自己的群系存储（同一 quart），不模糊、不回退。
+     */
+    private static String loadedBiomeId(ClientLevel level, int x, int y, int z) {
+        if (!isLoaded(level, x, z)) {
+            return null;
+        }
+        ChunkAccess chunk = level.getChunk(x >> 4, z >> 4, ChunkStatus.BIOMES, false);
+        if (chunk == null) {
+            return null;
+        }
+        Holder<Biome> biome = chunk.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(y),
+                QuartPos.fromBlock(z));
+        return biome.unwrapKey().map(key -> key.location().toString()).orElse(null);
     }
 
     /** 瓦片快照里的方块 id → 当前语言显示名（悬停行与 {@link #probe} 共用）。 */
@@ -130,13 +152,19 @@ final class MapProbe {
         return BuiltInRegistries.BLOCK.get(id).getName().getString();
     }
 
-    /** 群系的本地化名（原版键：{@code biome.<namespace>.<path>}）。 */
+    /**
+     * 群系的本地化名（原版键：{@code biome.<namespace>.<path>}）。
+     *
+     * <p>同样只读本区块的群系存储（{@link #loadedBiomeId}）；区块没加载时返回 {@code "?"}，
+     * 不拿模糊采样出来的假群系充数。
+     */
     static String biomeName(ClientLevel level, BlockPos pos) {
-        Holder<Biome> biome = level.getBiome(pos);
-        return biome.unwrapKey()
-                .map(key -> Component.translatable(
-                        "biome." + key.location().getNamespace() + "." + key.location().getPath())
-                        .getString())
-                .orElse("?");
+        String id = loadedBiomeId(level, pos.getX(), pos.getY(), pos.getZ());
+        ResourceLocation location = id == null ? null : ResourceLocation.tryParse(id);
+        if (location == null) {
+            return "?";
+        }
+        return Component.translatable(
+                "biome." + location.getNamespace() + "." + location.getPath()).getString();
     }
 }

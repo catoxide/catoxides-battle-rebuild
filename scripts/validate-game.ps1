@@ -178,8 +178,8 @@ function Invoke-Phase(
                             # Expected dev-env condition, not a validation failure:
                             # the sable mod is intentionally absent from the gradle run
                             # dirs (runtime-provided in the real game), so
-                            # sable-base-pack is quarantined BY DESIGN. Demote to info.
-                            if ($ln -match 'quarantined' -and $ln -match 'sable-base-pack') {
+                            # sable-pack-v2 is quarantined BY DESIGN. Demote to info.
+                            if ($ln -match 'quarantined' -and $ln -match 'sable-pack-v2') {
                                 if (-not $infoLines.Contains($ln)) {
                                     $infoLines.Add($ln)
                                     Write-Host "[$Name] expected (demoted): $ln" -ForegroundColor DarkGray
