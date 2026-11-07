@@ -1,6 +1,6 @@
 package com.catoxide.catoxidesbattlerebuild.client;
 
-import cn.solarmoon.spark_core.event.ItemInHandModelRegisterEvent;
+import cn.solarmoon.spark_core.util.PerspectiveBakedModel;
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuild;
 import com.catoxide.catoxidesbattlerebuild.CatoxidesBattleRebuildConstants;
 import com.catoxide.catoxidesbattlerebuild.client.geometry.EntityBoneManager;
@@ -17,16 +17,26 @@ import com.catoxide.catoxidesbattlerebuild.mob.zombie2.ModularZombie2;
 import com.catoxide.catoxidesbattlerebuild.registry.ModEntities;
 import com.catoxide.catoxidesbattlerebuild.registry.ModWeapons;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.model.ModelResourceLocation;
+import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.extensions.common.IClientItemExtensions;
 import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
 
 @EventBusSubscriber(modid = CatoxidesBattleRebuildConstants.MODID, value = Dist.CLIENT)
 public class ClientInitializer {
+
+    private static final ResourceLocation IRON_SWORD_ID =
+            ResourceLocation.fromNamespaceAndPath(CatoxidesBattleRebuildConstants.MODID, "iron_sword_weapon");
+    private static final ModelResourceLocation IRON_SWORD_MODEL = ModelResourceLocation.inventory(IRON_SWORD_ID);
+    private static final ModelResourceLocation IRON_SWORD_IN_HAND_MODEL =
+            ModelResourceLocation.standalone(IRON_SWORD_ID.withPrefix("item/").withSuffix("_in_hand"));
     @SubscribeEvent
     public static void onClientSetup(FMLClientSetupEvent event) {
         LogManager.clientStartup("ClientInitializer", "Client setup initializing...");
@@ -94,10 +104,20 @@ public class ClientInitializer {
         LogManager.clientStartup("ClientInitializer", "IronSwordRenderer registered");
     }
 
+    // 不用 spark_core 的 ItemInHandModelRegisterEvent：它在 ITEM RegisterEvent 中途同步发出，
+    // 依赖 spark_core 的 mod 其物品此时必然还没注册（DeferredHolder 未绑定）。改为烘焙阶段自行包装。
     @SubscribeEvent
-    public static void onRegisterInHandModel(ItemInHandModelRegisterEvent event) {
-        LogManager.clientStartup("ClientInitializer", "Registering IronSwordWeapon in-hand model...");
-        event.addInHandModel(ModWeapons.IRON_SWORD_WEAPON.get());
-        LogManager.clientStartup("ClientInitializer", "IronSwordWeapon in-hand model registered");
+    public static void onRegisterAdditionalModels(ModelEvent.RegisterAdditional event) {
+        event.register(IRON_SWORD_IN_HAND_MODEL);
+    }
+
+    @SubscribeEvent
+    public static void onModifyBakingResult(ModelEvent.ModifyBakingResult event) {
+        BakedModel base = event.getModels().get(IRON_SWORD_MODEL);
+        BakedModel inHand = event.getModels().get(IRON_SWORD_IN_HAND_MODEL);
+        if (base != null && inHand != null) {
+            event.getModels().put(IRON_SWORD_MODEL, new PerspectiveBakedModel(base, inHand));
+            LogManager.clientStartup("ClientInitializer", "IronSwordWeapon perspective model wrapped");
+        }
     }
 }

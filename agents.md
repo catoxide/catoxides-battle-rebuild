@@ -26,7 +26,7 @@
 ## 2. 禁读 / 禁改
 
 **禁读**（第三方解包与历史垃圾；上下文再大也别读，读了只会改错地方）：
-`Deprecated&References/`、`tools/_spark_src/`、`tools/_spark_core/`、`tools/_spark_core_src/`、`tools/spark-core-fork/`、`1/`（含 `com/jme3/bullet`）、`logs/`、`tmp/`、`scratch/`、`runclient_decomp/`、`META-INF/`、`example/`、`contentpacks_staging/`、`.omo/`、任何 `node_modules/`、`build/`、`run/`。
+`Deprecated&References/`（默认不读；仅当用户特意提及，或当前任务恰好需要其中某个子目录的内容时按需读取）、`tools/_spark_src/`、`tools/_spark_core/`、`tools/_spark_core_src/`、`tools/spark-core-fork/`、`1/`（含 `com/jme3/bullet`）、`logs/`、`tmp/`、`scratch/`、`runclient_decomp/`、`META-INF/`、`example/`、`contentpacks_staging/`、`.omo/`、任何 `node_modules/`、`build/`、`run/`。
 
 **禁改**：
 - `git status` 里已存在的未提交改动 = 用户自己在推进的工作。不顺手改、不 revert、不 stash。
