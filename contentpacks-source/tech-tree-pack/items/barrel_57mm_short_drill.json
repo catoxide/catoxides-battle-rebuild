@@ -1,0 +1,12 @@
+{
+  "id": "barrel_57mm_short_drill",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Drill: 5.7mm短枪管",
+    "zh_cn": "§65.7mm短枪管 钻头"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

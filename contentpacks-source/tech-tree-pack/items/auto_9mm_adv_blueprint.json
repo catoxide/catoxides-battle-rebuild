@@ -1,0 +1,12 @@
+{
+  "id": "auto_9mm_adv_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 9mm先进自动枪机",
+    "zh_cn": "§d9mm先进自动枪机 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

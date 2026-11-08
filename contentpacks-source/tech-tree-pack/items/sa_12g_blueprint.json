@@ -1,0 +1,12 @@
+{
+  "id": "sa_12g_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 12g半自动枪机",
+    "zh_cn": "§b12g半自动枪机 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "uncommon",
+  "creative": true,
+  "fireResistant": false
+}

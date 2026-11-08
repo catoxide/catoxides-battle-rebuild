@@ -1,0 +1,12 @@
+{
+  "id": "frame_mk47_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: MK47枪身",
+    "zh_cn": "§cMK47枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

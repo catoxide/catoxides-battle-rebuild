@@ -1,0 +1,12 @@
+{
+  "id": "frame_spas12_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: SPAS-12枪身",
+    "zh_cn": "§dSPAS-12枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

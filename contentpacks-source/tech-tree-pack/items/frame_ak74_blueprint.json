@@ -1,0 +1,12 @@
+{
+  "id": "frame_ak74_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: AK74枪身",
+    "zh_cn": "§aAK74枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "common",
+  "creative": true,
+  "fireResistant": false
+}

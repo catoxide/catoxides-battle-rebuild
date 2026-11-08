@@ -1,0 +1,12 @@
+{
+  "id": "auto_762x39_precise_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 7.62x39精密自动枪机",
+    "zh_cn": "§d7.62x39精密自动枪机 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

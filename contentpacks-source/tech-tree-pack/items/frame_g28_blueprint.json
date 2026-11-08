@@ -1,0 +1,12 @@
+{
+  "id": "frame_g28_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: G28枪身",
+    "zh_cn": "§dG28枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

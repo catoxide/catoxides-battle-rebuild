@@ -1,0 +1,12 @@
+{
+  "id": "frame_m249_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: M249枪身",
+    "zh_cn": "§bM249枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "uncommon",
+  "creative": true,
+  "fireResistant": false
+}

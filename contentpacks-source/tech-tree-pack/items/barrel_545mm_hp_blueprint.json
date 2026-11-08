@@ -1,0 +1,12 @@
+{
+  "id": "barrel_545mm_hp_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 5.45mm高性能枪管",
+    "zh_cn": "§65.45mm高性能枪管 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

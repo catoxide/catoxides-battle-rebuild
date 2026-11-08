@@ -1,0 +1,12 @@
+{
+  "id": "barrel_12g_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 12g通用枪管",
+    "zh_cn": "§a12g通用枪管 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "common",
+  "creative": true,
+  "fireResistant": false
+}

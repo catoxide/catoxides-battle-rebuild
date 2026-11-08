@@ -1,0 +1,12 @@
+{
+  "id": "frame_sr25_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: SR25枪身",
+    "zh_cn": "§6SR25枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

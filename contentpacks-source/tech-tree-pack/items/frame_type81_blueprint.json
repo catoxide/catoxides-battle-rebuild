@@ -1,0 +1,12 @@
+{
+  "id": "frame_type81_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 81-1式枪身",
+    "zh_cn": "§b81-1式枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "uncommon",
+  "creative": true,
+  "fireResistant": false
+}

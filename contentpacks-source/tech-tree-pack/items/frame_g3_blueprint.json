@@ -1,0 +1,12 @@
+{
+  "id": "frame_g3_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: G3枪身",
+    "zh_cn": "§dG3枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

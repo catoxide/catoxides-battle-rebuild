@@ -1,0 +1,12 @@
+{
+  "id": "bolt_338_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: .338栓动步枪枪机",
+    "zh_cn": "§6.338栓动步枪枪机 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

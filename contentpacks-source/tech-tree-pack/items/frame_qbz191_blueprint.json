@@ -1,0 +1,12 @@
+{
+  "id": "frame_qbz191_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: QBZ-191枪身",
+    "zh_cn": "§cQBZ-191枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

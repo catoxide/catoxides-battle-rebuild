@@ -1,0 +1,12 @@
+{
+  "id": "sa_338_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: .338半自动步枪枪机",
+    "zh_cn": "§c.338半自动步枪枪机 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

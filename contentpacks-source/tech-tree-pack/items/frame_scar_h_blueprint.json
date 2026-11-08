@@ -1,0 +1,12 @@
+{
+  "id": "frame_scar_h_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: SCAR-H枪身",
+    "zh_cn": "§6SCAR-H枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

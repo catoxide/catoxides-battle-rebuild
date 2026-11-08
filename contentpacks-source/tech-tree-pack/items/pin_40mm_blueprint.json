@@ -1,0 +1,12 @@
+{
+  "id": "pin_40mm_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 40mm榴弹发射器击针",
+    "zh_cn": "§d40mm榴弹发射器击针 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

@@ -1,0 +1,12 @@
+{
+  "id": "frame_m4a1_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: M4A1枪身",
+    "zh_cn": "§dM4A1枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

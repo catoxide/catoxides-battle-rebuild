@@ -1,0 +1,12 @@
+{
+  "id": "barrel_9mm_long_drill",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Drill: 9mm长枪管",
+    "zh_cn": "§b9mm长枪管 钻头"
+  },
+  "stackSize": 1,
+  "rarity": "uncommon",
+  "creative": true,
+  "fireResistant": false
+}

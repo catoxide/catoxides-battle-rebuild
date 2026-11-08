@@ -1,0 +1,12 @@
+{
+  "id": "frame_springfield1873_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 春田1873枪身",
+    "zh_cn": "§a春田1873枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "common",
+  "creative": true,
+  "fireResistant": false
+}

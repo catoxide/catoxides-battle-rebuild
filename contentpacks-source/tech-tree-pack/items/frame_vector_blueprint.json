@@ -1,0 +1,12 @@
+{
+  "id": "frame_vector_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 维克托枪身",
+    "zh_cn": "§6维克托枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

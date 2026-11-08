@@ -1,0 +1,12 @@
+{
+  "id": "frame_aks74u_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: AKS-74U枪身",
+    "zh_cn": "§aAKS-74U枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "common",
+  "creative": true,
+  "fireResistant": false
+}

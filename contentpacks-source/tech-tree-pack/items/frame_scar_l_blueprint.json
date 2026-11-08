@@ -1,0 +1,12 @@
+{
+  "id": "frame_scar_l_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: SCAR-L枪身",
+    "zh_cn": "§dSCAR-L枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

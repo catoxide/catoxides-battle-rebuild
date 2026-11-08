@@ -1,0 +1,12 @@
+{
+  "id": "frame_hk416_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: HK416枪身",
+    "zh_cn": "§cHK416枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

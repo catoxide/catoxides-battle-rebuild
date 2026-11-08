@@ -1,0 +1,7 @@
+// tech-tree-pack —— 科技树包（无额外编译依赖）
+plugins {
+    id 'java-library'
+    id 'net.neoforged.gradle.userdev'
+}
+
+apply from: '../contentpack.gradle'

@@ -1,0 +1,12 @@
+{
+  "id": "barrel_9mm_short_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 9mm短枪管",
+    "zh_cn": "§a9mm短枪管 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "common",
+  "creative": true,
+  "fireResistant": false
+}

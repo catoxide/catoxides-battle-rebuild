@@ -1,0 +1,29 @@
+{
+  "id": "research_table",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Research Table",
+    "zh_cn": "研究台"
+  },
+  "material": {
+    "hardness": 2.5,
+    "resistance": 6.0,
+    "sound": "wood",
+    "lightLevel": 0,
+    "friction": 0.6,
+    "transparent": false,
+    "randomTicks": false,
+    "requiresTool": false,
+    "solid": true
+  },
+  "properties": [
+    { "name": "tier", "type": "enum", "values": ["1", "2", "3"], "default": "1", "labelZh": "层级" }
+  ],
+  "blockEntity": null,
+  "loot": { "selfDrop": true },
+  "tags": [
+    "minecraft:mineable/axe"
+  ],
+  "creative": true,
+  "blockItem": true
+}

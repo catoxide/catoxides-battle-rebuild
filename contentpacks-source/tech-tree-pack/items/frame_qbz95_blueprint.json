@@ -1,0 +1,12 @@
+{
+  "id": "frame_qbz95_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: QBZ-95枪身",
+    "zh_cn": "§bQBZ-95枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "uncommon",
+  "creative": true,
+  "fireResistant": false
+}

@@ -1,0 +1,12 @@
+{
+  "id": "barrel_rpg7_drill",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Drill: RPG-7筒身",
+    "zh_cn": "§cRPG-7筒身 钻头"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

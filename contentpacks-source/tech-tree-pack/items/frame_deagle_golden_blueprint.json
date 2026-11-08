@@ -1,0 +1,12 @@
+{
+  "id": "frame_deagle_golden_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 黄金沙漠之鹰枪身",
+    "zh_cn": "§6黄金沙漠之鹰枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

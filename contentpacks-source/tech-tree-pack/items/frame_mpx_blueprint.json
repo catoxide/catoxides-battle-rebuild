@@ -1,0 +1,12 @@
+{
+  "id": "frame_mpx_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: MPX枪身",
+    "zh_cn": "§dMPX枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

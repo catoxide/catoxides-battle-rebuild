@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "PPP",
+    "PBP",
+    "PPP"
+  ],
+  "key": {
+    "P": { "item": "minecraft:oak_planks" },
+    "B": { "item": "minecraft:book" }
+  },
+  "result": {
+    "count": 1,
+    "id": "tech_tree_pack:research_table"
+  }
+}

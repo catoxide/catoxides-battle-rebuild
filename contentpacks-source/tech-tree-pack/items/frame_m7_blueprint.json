@@ -1,0 +1,12 @@
+{
+  "id": "frame_m7_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: M7枪身",
+    "zh_cn": "§cM7枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

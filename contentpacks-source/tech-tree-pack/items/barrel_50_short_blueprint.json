@@ -1,0 +1,12 @@
+{
+  "id": "barrel_50_short_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: .50短枪管",
+    "zh_cn": "§d.50短枪管 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

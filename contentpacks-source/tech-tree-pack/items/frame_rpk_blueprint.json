@@ -1,0 +1,12 @@
+{
+  "id": "frame_rpk_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: RPK枪身",
+    "zh_cn": "§bRPK枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "uncommon",
+  "creative": true,
+  "fireResistant": false
+}

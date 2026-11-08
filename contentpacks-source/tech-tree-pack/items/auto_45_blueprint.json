@@ -1,0 +1,12 @@
+{
+  "id": "auto_45_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: .45通用自动枪机",
+    "zh_cn": "§a.45通用自动枪机 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "common",
+  "creative": true,
+  "fireResistant": false
+}

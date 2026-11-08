@@ -1,0 +1,12 @@
+{
+  "id": "barrel_45_long_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: .45长枪管",
+    "zh_cn": "§b.45长枪管 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "uncommon",
+  "creative": true,
+  "fireResistant": false
+}

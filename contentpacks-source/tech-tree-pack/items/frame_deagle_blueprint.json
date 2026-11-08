@@ -1,0 +1,12 @@
+{
+  "id": "frame_deagle_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 沙漠之鹰枪身",
+    "zh_cn": "§d沙漠之鹰枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

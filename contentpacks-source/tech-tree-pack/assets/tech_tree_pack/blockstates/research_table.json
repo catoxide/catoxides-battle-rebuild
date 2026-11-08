@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "tier=1": { "model": "tech_tree_pack:block/research_table" },
+    "tier=2": { "model": "tech_tree_pack:block/research_table_tier2" },
+    "tier=3": { "model": "tech_tree_pack:block/research_table_tier3" }
+  }
+}

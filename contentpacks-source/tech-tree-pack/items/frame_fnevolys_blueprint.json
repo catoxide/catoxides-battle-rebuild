@@ -1,0 +1,12 @@
+{
+  "id": "frame_fnevolys_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: FN EVOLYS枪身",
+    "zh_cn": "§dFN EVOLYS枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

@@ -1,0 +1,12 @@
+{
+  "id": "barrel_40mm_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 40mm榴弹发射管",
+    "zh_cn": "§d40mm榴弹发射管 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

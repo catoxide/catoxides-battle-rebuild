@@ -1,0 +1,12 @@
+{
+  "id": "rpg7_trigger_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: RPG-7扳机",
+    "zh_cn": "§cRPG-7扳机 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

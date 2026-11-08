@@ -1,0 +1,12 @@
+{
+  "id": "barrel_57mm_long_drill",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Drill: 5.7mm长枪管",
+    "zh_cn": "§c5.7mm长枪管 钻头"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

@@ -1,0 +1,12 @@
+{
+  "id": "frame_ak105_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: AK105枪身",
+    "zh_cn": "§dAK105枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

@@ -1,0 +1,12 @@
+{
+  "id": "frame_m700_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: M700枪身",
+    "zh_cn": "§dM700枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

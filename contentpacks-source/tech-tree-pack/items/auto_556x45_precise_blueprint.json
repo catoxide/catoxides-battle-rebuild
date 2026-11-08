@@ -1,0 +1,12 @@
+{
+  "id": "auto_556x45_precise_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 5.56x45精密自动枪机",
+    "zh_cn": "§d5.56x45精密自动枪机 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

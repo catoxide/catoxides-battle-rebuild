@@ -1,0 +1,12 @@
+{
+  "id": "frame_m870_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: M870枪身",
+    "zh_cn": "§bM870枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "uncommon",
+  "creative": true,
+  "fireResistant": false
+}

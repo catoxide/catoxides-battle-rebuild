@@ -1,0 +1,12 @@
+{
+  "id": "frame_m4_sopmod2_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: M4 SOPMOD II枪身",
+    "zh_cn": "§6M4 SOPMOD II枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

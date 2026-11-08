@@ -1,0 +1,12 @@
+{
+  "id": "barrel_12g_hp_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 12g高性能枪管",
+    "zh_cn": "§d12g高性能枪管 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

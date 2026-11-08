@@ -1,0 +1,12 @@
+{
+  "id": "pistol_bolt_precise_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 精密手枪枪机",
+    "zh_cn": "§b精密手枪枪机 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "uncommon",
+  "creative": true,
+  "fireResistant": false
+}

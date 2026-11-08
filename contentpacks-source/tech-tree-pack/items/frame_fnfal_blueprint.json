@@ -1,0 +1,12 @@
+{
+  "id": "frame_fnfal_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: FN FAL枪身",
+    "zh_cn": "§dFN FAL枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

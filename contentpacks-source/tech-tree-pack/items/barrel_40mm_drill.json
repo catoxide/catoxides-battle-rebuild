@@ -1,0 +1,12 @@
+{
+  "id": "barrel_40mm_drill",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Drill: 40mm榴弹发射管",
+    "zh_cn": "§d40mm榴弹发射管 钻头"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

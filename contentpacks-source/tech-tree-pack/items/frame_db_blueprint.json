@@ -1,0 +1,12 @@
+{
+  "id": "frame_db_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 双管霰弹枪枪身",
+    "zh_cn": "§a双管霰弹枪枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "common",
+  "creative": true,
+  "fireResistant": false
+}

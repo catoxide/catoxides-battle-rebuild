@@ -1,0 +1,12 @@
+{
+  "id": "barrel_12g_hp_drill",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Drill: 12g高性能枪管",
+    "zh_cn": "§d12g高性能枪管 钻头"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

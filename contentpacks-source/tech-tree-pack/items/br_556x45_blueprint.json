@@ -1,0 +1,12 @@
+{
+  "id": "br_556x45_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 5.56x45连发枪机",
+    "zh_cn": "§a5.56x45连发枪机 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "common",
+  "creative": true,
+  "fireResistant": false
+}

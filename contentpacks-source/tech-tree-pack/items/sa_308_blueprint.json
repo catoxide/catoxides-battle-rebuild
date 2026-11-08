@@ -1,0 +1,12 @@
+{
+  "id": "sa_308_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: .308半自动步枪枪机",
+    "zh_cn": "§d.308半自动步枪枪机 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

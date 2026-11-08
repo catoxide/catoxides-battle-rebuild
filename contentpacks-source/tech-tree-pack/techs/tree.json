@@ -1,0 +1,6369 @@
+{
+  "title": "枪械工程 · 蓝图研究",
+  "points": {
+    "questReward": 1
+  },
+  "pages": [
+    {
+      "id": "foundation",
+      "title": "基础工业",
+      "icon": "create:andesite_alloy"
+    },
+    {
+      "id": "bolts",
+      "title": "枪机",
+      "icon": "tech_tree_pack:auto_556x45_blueprint"
+    },
+    {
+      "id": "barrels",
+      "title": "枪管",
+      "icon": "tech_tree_pack:barrel_556mm_drill"
+    },
+    {
+      "id": "frames_a",
+      "title": "枪身 I",
+      "icon": "tech_tree_pack:frame_m16_blueprint"
+    },
+    {
+      "id": "frames_b",
+      "title": "枪身 II",
+      "icon": "tech_tree_pack:frame_akm_blueprint"
+    }
+  ],
+  "research": [
+    {
+      "id": "study_foundation",
+      "title": "整理笔记",
+      "desc": "把零散观察整理成可复用的口径与工艺记录。",
+      "page": "foundation",
+      "icon": "minecraft:paper",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        }
+      ],
+      "visibleWhen": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        }
+      ],
+      "costs": [
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 8
+        }
+      ],
+      "points": 4,
+      "cooldownTicks": 600
+    },
+    {
+      "id": "study_bolts",
+      "title": "枪机复检",
+      "desc": "拆解并记录闭锁与击发结构，为自动枪机积累公差数据。",
+      "page": "bolts",
+      "icon": "minecraft:iron_ingot",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_9mm_precise"
+          ]
+        }
+      ],
+      "visibleWhen": [
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_9mm_precise"
+          ]
+        }
+      ],
+      "costs": [
+        {
+          "type": "item",
+          "item": "create:copper_sheet",
+          "amount": 8
+        }
+      ],
+      "points": 6,
+      "cooldownTicks": 1200
+    },
+    {
+      "id": "study_barrels",
+      "title": "膛线测量",
+      "desc": "测量各族枪管的缠距与壁厚，建立高性能枪管的设计余量。",
+      "page": "barrels",
+      "icon": "create:copper_sheet",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_556x45_adv"
+          ]
+        }
+      ],
+      "visibleWhen": [
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_556x45_adv"
+          ]
+        }
+      ],
+      "costs": [
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 8
+        }
+      ],
+      "points": 24,
+      "cooldownTicks": 3000
+    },
+    {
+      "id": "study_frames_a",
+      "title": "机匣测绘",
+      "desc": "测绘 M16 / 手枪 / 冲锋枪族机匣，建立可复用的枪身图纸。",
+      "page": "frames_a",
+      "icon": "create:andesite_alloy",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_556x45_precise"
+          ]
+        }
+      ],
+      "visibleWhen": [
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_556x45_precise"
+          ]
+        }
+      ],
+      "costs": [
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "points": 10,
+      "cooldownTicks": 1800
+    },
+    {
+      "id": "study_frames_b",
+      "title": "精密机匣测绘",
+      "desc": "测绘 AK 与狙击 / 机枪族机匣，标定大口径枪身的受力结构。",
+      "page": "frames_b",
+      "icon": "create:brass_ingot",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_308_precise"
+          ]
+        }
+      ],
+      "visibleWhen": [
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_308_precise"
+          ]
+        }
+      ],
+      "costs": [
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "points": 16,
+      "cooldownTicks": 2400
+    }
+  ],
+  "table": {
+    "maxTier": 3,
+    "upgrades": [
+      {
+        "to": 2,
+        "costs": [
+          {
+            "type": "tech_point",
+            "amount": 2
+          },
+          {
+            "type": "item",
+            "item": "create:andesite_alloy",
+            "amount": 16
+          }
+        ]
+      },
+      {
+        "to": 3,
+        "costs": [
+          {
+            "type": "tech_point",
+            "amount": 4
+          },
+          {
+            "type": "item",
+            "item": "create:precision_mechanism",
+            "amount": 2
+          }
+        ]
+      }
+    ]
+  },
+  "nodes": [
+    {
+      "id": "create_industry",
+      "title": "机械化工业",
+      "desc": "先建立机械动力产线：安山合金、动力辊压与序列组装。没有工业基础，枪械蓝图只是一张纸。",
+      "page": "foundation",
+      "col": 0,
+      "row": 1,
+      "icon": "create:andesite_alloy",
+      "requirements": [
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "count": 1,
+          "consume": false
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_556x45",
+      "title": "5.56×45 口径",
+      "desc": "掌握 5.56×45 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 2,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_556x45_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_762x39",
+      "title": "7.62×39 口径",
+      "desc": "掌握 7.62×39 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 3,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_762x39_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_9mm",
+      "title": "9mm 口径",
+      "desc": "掌握 9mm 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 4,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_9mm_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_45acp",
+      "title": ".45 ACP 口径",
+      "desc": "掌握 .45 ACP 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 5,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_45_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_545x39",
+      "title": "5.45×39 口径",
+      "desc": "掌握 5.45×39 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 6,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_545x39_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_308",
+      "title": ".308 口径",
+      "desc": "掌握 .308 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 7,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_308_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_338",
+      "title": ".338 口径",
+      "desc": "掌握 .338 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 2,
+      "row": 1,
+      "icon": "tech_tree_pack:bolt_338_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_50bmg",
+      "title": ".50 BMG 口径",
+      "desc": "掌握 .50 BMG 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 3,
+      "row": 1,
+      "icon": "tech_tree_pack:bolt_50bmg_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_50ae",
+      "title": ".50 AE 口径",
+      "desc": "掌握 .50 AE 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 4,
+      "row": 1,
+      "icon": "tech_tree_pack:pistol_bolt_precise_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_357mag",
+      "title": ".357 马格南 口径",
+      "desc": "掌握 .357 马格南 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 5,
+      "row": 1,
+      "icon": "tech_tree_pack:pistol_bolt_precise_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_12g",
+      "title": "12 号霰弹 口径",
+      "desc": "掌握 12 号霰弹 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 6,
+      "row": 1,
+      "icon": "tech_tree_pack:pin_12g_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_57x28",
+      "title": "5.7×28 口径",
+      "desc": "掌握 5.7×28 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 7,
+      "row": 1,
+      "icon": "tech_tree_pack:auto_57x28_precise_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_58x42",
+      "title": "5.8×42 口径",
+      "desc": "掌握 5.8×42 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 2,
+      "row": 2,
+      "icon": "tech_tree_pack:auto_58x42_precise_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_68x51fury",
+      "title": "6.8×51 口径",
+      "desc": "掌握 6.8×51 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 3,
+      "row": 2,
+      "icon": "tech_tree_pack:auto_68x51_adv_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_30_06",
+      "title": ".30-06 口径",
+      "desc": "掌握 .30-06 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 4,
+      "row": 2,
+      "icon": "tech_tree_pack:bolt_30_06_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_45_70",
+      "title": ".45-70 口径",
+      "desc": "掌握 .45-70 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 5,
+      "row": 2,
+      "icon": "tech_tree_pack:bolt_45_70_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_40mm",
+      "title": "40mm 榴弹 口径",
+      "desc": "掌握 40mm 榴弹 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 6,
+      "row": 2,
+      "icon": "tech_tree_pack:pin_40mm_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "caliber_rpg_rocket",
+      "title": "RPG 火箭 口径",
+      "desc": "掌握 RPG 火箭 的弹道与膛压数据。该口径的枪机 / 枪管 / 枪身都以此为前置。",
+      "page": "foundation",
+      "col": 7,
+      "row": 2,
+      "icon": "tech_tree_pack:rpg7_trigger_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "create_industry"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:paper",
+          "amount": 2
+        }
+      ],
+      "rewards": [],
+      "quest": true
+    },
+    {
+      "id": "auto_556x45",
+      "title": "5.56x45通用自动枪机",
+      "desc": "T1 · 5.56×45 · 被 4 把枪使用：M249 机枪、M16A1 制式步枪、AUG 突击步枪、G36K 突击步枪。",
+      "page": "bolts",
+      "col": 0,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_556x45_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_556x45_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "br_556x45",
+      "title": "5.56x45连发枪机",
+      "desc": "T1 · 5.56×45 · 被 2 把枪使用：M16A4 制式步枪、SPR-15 HB \"射手座\" 反狙击步枪。",
+      "page": "bolts",
+      "col": 1,
+      "row": 0,
+      "icon": "tech_tree_pack:br_556x45_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_556x45"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:br_556x45_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_556x45_precise",
+      "title": "5.56x45精密自动枪机",
+      "desc": "T3 · 5.56×45 · 被 4 把枪使用：M4A1 卡宾枪、SCAR-L 突击步枪、AUG A3 突击步枪、M4 SOPMOD II 突击步枪。",
+      "page": "bolts",
+      "col": 2,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_556x45_precise_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_556x45"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_556x45_precise_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_556x45_adv",
+      "title": "5.56x45先进自动枪机",
+      "desc": "T5 · 5.56×45 · 被 1 把枪使用：HK-416A5 突击步枪。",
+      "page": "bolts",
+      "col": 3,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_556x45_adv_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_556x45_precise"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_556x45_adv_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_68x51_adv",
+      "title": "6.8x51先进自动枪机",
+      "desc": "T5 · 6.8×51 · 被 1 把枪使用：M7 战斗步枪。",
+      "page": "bolts",
+      "col": 4,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_68x51_adv_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_68x51fury"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_556x45_adv"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_68x51_adv_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_9mm",
+      "title": "9mm通用自动枪机",
+      "desc": "T1 · 9mm · 被 1 把枪使用：乌兹冲锋枪。",
+      "page": "bolts",
+      "col": 5,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_9mm_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_9mm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_9mm_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_9mm_precise",
+      "title": "9mm精密自动枪机",
+      "desc": "T2 · 9mm · 被 1 把枪使用：MP5A5 冲锋枪。",
+      "page": "bolts",
+      "col": 6,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_9mm_precise_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_9mm"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_9mm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_9mm_precise_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_9mm_adv",
+      "title": "9mm先进自动枪机",
+      "desc": "T3 · 9mm · 被 1 把枪使用：MPX 冲锋枪。",
+      "page": "bolts",
+      "col": 7,
+      "row": 0,
+      "icon": "tech_tree_pack:auto_9mm_adv_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_9mm"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_9mm_precise"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_9mm_adv_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "sa_762x39",
+      "title": "7.62x39半自动枪机",
+      "desc": "T1 · 7.62×39 · 被 1 把枪使用：SKS 战术步枪。",
+      "page": "bolts",
+      "col": 0,
+      "row": 1,
+      "icon": "tech_tree_pack:sa_762x39_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_762x39"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:sa_762x39_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_762x39",
+      "title": "7.62x39通用自动枪机",
+      "desc": "T1 · 7.62×39 · 被 4 把枪使用：AKM 突击步枪、RPK 轻机枪、81-1式 制式步枪、AK103 突击步枪。",
+      "page": "bolts",
+      "col": 1,
+      "row": 1,
+      "icon": "tech_tree_pack:auto_762x39_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_762x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "sa_762x39"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_762x39_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_762x39_precise",
+      "title": "7.62x39精密自动枪机",
+      "desc": "T3 · 7.62×39 · 该规格暂无对应枪械，作为技术储备保留。",
+      "page": "bolts",
+      "col": 2,
+      "row": 1,
+      "icon": "tech_tree_pack:auto_762x39_precise_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_762x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_762x39"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_762x39_precise_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_762x39_adv",
+      "title": "7.62x39先进自动枪机",
+      "desc": "T5 · 7.62×39 · 被 1 把枪使用：MK47 突击步枪。",
+      "page": "bolts",
+      "col": 3,
+      "row": 1,
+      "icon": "tech_tree_pack:auto_762x39_adv_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_762x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_762x39_precise"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_762x39_adv_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_45",
+      "title": ".45通用自动枪机",
+      "desc": "T1 · .45 ACP · 被 1 把枪使用：UMP45 冲锋枪。",
+      "page": "bolts",
+      "col": 4,
+      "row": 1,
+      "icon": "tech_tree_pack:auto_45_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_45acp"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_45_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_45_precise",
+      "title": ".45精密自动枪机",
+      "desc": "T2 · .45 ACP · 被 1 把枪使用：维克托 冲锋枪。",
+      "page": "bolts",
+      "col": 5,
+      "row": 1,
+      "icon": "tech_tree_pack:auto_45_precise_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_45acp"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_45"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_45_precise_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_58x42_precise",
+      "title": "5.8x42精密自动枪机",
+      "desc": "T2 · 5.8×42 · 被 1 把枪使用：95式 \"长弓\" 突击步枪。",
+      "page": "bolts",
+      "col": 6,
+      "row": 1,
+      "icon": "tech_tree_pack:auto_58x42_precise_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_58x42"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_58x42_precise_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_58x42_adv",
+      "title": "5.8x42先进自动枪机",
+      "desc": "T5 · 5.8×42 · 被 1 把枪使用：191式 突击步枪。",
+      "page": "bolts",
+      "col": 7,
+      "row": 1,
+      "icon": "tech_tree_pack:auto_58x42_adv_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_58x42"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_58x42_precise"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_58x42_adv_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_545x39",
+      "title": "5.45x39通用自动枪机",
+      "desc": "T1 · 5.45×39 · 被 3 把枪使用：AKS-74U 短突击步枪、AK74M 突击步枪、AK74 突击步枪。",
+      "page": "bolts",
+      "col": 0,
+      "row": 2,
+      "icon": "tech_tree_pack:auto_545x39_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_545x39"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_545x39_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_545x39_precise",
+      "title": "5.45x39精密自动枪机",
+      "desc": "T3 · 5.45×39 · 被 2 把枪使用：AK105 突击步枪、AK12 突击步枪。",
+      "page": "bolts",
+      "col": 1,
+      "row": 2,
+      "icon": "tech_tree_pack:auto_545x39_precise_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_545x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_545x39"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_545x39_precise_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_545x39_adv",
+      "title": "5.45x39先进自动枪机",
+      "desc": "T5 · 5.45×39 · 被 1 把枪使用：AM-17 短突击步枪。",
+      "page": "bolts",
+      "col": 2,
+      "row": 2,
+      "icon": "tech_tree_pack:auto_545x39_adv_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_545x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_545x39_precise"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_545x39_adv_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_57x28_precise",
+      "title": "5.7x28精密自动枪机",
+      "desc": "T4 · 5.7×28 · 被 1 把枪使用：P90 冲锋枪。",
+      "page": "bolts",
+      "col": 3,
+      "row": 2,
+      "icon": "tech_tree_pack:auto_57x28_precise_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_57x28"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_57x28_precise_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_57x28_adv",
+      "title": "5.7x28先进自动枪机",
+      "desc": "T5 · 5.7×28 · 被 1 把枪使用：AR57 冲锋枪。",
+      "page": "bolts",
+      "col": 4,
+      "row": 2,
+      "icon": "tech_tree_pack:auto_57x28_adv_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_57x28"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_57x28_precise"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_57x28_adv_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "pin_12g",
+      "title": "12g击针",
+      "desc": "T1 · 12 号霰弹 · 被 2 把枪使用：DB-2 杜林人、DB-4 乌萨斯。",
+      "page": "bolts",
+      "col": 5,
+      "row": 2,
+      "icon": "tech_tree_pack:pin_12g_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_12g"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:pin_12g_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "sa_12g",
+      "title": "12g半自动枪机",
+      "desc": "T2 · 12 号霰弹 · 被 3 把枪使用：M870 霰弹枪、SPAS-12 多功能霰弹枪、M1014 战斗霰弹枪。",
+      "page": "bolts",
+      "col": 6,
+      "row": 2,
+      "icon": "tech_tree_pack:sa_12g_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_12g"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "pin_12g"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:sa_12g_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_12g",
+      "title": "12g自动枪机",
+      "desc": "T4 · 12 号霰弹 · 被 1 把枪使用：AA12 霰弹枪。",
+      "page": "bolts",
+      "col": 7,
+      "row": 2,
+      "icon": "tech_tree_pack:auto_12g_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_12g"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "sa_12g"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_12g_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "sa_308",
+      "title": ".308半自动步枪枪机",
+      "desc": "T3 · .308 · 被 3 把枪使用：SR25 精确射手步枪、M110 SASS 狙击步枪、G28 精确射手步枪。",
+      "page": "bolts",
+      "col": 0,
+      "row": 3,
+      "icon": "tech_tree_pack:sa_308_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:sa_308_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_308",
+      "title": ".308通用自动枪机",
+      "desc": "T3 · .308 · 被 3 把枪使用：G3 战斗步枪、FN FAL 战斗步枪、FN EVOLYS 机枪。",
+      "page": "bolts",
+      "col": 1,
+      "row": 3,
+      "icon": "tech_tree_pack:auto_308_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "sa_308"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_308_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_308_precise",
+      "title": ".308精密自动枪机",
+      "desc": "T4 · .308 · 被 4 把枪使用：SCAR-H 战斗步枪、MK14 EBR 精确射手步枪、SA58 战斗步枪、M60 通用机枪。",
+      "page": "bolts",
+      "col": 2,
+      "row": 3,
+      "icon": "tech_tree_pack:auto_308_precise_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_308"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_308_precise_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "auto_308_adv",
+      "title": ".308先进自动枪机",
+      "desc": "T5 · .308 · 该规格暂无对应枪械，作为技术储备保留。",
+      "page": "bolts",
+      "col": 3,
+      "row": 3,
+      "icon": "tech_tree_pack:auto_308_adv_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "auto_308_precise"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:auto_308_adv_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "revolver_308",
+      "title": ".308转轮枪机",
+      "desc": "T5 · .308 · 被 1 把枪使用：M134 转管机枪。",
+      "page": "bolts",
+      "col": 4,
+      "row": 3,
+      "icon": "tech_tree_pack:revolver_308_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "sa_308"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:revolver_308_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "pistol_bolt",
+      "title": "通用手枪枪机",
+      "desc": "T1 · 9mm · 被 1 把枪使用：格洛克 17 手枪。",
+      "page": "bolts",
+      "col": 5,
+      "row": 3,
+      "icon": "tech_tree_pack:pistol_bolt_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_9mm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:pistol_bolt_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "pistol_bolt_precise",
+      "title": "精密手枪枪机",
+      "desc": "T2 · .357 马格南 · 被 3 把枪使用：.50 沙漠之鹰、.357 黄金沙漠之鹰、M1911 手枪。",
+      "page": "bolts",
+      "col": 6,
+      "row": 3,
+      "icon": "tech_tree_pack:pistol_bolt_precise_blueprint",
+      "requirements": [
+        {
+          "type": "any",
+          "requirements": [
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_357mag"
+              ]
+            },
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_45acp"
+              ]
+            },
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_50ae"
+              ]
+            }
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "pistol_bolt"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:pistol_bolt_precise_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "pin_40mm",
+      "title": "40mm榴弹发射器击针",
+      "desc": "T3 · 40mm 榴弹 · 被 2 把枪使用：M320 榴弹发射器、MGL 榴弹发射器。",
+      "page": "bolts",
+      "col": 0,
+      "row": 4,
+      "icon": "tech_tree_pack:pin_40mm_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_40mm"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "pin_12g"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:pin_40mm_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "rpg7_trigger",
+      "title": "RPG-7扳机",
+      "desc": "T5 · RPG 火箭 · 被 1 把枪使用：RPG-7 火箭筒。",
+      "page": "bolts",
+      "col": 1,
+      "row": 4,
+      "icon": "tech_tree_pack:rpg7_trigger_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_rpg_rocket"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "pin_40mm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:rpg7_trigger_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "bolt_30_06",
+      "title": ".30-06栓动步枪枪机",
+      "desc": "T1 · .30-06 · 被 1 把枪使用：M700 狙击步枪。",
+      "page": "bolts",
+      "col": 2,
+      "row": 4,
+      "icon": "tech_tree_pack:bolt_30_06_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_30_06"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:bolt_30_06_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "bolt_45_70",
+      "title": ".45-70栓动枪机",
+      "desc": "T1 · .45-70 · 被 2 把枪使用：春田 1873 活门步枪、马林 Model 1895。",
+      "page": "bolts",
+      "col": 3,
+      "row": 4,
+      "icon": "tech_tree_pack:bolt_45_70_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_45_70"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "minecraft:iron_ingot",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:bolt_45_70_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "bolt_338",
+      "title": ".338栓动步枪枪机",
+      "desc": "T4 · .338 · 被 1 把枪使用：精密国际 AWM 狙击步枪。",
+      "page": "bolts",
+      "col": 4,
+      "row": 4,
+      "icon": "tech_tree_pack:bolt_338_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_338"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "bolt_30_06"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:bolt_338_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "sa_338",
+      "title": ".338半自动步枪枪机",
+      "desc": "T5 · .338 · 被 1 把枪使用：MK18 SA-ASR。",
+      "page": "bolts",
+      "col": 5,
+      "row": 4,
+      "icon": "tech_tree_pack:sa_338_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_338"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "bolt_338"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:sa_338_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "bolt_50bmg",
+      "title": ".50BMG栓动枪机",
+      "desc": "T5 · .50 BMG · 被 1 把枪使用：M95 .50口径反器材步枪。",
+      "page": "bolts",
+      "col": 6,
+      "row": 4,
+      "icon": "tech_tree_pack:bolt_50bmg_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_50bmg"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "bolt_338"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:bolt_50bmg_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "sa_50bmg",
+      "title": ".50BMG半自动枪机",
+      "desc": "T5 · .50 BMG · 被 1 把枪使用：M107 .50口径反器材步枪。",
+      "page": "bolts",
+      "col": 7,
+      "row": 4,
+      "icon": "tech_tree_pack:sa_50bmg_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_50bmg"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "bolt_50bmg"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:sa_50bmg_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_9mm_short",
+      "title": "9mm短枪管",
+      "desc": "T1 · 9mm · 被 2 把枪使用：格洛克 17 手枪、乌兹冲锋枪。",
+      "page": "barrels",
+      "col": 0,
+      "row": 0,
+      "icon": "tech_tree_pack:barrel_9mm_short_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_9mm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:copper_sheet",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_9mm_short_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_9mm_short_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_9mm_long",
+      "title": "9mm长枪管",
+      "desc": "T2 · 9mm · 被 2 把枪使用：MP5A5 冲锋枪、MPX 冲锋枪。",
+      "page": "barrels",
+      "col": 1,
+      "row": 0,
+      "icon": "tech_tree_pack:barrel_9mm_long_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_9mm"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_9mm_short"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:copper_sheet",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_9mm_long_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_9mm_long_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_45_short",
+      "title": ".45短枪管",
+      "desc": "T1 · .45 ACP · 被 2 把枪使用：UMP45 冲锋枪、M1911 手枪。",
+      "page": "barrels",
+      "col": 2,
+      "row": 0,
+      "icon": "tech_tree_pack:barrel_45_short_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_45acp"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:copper_sheet",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_45_short_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_45_short_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_45_long",
+      "title": ".45长枪管",
+      "desc": "T2 · .45-70 · 被 3 把枪使用：维克托 冲锋枪、春田 1873 活门步枪、马林 Model 1895。",
+      "page": "barrels",
+      "col": 3,
+      "row": 0,
+      "icon": "tech_tree_pack:barrel_45_long_drill",
+      "requirements": [
+        {
+          "type": "any",
+          "requirements": [
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_45_70"
+              ]
+            },
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_45acp"
+              ]
+            }
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_45_short"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:copper_sheet",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_45_long_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_45_long_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_12g",
+      "title": "12g通用枪管",
+      "desc": "T1 · 12 号霰弹 · 被 4 把枪使用：DB-2 杜林人、DB-4 乌萨斯、M870 霰弹枪、M1014 战斗霰弹枪。",
+      "page": "barrels",
+      "col": 4,
+      "row": 0,
+      "icon": "tech_tree_pack:barrel_12g_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_12g"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:copper_sheet",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_12g_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_12g_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_12g_hp",
+      "title": "12g高性能枪管",
+      "desc": "T3 · 12 号霰弹 · 被 2 把枪使用：AA12 霰弹枪、SPAS-12 多功能霰弹枪。",
+      "page": "barrels",
+      "col": 5,
+      "row": 0,
+      "icon": "tech_tree_pack:barrel_12g_hp_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_12g"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_12g"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_12g_hp_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_12g_hp_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_556mm",
+      "title": "5.56mm通用枪管",
+      "desc": "T1 · 5.56×45 · 被 9 把枪使用：M4A1 卡宾枪、M249 机枪、M16A1 制式步枪、M16A4 制式步枪、SCAR-L 突击步枪、AUG 突击步枪 等。",
+      "page": "barrels",
+      "col": 0,
+      "row": 1,
+      "icon": "tech_tree_pack:barrel_556mm_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:copper_sheet",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_556mm_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_556mm_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_556mm_hp",
+      "title": "5.56mm高性能枪管",
+      "desc": "T4 · 5.56×45 · 被 2 把枪使用：HK-416A5 突击步枪、M4 SOPMOD II 突击步枪。",
+      "page": "barrels",
+      "col": 1,
+      "row": 1,
+      "icon": "tech_tree_pack:barrel_556mm_hp_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_556mm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_556mm_hp_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_556mm_hp_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_762mm",
+      "title": "7.62mm通用枪管",
+      "desc": "T1 · .308 · 被 9 把枪使用：AKM 突击步枪、G3 战斗步枪、SKS 战术步枪、RPK 轻机枪、81-1式 制式步枪、FN FAL 战斗步枪 等。",
+      "page": "barrels",
+      "col": 2,
+      "row": 1,
+      "icon": "tech_tree_pack:barrel_762mm_drill",
+      "requirements": [
+        {
+          "type": "any",
+          "requirements": [
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_308"
+              ]
+            },
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_762x39"
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:copper_sheet",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_762mm_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_762mm_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_762mm_hp",
+      "title": "7.62mm高性能枪管",
+      "desc": "T4 · .308 · 被 8 把枪使用：SCAR-H 战斗步枪、MK14 EBR 精确射手步枪、M134 转管机枪、SR25 精确射手步枪、M110 SASS 狙击步枪、SA58 战斗步枪 等。",
+      "page": "barrels",
+      "col": 3,
+      "row": 1,
+      "icon": "tech_tree_pack:barrel_762mm_hp_drill",
+      "requirements": [
+        {
+          "type": "any",
+          "requirements": [
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_308"
+              ]
+            },
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_762x39"
+              ]
+            }
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_762mm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_762mm_hp_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_762mm_hp_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_545mm",
+      "title": "5.45mm通用枪管",
+      "desc": "T1 · 5.45×39 · 被 4 把枪使用：AKS-74U 短突击步枪、AK74M 突击步枪、AK105 突击步枪、AK74 突击步枪。",
+      "page": "barrels",
+      "col": 4,
+      "row": 1,
+      "icon": "tech_tree_pack:barrel_545mm_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_545x39"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:copper_sheet",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_545mm_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_545mm_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_545mm_hp",
+      "title": "5.45mm高性能枪管",
+      "desc": "T4 · 5.45×39 · 被 2 把枪使用：AM-17 短突击步枪、AK12 突击步枪。",
+      "page": "barrels",
+      "col": 5,
+      "row": 1,
+      "icon": "tech_tree_pack:barrel_545mm_hp_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_545x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_545mm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_545mm_hp_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_545mm_hp_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_58mm",
+      "title": "5.8mm通用枪管",
+      "desc": "T2 · 5.8×42 · 被 1 把枪使用：95式 \"长弓\" 突击步枪。",
+      "page": "barrels",
+      "col": 0,
+      "row": 2,
+      "icon": "tech_tree_pack:barrel_58mm_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_58x42"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:copper_sheet",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_58mm_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_58mm_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_58mm_hp",
+      "title": "5.8mm高性能枪管",
+      "desc": "T5 · 5.8×42 · 被 1 把枪使用：191式 突击步枪。",
+      "page": "barrels",
+      "col": 1,
+      "row": 2,
+      "icon": "tech_tree_pack:barrel_58mm_hp_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_58x42"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_58mm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_58mm_hp_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_58mm_hp_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_57mm_short",
+      "title": "5.7mm短枪管",
+      "desc": "T4 · 5.7×28 · 被 1 把枪使用：P90 冲锋枪。",
+      "page": "barrels",
+      "col": 2,
+      "row": 2,
+      "icon": "tech_tree_pack:barrel_57mm_short_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_57x28"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_57mm_short_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_57mm_short_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_57mm_long",
+      "title": "5.7mm长枪管",
+      "desc": "T5 · 5.7×28 · 被 1 把枪使用：AR57 冲锋枪。",
+      "page": "barrels",
+      "col": 3,
+      "row": 2,
+      "icon": "tech_tree_pack:barrel_57mm_long_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_57x28"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_57mm_short"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_57mm_long_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_57mm_long_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_50_short",
+      "title": ".50短枪管",
+      "desc": "T3 · .50 AE · 被 1 把枪使用：.50 沙漠之鹰。",
+      "page": "barrels",
+      "col": 4,
+      "row": 2,
+      "icon": "tech_tree_pack:barrel_50_short_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_50ae"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_50_short_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_50_short_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_50_long",
+      "title": ".50长枪管",
+      "desc": "T5 · .50 BMG · 被 2 把枪使用：M95 .50口径反器材步枪、M107 .50口径反器材步枪。",
+      "page": "barrels",
+      "col": 5,
+      "row": 2,
+      "icon": "tech_tree_pack:barrel_50_long_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_50bmg"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_50_short"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_50_long_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_50_long_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_338_precise",
+      "title": ".338精密枪管",
+      "desc": "T4 · .338 · 被 2 把枪使用：精密国际 AWM 狙击步枪、MK18 SA-ASR。",
+      "page": "barrels",
+      "col": 0,
+      "row": 3,
+      "icon": "tech_tree_pack:barrel_338_precise_drill",
+      "requirements": [
+        {
+          "type": "any",
+          "requirements": [
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_338"
+              ]
+            },
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_556x45"
+              ]
+            }
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_762mm_hp"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_338_precise_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_338_precise_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_30_06",
+      "title": ".30-06枪管",
+      "desc": "T1 · .30-06 · 被 1 把枪使用：M700 狙击步枪。",
+      "page": "barrels",
+      "col": 1,
+      "row": 3,
+      "icon": "tech_tree_pack:barrel_30_06_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_30_06"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:copper_sheet",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_30_06_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_30_06_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_357mag",
+      "title": ".357马格南枪管",
+      "desc": "T4 · .357 马格南 · 被 1 把枪使用：.357 黄金沙漠之鹰。",
+      "page": "barrels",
+      "col": 2,
+      "row": 3,
+      "icon": "tech_tree_pack:barrel_357mag_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_357mag"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_50_short"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_357mag_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_357mag_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_40mm",
+      "title": "40mm榴弹发射管",
+      "desc": "T3 · 40mm 榴弹 · 被 2 把枪使用：M320 榴弹发射器、MGL 榴弹发射器。",
+      "page": "barrels",
+      "col": 3,
+      "row": 3,
+      "icon": "tech_tree_pack:barrel_40mm_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_40mm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_40mm_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_40mm_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_68mm_hp",
+      "title": "6.8mm高性能枪管",
+      "desc": "T5 · 6.8×51 · 被 1 把枪使用：M7 战斗步枪。",
+      "page": "barrels",
+      "col": 4,
+      "row": 3,
+      "icon": "tech_tree_pack:barrel_68mm_hp_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_68x51fury"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_556mm_hp"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_68mm_hp_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_68mm_hp_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "barrel_rpg7",
+      "title": "RPG-7筒身",
+      "desc": "T5 · RPG 火箭 · 被 1 把枪使用：RPG-7 火箭筒。",
+      "page": "barrels",
+      "col": 5,
+      "row": 3,
+      "icon": "tech_tree_pack:barrel_rpg7_drill",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_rpg_rocket"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "barrel_40mm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:barrel_rpg7_blueprint",
+          "count": 1
+        },
+        {
+          "item": "tech_tree_pack:barrel_rpg7_drill",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_pistol",
+      "title": "通用手枪枪身",
+      "desc": "T1 · .45 ACP · 被 2 把枪使用：格洛克 17 手枪、M1911 手枪。",
+      "page": "frames_a",
+      "col": 0,
+      "row": 0,
+      "icon": "tech_tree_pack:frame_pistol_blueprint",
+      "requirements": [
+        {
+          "type": "any",
+          "requirements": [
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_45acp"
+              ]
+            },
+            {
+              "type": "tech",
+              "nodes": [
+                "caliber_9mm"
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_pistol_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_deagle",
+      "title": "沙漠之鹰枪身",
+      "desc": "T3 · .50 AE · 被 1 把枪使用：.50 沙漠之鹰。",
+      "page": "frames_a",
+      "col": 1,
+      "row": 0,
+      "icon": "tech_tree_pack:frame_deagle_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_50ae"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_pistol"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_deagle_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_deagle_golden",
+      "title": "黄金沙漠之鹰枪身",
+      "desc": "T4 · .357 马格南 · 被 1 把枪使用：.357 黄金沙漠之鹰。",
+      "page": "frames_a",
+      "col": 2,
+      "row": 0,
+      "icon": "tech_tree_pack:frame_deagle_golden_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_357mag"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_deagle"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_deagle_golden_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_uzi",
+      "title": "乌兹冲锋枪枪身",
+      "desc": "T1 · 9mm · 被 1 把枪使用：乌兹冲锋枪。",
+      "page": "frames_a",
+      "col": 0,
+      "row": 1,
+      "icon": "tech_tree_pack:frame_uzi_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_9mm"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_pistol"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_uzi_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_mp5",
+      "title": "MP5枪身",
+      "desc": "T2 · 9mm · 被 1 把枪使用：MP5A5 冲锋枪。",
+      "page": "frames_a",
+      "col": 1,
+      "row": 1,
+      "icon": "tech_tree_pack:frame_mp5_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_9mm"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_uzi"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_mp5_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_mpx",
+      "title": "MPX枪身",
+      "desc": "T3 · 9mm · 被 1 把枪使用：MPX 冲锋枪。",
+      "page": "frames_a",
+      "col": 2,
+      "row": 1,
+      "icon": "tech_tree_pack:frame_mpx_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_9mm"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_mp5"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_mpx_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_ump45",
+      "title": "UMP45枪身",
+      "desc": "T1 · .45 ACP · 被 1 把枪使用：UMP45 冲锋枪。",
+      "page": "frames_a",
+      "col": 3,
+      "row": 1,
+      "icon": "tech_tree_pack:frame_ump45_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_45acp"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_uzi"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_ump45_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_vector",
+      "title": "维克托枪身",
+      "desc": "T4 · .45 ACP · 被 1 把枪使用：维克托 冲锋枪。",
+      "page": "frames_a",
+      "col": 4,
+      "row": 1,
+      "icon": "tech_tree_pack:frame_vector_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_45acp"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_ump45"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_vector_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_p90",
+      "title": "P90枪身",
+      "desc": "T4 · 5.7×28 · 被 1 把枪使用：P90 冲锋枪。",
+      "page": "frames_a",
+      "col": 5,
+      "row": 1,
+      "icon": "tech_tree_pack:frame_p90_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_57x28"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_p90_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_ar57",
+      "title": "AR57枪身",
+      "desc": "T5 · 5.7×28 · 被 1 把枪使用：AR57 冲锋枪。",
+      "page": "frames_a",
+      "col": 6,
+      "row": 1,
+      "icon": "tech_tree_pack:frame_ar57_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_57x28"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_p90"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_ar57_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_db",
+      "title": "双管霰弹枪枪身",
+      "desc": "T1 · 12 号霰弹 · 被 2 把枪使用：DB-2 杜林人、DB-4 乌萨斯。",
+      "page": "frames_a",
+      "col": 0,
+      "row": 2,
+      "icon": "tech_tree_pack:frame_db_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_12g"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_db_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m870",
+      "title": "M870枪身",
+      "desc": "T2 · 12 号霰弹 · 被 1 把枪使用：M870 霰弹枪。",
+      "page": "frames_a",
+      "col": 1,
+      "row": 2,
+      "icon": "tech_tree_pack:frame_m870_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_12g"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_db"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m870_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m1014",
+      "title": "M1014枪身",
+      "desc": "T2 · 12 号霰弹 · 被 1 把枪使用：M1014 战斗霰弹枪。",
+      "page": "frames_a",
+      "col": 2,
+      "row": 2,
+      "icon": "tech_tree_pack:frame_m1014_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_12g"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m870"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m1014_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_spas12",
+      "title": "SPAS-12枪身",
+      "desc": "T3 · 12 号霰弹 · 被 1 把枪使用：SPAS-12 多功能霰弹枪。",
+      "page": "frames_a",
+      "col": 3,
+      "row": 2,
+      "icon": "tech_tree_pack:frame_spas12_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_12g"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m1014"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_spas12_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_aa12",
+      "title": "AA12枪身",
+      "desc": "T4 · 12 号霰弹 · 被 1 把枪使用：AA12 霰弹枪。",
+      "page": "frames_a",
+      "col": 4,
+      "row": 2,
+      "icon": "tech_tree_pack:frame_aa12_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_12g"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m1014"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_aa12_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m16",
+      "title": "M16枪身",
+      "desc": "T1 · 5.56×45 · 被 2 把枪使用：M16A1 制式步枪、M16A4 制式步枪。",
+      "page": "frames_a",
+      "col": 0,
+      "row": 3,
+      "icon": "tech_tree_pack:frame_m16_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m16_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m4a1",
+      "title": "M4A1枪身",
+      "desc": "T3 · 5.56×45 · 被 1 把枪使用：M4A1 卡宾枪。",
+      "page": "frames_a",
+      "col": 1,
+      "row": 3,
+      "icon": "tech_tree_pack:frame_m4a1_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m16"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m4a1_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m4_sopmod2",
+      "title": "M4 SOPMOD II枪身",
+      "desc": "T4 · 5.56×45 · 被 1 把枪使用：M4 SOPMOD II 突击步枪。",
+      "page": "frames_a",
+      "col": 2,
+      "row": 3,
+      "icon": "tech_tree_pack:frame_m4_sopmod2_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m4a1"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m4_sopmod2_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_hk416",
+      "title": "HK416枪身",
+      "desc": "T5 · 5.56×45 · 被 1 把枪使用：HK-416A5 突击步枪。",
+      "page": "frames_a",
+      "col": 3,
+      "row": 3,
+      "icon": "tech_tree_pack:frame_hk416_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m4a1"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_hk416_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_mk18",
+      "title": "MK18枪身",
+      "desc": "T5 · 5.56×45 · 被 1 把枪使用：MK18 SA-ASR。",
+      "page": "frames_a",
+      "col": 4,
+      "row": 3,
+      "icon": "tech_tree_pack:frame_mk18_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m4a1"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_mk18_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_spr15",
+      "title": "SPR-15枪身",
+      "desc": "T2 · 5.56×45 · 被 1 把枪使用：SPR-15 HB \"射手座\" 反狙击步枪。",
+      "page": "frames_a",
+      "col": 5,
+      "row": 3,
+      "icon": "tech_tree_pack:frame_spr15_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m16"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_spr15_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m7",
+      "title": "M7枪身",
+      "desc": "T5 · 6.8×51 · 被 1 把枪使用：M7 战斗步枪。",
+      "page": "frames_a",
+      "col": 6,
+      "row": 3,
+      "icon": "tech_tree_pack:frame_m7_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_68x51fury"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m4a1"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m7_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_scar_l",
+      "title": "SCAR-L枪身",
+      "desc": "T3 · 5.56×45 · 被 1 把枪使用：SCAR-L 突击步枪。",
+      "page": "frames_a",
+      "col": 0,
+      "row": 4,
+      "icon": "tech_tree_pack:frame_scar_l_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_scar_l_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_aug",
+      "title": "AUG枪身",
+      "desc": "T2 · 5.56×45 · 被 1 把枪使用：AUG 突击步枪。",
+      "page": "frames_a",
+      "col": 1,
+      "row": 4,
+      "icon": "tech_tree_pack:frame_aug_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_aug_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_aug_a3",
+      "title": "AUG A3枪身",
+      "desc": "T3 · 5.56×45 · 被 1 把枪使用：AUG A3 突击步枪。",
+      "page": "frames_a",
+      "col": 2,
+      "row": 4,
+      "icon": "tech_tree_pack:frame_aug_a3_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_aug"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_aug_a3_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_g36",
+      "title": "G36枪身",
+      "desc": "T2 · 5.56×45 · 被 1 把枪使用：G36K 突击步枪。",
+      "page": "frames_a",
+      "col": 3,
+      "row": 4,
+      "icon": "tech_tree_pack:frame_g36_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_g36_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_qbz95",
+      "title": "QBZ-95枪身",
+      "desc": "T2 · 5.8×42 · 被 1 把枪使用：95式 \"长弓\" 突击步枪。",
+      "page": "frames_a",
+      "col": 4,
+      "row": 4,
+      "icon": "tech_tree_pack:frame_qbz95_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_58x42"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_qbz95_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_qbz191",
+      "title": "QBZ-191枪身",
+      "desc": "T5 · 5.8×42 · 被 1 把枪使用：191式 突击步枪。",
+      "page": "frames_a",
+      "col": 5,
+      "row": 4,
+      "icon": "tech_tree_pack:frame_qbz191_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_58x42"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_qbz95"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_qbz191_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_akm",
+      "title": "AKM枪身",
+      "desc": "T1 · 7.62×39 · 被 1 把枪使用：AKM 突击步枪。",
+      "page": "frames_b",
+      "col": 0,
+      "row": 0,
+      "icon": "tech_tree_pack:frame_akm_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_762x39"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_akm_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_ak103",
+      "title": "AK103枪身",
+      "desc": "T2 · 7.62×39 · 被 1 把枪使用：AK103 突击步枪。",
+      "page": "frames_b",
+      "col": 1,
+      "row": 0,
+      "icon": "tech_tree_pack:frame_ak103_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_762x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_akm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_ak103_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_rpk",
+      "title": "RPK枪身",
+      "desc": "T2 · 7.62×39 · 被 1 把枪使用：RPK 轻机枪。",
+      "page": "frames_b",
+      "col": 2,
+      "row": 0,
+      "icon": "tech_tree_pack:frame_rpk_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_762x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_akm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_rpk_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_type81",
+      "title": "81-1式枪身",
+      "desc": "T2 · 7.62×39 · 被 1 把枪使用：81-1式 制式步枪。",
+      "page": "frames_b",
+      "col": 3,
+      "row": 0,
+      "icon": "tech_tree_pack:frame_type81_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_762x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_akm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_type81_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_mk47",
+      "title": "MK47枪身",
+      "desc": "T5 · 7.62×39 · 被 1 把枪使用：MK47 突击步枪。",
+      "page": "frames_b",
+      "col": 4,
+      "row": 0,
+      "icon": "tech_tree_pack:frame_mk47_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_762x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_akm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_mk47_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_ak74",
+      "title": "AK74枪身",
+      "desc": "T1 · 5.45×39 · 被 1 把枪使用：AK74 突击步枪。",
+      "page": "frames_b",
+      "col": 5,
+      "row": 0,
+      "icon": "tech_tree_pack:frame_ak74_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_545x39"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_ak74_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_aks74u",
+      "title": "AKS-74U枪身",
+      "desc": "T1 · 5.45×39 · 被 1 把枪使用：AKS-74U 短突击步枪。",
+      "page": "frames_b",
+      "col": 6,
+      "row": 0,
+      "icon": "tech_tree_pack:frame_aks74u_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_545x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_ak74"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_aks74u_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_ak74m",
+      "title": "AK74M枪身",
+      "desc": "T2 · 5.45×39 · 被 1 把枪使用：AK74M 突击步枪。",
+      "page": "frames_b",
+      "col": 0,
+      "row": 1,
+      "icon": "tech_tree_pack:frame_ak74m_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_545x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_ak74"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_ak74m_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_ak105",
+      "title": "AK105枪身",
+      "desc": "T3 · 5.45×39 · 被 1 把枪使用：AK105 突击步枪。",
+      "page": "frames_b",
+      "col": 1,
+      "row": 1,
+      "icon": "tech_tree_pack:frame_ak105_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_545x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_ak74m"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_ak105_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_ak12",
+      "title": "AK12枪身",
+      "desc": "T4 · 5.45×39 · 被 1 把枪使用：AK12 突击步枪。",
+      "page": "frames_b",
+      "col": 2,
+      "row": 1,
+      "icon": "tech_tree_pack:frame_ak12_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_545x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_ak74m"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_ak12_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_am17",
+      "title": "AM17枪身",
+      "desc": "T5 · 5.45×39 · 被 1 把枪使用：AM-17 短突击步枪。",
+      "page": "frames_b",
+      "col": 3,
+      "row": 1,
+      "icon": "tech_tree_pack:frame_am17_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_545x39"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_ak105"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_am17_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_sks",
+      "title": "SKS枪身",
+      "desc": "T1 · 7.62×39 · 被 1 把枪使用：SKS 战术步枪。",
+      "page": "frames_b",
+      "col": 4,
+      "row": 1,
+      "icon": "tech_tree_pack:frame_sks_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_762x39"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_sks_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_g3",
+      "title": "G3枪身",
+      "desc": "T3 · .308 · 被 1 把枪使用：G3 战斗步枪。",
+      "page": "frames_b",
+      "col": 0,
+      "row": 2,
+      "icon": "tech_tree_pack:frame_g3_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_g3_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_mk14",
+      "title": "MK14枪身",
+      "desc": "T4 · .308 · 被 1 把枪使用：MK14 EBR 精确射手步枪。",
+      "page": "frames_b",
+      "col": 1,
+      "row": 2,
+      "icon": "tech_tree_pack:frame_mk14_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_g3"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_mk14_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_fnfal",
+      "title": "FN FAL枪身",
+      "desc": "T3 · .308 · 被 1 把枪使用：FN FAL 战斗步枪。",
+      "page": "frames_b",
+      "col": 2,
+      "row": 2,
+      "icon": "tech_tree_pack:frame_fnfal_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_fnfal_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_sa58",
+      "title": "SA58枪身",
+      "desc": "T4 · .308 · 被 1 把枪使用：SA58 战斗步枪。",
+      "page": "frames_b",
+      "col": 3,
+      "row": 2,
+      "icon": "tech_tree_pack:frame_sa58_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_fnfal"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_sa58_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_scar_h",
+      "title": "SCAR-H枪身",
+      "desc": "T4 · .308 · 被 1 把枪使用：SCAR-H 战斗步枪。",
+      "page": "frames_b",
+      "col": 4,
+      "row": 2,
+      "icon": "tech_tree_pack:frame_scar_h_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_scar_l"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_scar_h_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_sr25",
+      "title": "SR25枪身",
+      "desc": "T4 · .308 · 被 1 把枪使用：SR25 精确射手步枪。",
+      "page": "frames_b",
+      "col": 0,
+      "row": 3,
+      "icon": "tech_tree_pack:frame_sr25_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m16"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_sr25_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m110",
+      "title": "M110枪身",
+      "desc": "T4 · .308 · 被 1 把枪使用：M110 SASS 狙击步枪。",
+      "page": "frames_b",
+      "col": 1,
+      "row": 3,
+      "icon": "tech_tree_pack:frame_m110_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_sr25"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m110_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_g28",
+      "title": "G28枪身",
+      "desc": "T3 · .308 · 被 1 把枪使用：G28 精确射手步枪。",
+      "page": "frames_b",
+      "col": 2,
+      "row": 3,
+      "icon": "tech_tree_pack:frame_g28_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_g3"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_g28_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m700",
+      "title": "M700枪身",
+      "desc": "T3 · .30-06 · 被 1 把枪使用：M700 狙击步枪。",
+      "page": "frames_b",
+      "col": 0,
+      "row": 4,
+      "icon": "tech_tree_pack:frame_m700_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_30_06"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m700_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_awp",
+      "title": "AWP枪身",
+      "desc": "T4 · .338 · 被 1 把枪使用：精密国际 AWM 狙击步枪。",
+      "page": "frames_b",
+      "col": 1,
+      "row": 4,
+      "icon": "tech_tree_pack:frame_awp_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_338"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m700"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_awp_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m95",
+      "title": "M95枪身",
+      "desc": "T5 · .50 BMG · 被 1 把枪使用：M95 .50口径反器材步枪。",
+      "page": "frames_b",
+      "col": 2,
+      "row": 4,
+      "icon": "tech_tree_pack:frame_m95_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_50bmg"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m95_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m107",
+      "title": "M107枪身",
+      "desc": "T5 · .50 BMG · 被 1 把枪使用：M107 .50口径反器材步枪。",
+      "page": "frames_b",
+      "col": 3,
+      "row": 4,
+      "icon": "tech_tree_pack:frame_m107_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_50bmg"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m95"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m107_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_springfield1873",
+      "title": "春田1873枪身",
+      "desc": "T1 · .45-70 · 被 1 把枪使用：春田 1873 活门步枪。",
+      "page": "frames_b",
+      "col": 4,
+      "row": 4,
+      "icon": "tech_tree_pack:frame_springfield1873_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_45_70"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_springfield1873_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_marlin1895",
+      "title": "马林1895枪身",
+      "desc": "T1 · .45-70 · 被 1 把枪使用：马林 Model 1895。",
+      "page": "frames_b",
+      "col": 5,
+      "row": 4,
+      "icon": "tech_tree_pack:frame_marlin1895_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_45_70"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_springfield1873"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_marlin1895_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m249",
+      "title": "M249枪身",
+      "desc": "T2 · 5.56×45 · 被 1 把枪使用：M249 机枪。",
+      "page": "frames_b",
+      "col": 0,
+      "row": 5,
+      "icon": "tech_tree_pack:frame_m249_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_556x45"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 1
+        }
+      ],
+      "costs": [
+        {
+          "type": "xp_levels",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:andesite_alloy",
+          "amount": 6
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m249_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_fnevolys",
+      "title": "FN EVOLYS枪身",
+      "desc": "T3 · .308 · 被 1 把枪使用：FN EVOLYS 机枪。",
+      "page": "frames_b",
+      "col": 1,
+      "row": 5,
+      "icon": "tech_tree_pack:frame_fnevolys_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m249"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_fnevolys_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m60",
+      "title": "M60枪身",
+      "desc": "T4 · .308 · 被 1 把枪使用：M60 通用机枪。",
+      "page": "frames_b",
+      "col": 2,
+      "row": 5,
+      "icon": "tech_tree_pack:frame_m60_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m249"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 2
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m60_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m134",
+      "title": "M134枪身",
+      "desc": "T5 · .308 · 被 1 把枪使用：M134 转管机枪。",
+      "page": "frames_b",
+      "col": 3,
+      "row": 5,
+      "icon": "tech_tree_pack:frame_m134_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_308"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m60"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m134_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_m320",
+      "title": "M320枪身",
+      "desc": "T3 · 40mm 榴弹 · 被 1 把枪使用：M320 榴弹发射器。",
+      "page": "frames_b",
+      "col": 4,
+      "row": 5,
+      "icon": "tech_tree_pack:frame_m320_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_40mm"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 2
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 1
+        },
+        {
+          "type": "item",
+          "item": "create:brass_ingot",
+          "amount": 8
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_m320_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_mgl",
+      "title": "MGL枪身",
+      "desc": "T5 · 40mm 榴弹 · 被 1 把枪使用：MGL 榴弹发射器。",
+      "page": "frames_b",
+      "col": 5,
+      "row": 5,
+      "icon": "tech_tree_pack:frame_mgl_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_40mm"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_m320"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_mgl_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    },
+    {
+      "id": "frame_rpg7",
+      "title": "RPG-7枪身",
+      "desc": "T5 · RPG 火箭 · 被 1 把枪使用：RPG-7 火箭筒。",
+      "page": "frames_b",
+      "col": 6,
+      "row": 5,
+      "icon": "tech_tree_pack:frame_rpg7_blueprint",
+      "requirements": [
+        {
+          "type": "tech",
+          "nodes": [
+            "caliber_rpg_rocket"
+          ]
+        },
+        {
+          "type": "tech",
+          "nodes": [
+            "frame_mgl"
+          ]
+        },
+        {
+          "type": "table_tier",
+          "min": 3
+        }
+      ],
+      "costs": [
+        {
+          "type": "tech_point",
+          "amount": 3
+        },
+        {
+          "type": "item",
+          "item": "minecraft:diamond",
+          "amount": 4
+        }
+      ],
+      "rewards": [
+        {
+          "item": "tech_tree_pack:frame_rpg7_blueprint",
+          "count": 1
+        }
+      ],
+      "quest": true
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "frame_aug_a3_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: AUG A3枪身",
+    "zh_cn": "§dAUG A3枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "rare",
+  "creative": true,
+  "fireResistant": false
+}

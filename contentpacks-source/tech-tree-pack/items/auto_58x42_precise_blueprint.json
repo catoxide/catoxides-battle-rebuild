@@ -1,0 +1,12 @@
+{
+  "id": "auto_58x42_precise_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: 5.8x42精密自动枪机",
+    "zh_cn": "§b5.8x42精密自动枪机 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "uncommon",
+  "creative": true,
+  "fireResistant": false
+}

@@ -1,0 +1,12 @@
+{
+  "id": "frame_m95_blueprint",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Blueprint: M95枪身",
+    "zh_cn": "§cM95枪身 蓝图"
+  },
+  "stackSize": 1,
+  "rarity": "epic",
+  "creative": true,
+  "fireResistant": false
+}

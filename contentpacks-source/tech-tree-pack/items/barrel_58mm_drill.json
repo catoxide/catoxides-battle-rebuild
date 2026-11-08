@@ -1,0 +1,12 @@
+{
+  "id": "barrel_58mm_drill",
+  "namespace": "tech_tree_pack",
+  "lang": {
+    "en_us": "Drill: 5.8mm通用枪管",
+    "zh_cn": "§b5.8mm通用枪管 钻头"
+  },
+  "stackSize": 1,
+  "rarity": "uncommon",
+  "creative": true,
+  "fireResistant": false
+}
