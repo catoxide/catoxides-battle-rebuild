@@ -11,6 +11,7 @@ const Preflight = require('../src/core/packPreflight');
 const JarReader = require('../src/core/jarReader');
 const ManifestLib = require('../src/core/manifest');
 const Scaffold = require('../src/core/packScaffold');
+const ItemBlockExport = require('../src/core/itemBlockExport');
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -46,7 +47,9 @@ test('readEntry 找不到条目返回 null', () => {
 });
 
 console.log('=== 2. 真实包的预检 ===');
-for (const name of ['durability-pack', 'test-mob-pack', 'quest-test-pack', 'sable-pack-v2', 'modular-zombie-3']) {
+for (const name of ['durability-pack', 'test-mob-pack', 'quest-test-pack', 'sable-pack-v2', 'modular-zombie-3',
+    'item-block-test-pack', // 物品/方块 + 导出资源（blockstates/models/纹理链路）
+    'tech-tree-pack']) {
     test(`${name} 预检无 error`, () => {
         const r = Preflight.preflightPack(path.join(PACKS_SOURCE, name), { root: ROOT });
         assert.strictEqual(r.errors.length, 0, `意外的 error: ${JSON.stringify(r.errors, null, 2)}`);
@@ -205,6 +208,100 @@ test('包私有 goal 类型 → 只告警不拦（字段由包的 Java 工厂决
     const r = Preflight.preflightPack(dir, { root: tmpRoot });
     assert.strictEqual(r.errors.length, 0, JSON.stringify(r.errors));
     assert.ok(has(r.warnings, 'W-Q-VALID'), codes(r.findings).join(','));
+});
+
+console.log('=== 3c. 物品/方块导出产物（模型 / blockstates / 纹理）===');
+const okBlock = (id, ns, texture) => ({
+    id, namespace: ns,
+    lang: { en_us: id, zh_cn: id },
+    material: { hardness: 1.5, resistance: 6, sound: 'minecraft:block.stone', lightLevel: 0, solid: true },
+    properties: [],
+    model: { type: 'cube_all', texture, file: id },
+    blockstates: { mode: 'variants', variants: [] },
+    loot: { selfDrop: true },
+    tags: [],
+    creative: true,
+    blockItem: true,
+});
+const okItem = (id, ns, texture) => ({
+    id, namespace: ns,
+    lang: { en_us: id, zh_cn: id },
+    stackSize: 64, rarity: 'common', creative: true, fireResistant: false,
+    model: { type: 'generated', texture },
+});
+
+/** 带入口类（registerItemsAndBlocksFromJar）+ 真实导出产物的包 */
+function makeIbPack(name, { items = [], blocks = [], exportAssets = true }) {
+    const dir = path.join(tmpPacks, name);
+    fs.mkdirSync(path.join(dir, 'items'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'blocks'), { recursive: true });
+    const entry = 'example.contentpack.ibp.IbPack';
+    ManifestLib.writeManifest(dir, { 'Module-Name': name, 'Module-Type': 'contentpack', 'Module-Entry': entry });
+    for (const def of items) fs.writeFileSync(path.join(dir, 'items', def.id + '.json'), JSON.stringify(def, null, 2), 'utf-8');
+    for (const def of blocks) fs.writeFileSync(path.join(dir, 'blocks', def.id + '.json'), JSON.stringify(def, null, 2), 'utf-8');
+    const loc = Scaffold.entryLocation(entry);
+    const full = path.join(dir, loc.path);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, [
+        `package ${loc.pkg};`,
+        'public class IbPack implements ContentPack {',
+        '    @Override',
+        '    public void register(ContentPackContext context) {',
+        '        context.registerItemsAndBlocksFromJar();',
+        '    }',
+        '}',
+        '',
+    ].join('\n'), 'utf-8');
+    if (exportAssets) {
+        for (const def of items) ItemBlockExport.exportItem(dir, def);
+        for (const def of blocks) ItemBlockExport.exportBlock(dir, def, blocks);
+    }
+    return dir;
+}
+
+test('导出产物齐全 → 无 error（blockstates → 模型 → 纹理闭合）', () => {
+    const dir = makeIbPack('ib-assets-ok', { blocks: [okBlock('stone_chunk', 'ibp', 'minecraft:block/stone')] });
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    assert.strictEqual(r.errors.length, 0, JSON.stringify(r.errors, null, 2));
+});
+test('方块缺 blockstates → E-IB-NO-BLOCKSTATE', () => {
+    const dir = makeIbPack('ib-no-blockstate', { blocks: [okBlock('stone_chunk', 'ibp', 'minecraft:block/stone')] });
+    fs.unlinkSync(path.join(dir, 'assets', 'ibp', 'blockstates', 'stone_chunk.json'));
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    assert.ok(has(r.errors, 'E-IB-NO-BLOCKSTATE'), codes(r.findings).join(','));
+});
+test('blockstate 写进单数目录 → E-IB-BLOCKSTATE-DIR（点名紫黑块）', () => {
+    const dir = makeIbPack('ib-singular', { blocks: [okBlock('stone_chunk', 'ibp', 'minecraft:block/stone')] });
+    fs.renameSync(path.join(dir, 'assets', 'ibp', 'blockstates'), path.join(dir, 'assets', 'ibp', 'blockstate'));
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    const f = r.errors.find((x) => x.code === 'E-IB-BLOCKSTATE-DIR');
+    assert.ok(f, codes(r.findings).join(','));
+    assert.ok(f.msg.includes('blockstates/'), f.msg);
+});
+test('variant 值是裸字符串 → E-IB-BLOCKSTATE-SHAPE', () => {
+    const dir = makeIbPack('ib-bare-string', { blocks: [okBlock('stone_chunk', 'ibp', 'minecraft:block/stone')] });
+    fs.writeFileSync(path.join(dir, 'assets', 'ibp', 'blockstates', 'stone_chunk.json'),
+        JSON.stringify({ variants: { '': 'ibp:block/stone_chunk' } }), 'utf-8');
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    assert.ok(has(r.errors, 'E-IB-BLOCKSTATE-SHAPE'), codes(r.findings).join(','));
+});
+test('包内纹理缺失 → E-IB-NO-TEXTURE（紫黑格）', () => {
+    const dir = makeIbPack('ib-missing-texture', { blocks: [okBlock('stone_chunk', 'ibp', 'ibp:block/not_exported')] });
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    assert.ok(has(r.errors, 'E-IB-NO-TEXTURE'), codes(r.findings).join(','));
+});
+test('物品缺 models/item → E-IB-NO-ITEM-MODEL', () => {
+    const dir = makeIbPack('ib-no-item-model', { items: [okItem('plate', 'ibp', 'minecraft:item/iron_ingot')] });
+    fs.unlinkSync(path.join(dir, 'assets', 'ibp', 'models', 'item', 'plate.json'));
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    assert.ok(has(r.errors, 'E-IB-NO-ITEM-MODEL'), codes(r.findings).join(','));
+});
+test('multipart.apply 是裸字符串 → E-IB-BLOCKSTATE-SHAPE', () => {
+    const dir = makeIbPack('ib-multipart-string', { blocks: [okBlock('stone_chunk', 'ibp', 'minecraft:block/stone')] });
+    fs.writeFileSync(path.join(dir, 'assets', 'ibp', 'blockstates', 'stone_chunk.json'),
+        JSON.stringify({ multipart: [{ apply: 'ibp:block/stone_chunk' }] }), 'utf-8');
+    const r = Preflight.preflightPack(dir, { root: tmpRoot });
+    assert.ok(has(r.errors, 'E-IB-BLOCKSTATE-SHAPE'), codes(r.findings).join(','));
 });
 
 console.log('=== 4. 骨架文件生成 ===');

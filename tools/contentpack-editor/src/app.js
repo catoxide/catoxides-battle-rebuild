@@ -40,6 +40,7 @@
         try { if (window.TapeEditor) window.TapeEditor.close(); } catch { /* 忽略 */ }
         try { if (window.ItemBlockEditor) window.ItemBlockEditor.close(); } catch { /* 忽略 */ }
         try { if (window.QuestEditor) window.QuestEditor.close(); } catch { /* 忽略 */ }
+        try { if (window.TechEditor) window.TechEditor.close(); } catch { /* 忽略 */ }
         window.AppState.entity = null;
         window.AppState.healthConfig = { parts: [] };
         window.AppState.model = null;
@@ -55,17 +56,20 @@
         const tapeActive = window.TapeEditor && window.TapeEditor.hasActiveTab();
         const itemBlockActive = window.ItemBlockEditor && window.ItemBlockEditor.hasActiveTab();
         const questActive = window.QuestEditor && window.QuestEditor.hasActiveTab();
+        const techActive = window.TechEditor && window.TechEditor.hasActiveTab();
         const frame = window.AppState && window.AppState.activeFrame;
         let show = null;
         if (frame === 'tape' && tapeActive) show = 'tape';
         else if (frame === 'contract' && contractActive) show = 'contract';
         else if (frame === 'itemblock' && itemBlockActive) show = 'itemblock';
         else if (frame === 'quest' && questActive) show = 'quest';
+        else if (frame === 'tech' && techActive) show = 'tech';
         else if (frame === 'structure' && structActive) show = 'structure';
         else if (frame === 'entity' && entityActive) show = 'entity';
         else if (structActive) show = 'structure';
         else if (itemBlockActive) show = 'itemblock';
         else if (questActive) show = 'quest';
+        else if (techActive) show = 'tech';
         else if (entityActive) show = 'entity';
         else if (contractActive) show = 'contract';
         else if (tapeActive) show = 'tape';
@@ -77,6 +81,7 @@
         const tape = document.getElementById('tapeEditorContent');
         const ib = document.getElementById('itemBlockEditorContent');
         const qs = document.getElementById('questEditorContent');
+        const tech = document.getElementById('techEditorContent');
         if (show) empty.classList.add('hidden'); else empty.classList.remove('hidden');
         ent.classList.toggle('hidden', show !== 'entity');
         if (str) str.classList.toggle('hidden', show !== 'structure');
@@ -84,6 +89,7 @@
         if (tape) tape.classList.toggle('hidden', show !== 'tape');
         if (ib) ib.classList.toggle('hidden', show !== 'itemblock');
         if (qs) qs.classList.toggle('hidden', show !== 'quest');
+        if (tech) tech.classList.toggle('hidden', show !== 'tech');
     };
 
     // ===== 布局交互：可拖拽分隔条 + 左栏收起/展开 =====
@@ -317,6 +323,7 @@
                 try { if (window.StructureEditor && window.StructureEditor.rerender) window.StructureEditor.rerender(); } catch { /* 忽略 */ }
                 try { if (window.TapeEditor && window.TapeEditor.rerender) window.TapeEditor.rerender(); } catch { /* 忽略 */ }
                 try { if (window.QuestEditor && window.QuestEditor.rerender) window.QuestEditor.rerender(); } catch { /* 忽略 */ }
+                try { if (window.TechEditor && window.TechEditor.rerender) window.TechEditor.rerender(); } catch { /* 忽略 */ }
                 // 0.2.2：部署面板若开着，用已有测量结果按新语言重画（不重新读盘）
                 try { if (window.DeployStatus && window.DeployStatus.isOpen()) window.DeployStatus.rerender(); } catch { /* 忽略 */ }
                 try { if (window.api && window.api.notifyMenuLang) window.api.notifyMenuLang(langSel.value); } catch { /* 忽略 */ }
@@ -338,6 +345,9 @@
                 if (id === 'deploy') clickBtn('btnDeployStatus');
                 else if (id === 'history') clickBtn('btnOpenHistory');
                 else if (id === 'modelEditor') clickBtn('btnOpenModelEditor');
+                else if (id === 'textureEditor') {
+                    window.api.openTextureEditor().then((r) => { if (r && !r.ok) console.error('打开 UI 贴图编辑器失败:', r.error); });
+                }
                 else if (id === 'build') clickBtn('btnPackBuild');
                 else if (id === 'collapsePack') {
                     if (document.body.classList.contains('pack-collapsed')) clickBtn('btnExpandPack');
@@ -425,6 +435,17 @@
                 } else if (type === 'quest') {
                     window.AppState.activeFrame = 'quest';
                     window.QuestEditor.open({ pack: window.AppState.pack, def: null, isNew: true });
+                } else if (type === 'tech') {
+                    // 科技树是单文件内容类型：不存在就开一棵新树，不做「新建第二个文件」
+                    window.AppState.activeFrame = 'tech';
+                    const tree = window.AppState.techTree;
+                    window.TechEditor.open({
+                        pack: window.AppState.pack,
+                        tree,
+                        exists: !!window.AppState.techExists,
+                        refs: window.AppState.techRefs,
+                        pageId: tree && tree.pages && tree.pages[0] ? tree.pages[0].id : null,
+                    });
                 }
             },
         });
@@ -484,6 +505,38 @@
             },
         });
         window.QuestEditor.init({ onListChanged: reloadQuestList });
+
+        // 初始化中栏（科技树页签列表，共用 #entityList 容器）+ 右栏科技树编辑器
+        const reloadTechList = async () => {
+            const pack = window.AppState.pack;
+            if (pack && window.AppState.contentType === 'tech') {
+                await window.TechList.loadTree(pack.dir);
+            }
+        };
+        window.TechList.init({
+            onSelect: (packDir, info) => {
+                window.AppState.activeFrame = 'tech';
+                window.TechEditor.open({
+                    pack: window.AppState.pack,
+                    tree: info.tree,
+                    exists: true,
+                    refs: window.AppState.techRefs,
+                    pageId: info.pageId,
+                });
+            },
+            onNew: () => {
+                window.AppState.activeFrame = 'tech';
+                const tree = window.AppState.techTree;
+                window.TechEditor.open({
+                    pack: window.AppState.pack,
+                    tree,
+                    exists: !!window.AppState.techExists,
+                    refs: window.AppState.techRefs,
+                    pageId: tree && tree.pages && tree.pages[0] ? tree.pages[0].id : null,
+                });
+            },
+        });
+        window.TechEditor.init({ onListChanged: reloadTechList });
 
         // 一键导入原版 / 一键导出整包原版数据
         const btnImport = document.getElementById('btnStructImport');
@@ -571,6 +624,8 @@
                 await window.ItemBlockList.loadItemsAndBlocks(pack.dir, type);
             } else if (type === 'quest') {
                 await window.QuestList.loadQuests(pack.dir);
+            } else if (type === 'tech') {
+                await window.TechList.loadTree(pack.dir);
             } else {
                 await window.EntityList.loadEntities(pack.dir);
             }

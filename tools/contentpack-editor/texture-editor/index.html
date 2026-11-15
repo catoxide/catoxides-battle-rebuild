@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<!-- 与主窗口/模型编辑器同款 CSP（纵深防御） -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+<title>UI 贴图编辑器</title>
+<link rel="stylesheet" href="../src/styles.css">
+<style>
+  /* texture-editor 局部样式（模块自包含，不动共享 styles.css） */
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; background: #16181f; color: #e5e7eb; font: 13px/1.5 system-ui, sans-serif; }
+  .te-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.1); }
+  .te-toolbar select, .te-toolbar button { background: #232634; color: #e5e7eb; border: 1px solid rgba(255,255,255,.16); border-radius: 4px; padding: 4px 8px; font-size: 12px; }
+  .te-toolbar button:hover { background: #2d3145; }
+  .te-toolbar .spacer { flex: 1; }
+  .te-body { flex: 1; display: flex; min-height: 0; }
+  .te-left { flex: 1; display: flex; flex-direction: column; min-width: 0; border-right: 1px solid rgba(255,255,255,.1); }
+  .te-canvaswrap { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: flex-start; padding: 16px;
+    background: repeating-conic-gradient(#1d2029 0% 25%, #232634 0% 50%) 0 0 / 16px 16px; }
+  .te-canvaswrap canvas { image-rendering: pixelated; box-shadow: 0 4px 24px rgba(0,0,0,.5); }
+  .te-status { padding: 6px 10px; border-top: 1px solid rgba(255,255,255,.1); font-size: 12px; min-height: 20px; white-space: pre-wrap; }
+  .te-status.err { color: #f87171; }
+  .te-status.ok { color: #86efac; }
+  .te-right { width: 400px; flex: none; display: flex; flex-direction: column; min-height: 0; }
+  .te-section { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .te-section h3 { margin: 0 0 6px; font-size: 12px; color: #7dd3fc; font-weight: 600; }
+  .te-tokens { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
+  .te-tokenrow { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .te-tokenrow input[type=color] { width: 26px; height: 20px; padding: 0; border: 1px solid rgba(255,255,255,.2); background: none; }
+  .te-tokenrow .name { color: #9ca3af; }
+  .te-layers { max-height: 140px; overflow: auto; font-size: 12px; }
+  .te-layerrow { display: flex; gap: 6px; padding: 2px 4px; border-radius: 3px; }
+  .te-layerrow:hover { background: rgba(255,255,255,.06); }
+  .te-layerrow .t { color: #7dd3fc; }
+  .te-layerrow .i { color: #9ca3af; }
+  .te-specwrap { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 8px 10px; }
+  .te-specwrap textarea { flex: 1; resize: none; background: #10121a; color: #d1d5db; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; font: 12px/1.45 ui-monospace, Consolas, monospace; padding: 8px; tab-size: 2; }
+  .te-hint { color: #6b7280; font-size: 11px; margin-top: 4px; }
+</style>
+</head>
+<body>
+  <div class="te-toolbar">
+    <select id="tePreset" title="载入预设"></select>
+    <button id="teLoadPreset">载入预设</button>
+    <button id="teOpenSpec">打开 spec…</button>
+    <button id="teSaveSpec">保存 spec</button>
+    <span class="spacer"></span>
+    <label>缩放 <select id="teScale"><option>1</option><option>2</option><option selected>4</option><option>8</option></select>×</label>
+    <label><input type="checkbox" id="teDiff"> diff（去 tokens 基线）</label>
+    <button id="teExport">导出 PNG 到包…</button>
+  </div>
+  <div class="te-body">
+    <div class="te-left">
+      <div class="te-canvaswrap" id="teCanvasWrap"></div>
+      <div class="te-status" id="teStatus">加载中…</div>
+    </div>
+    <div class="te-right">
+      <div class="te-section">
+        <h3>tokens（角色 → 颜色；留空 = 原版）</h3>
+        <div class="te-tokens" id="teTokens"></div>
+      </div>
+      <div class="te-section">
+        <h3>layers</h3>
+        <div class="te-layers" id="teLayers"></div>
+      </div>
+      <div class="te-specwrap">
+        <h3 style="margin:0 0 6px;font-size:12px;color:#7dd3fc;">spec.json（唯一源；编辑即重渲染）</h3>
+        <textarea id="teSpec" spellcheck="false"></textarea>
+        <div class="te-hint">四原语：nine_slice / grid / rect / stamp。契约见 texture-editor/README.md。</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../src/lib/errorCapture.js"></script>
+  <script src="../src/lib/askModal.js"></script>
+  <script src="core/bytes.js"></script>
+  <script src="core/library.js"></script>
+  <script src="core/spec.js"></script>
+  <script src="core/render.js"></script>
+  <script src="core/imageops.js"></script>
+  <script src="ui/preview.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

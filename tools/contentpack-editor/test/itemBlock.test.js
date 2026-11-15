@@ -165,6 +165,15 @@ test('redstone 亮度越界 → 失败', () => {
     b.redstone = { property: 'lit', lightLit: 16 };
     assert.ok(!S.validateBlock(b).valid);
 });
+test('material.lightLevel>0 与 redstone 同时声明 → 失败（静态亮度会被红石行为覆盖）', () => {
+    const b = JSON.parse(JSON.stringify(lampBlock));
+    b.material.lightLevel = 15;
+    const r = S.validateBlock(b);
+    assert.ok(!r.valid);
+    assert.ok(r.errors.some((e) => e.includes('lightLevel') && e.includes('覆盖')));
+    b.material.lightLevel = 0; // 0 是默认值，不冲突
+    assert.ok(S.validateBlock(b).valid);
+});
 test('variants 行纹理覆盖 + 附加模型导出（红石灯 lit/unlit）', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ib-lamp-'));
     try {
@@ -174,9 +183,9 @@ test('variants 行纹理覆盖 + 附加模型导出（红石灯 lit/unlit）', (
         const lit = JSON.parse(fs.readFileSync(path.join(dir, 'assets/my_pack/models/block/brass_lantern_lit.json'), 'utf-8'));
         assert.strictEqual(main.textures.all, 'minecraft:block/redstone_lamp');
         assert.strictEqual(lit.textures.all, 'minecraft:block/redstone_lamp_lit'); // 行级纹理覆盖
-        const bs = JSON.parse(fs.readFileSync(path.join(dir, 'assets/my_pack/blockstate/brass_lantern.json'), 'utf-8'));
-        assert.strictEqual(bs.variants['lit=true'], 'my_pack:block/brass_lantern_lit');
-        assert.strictEqual(bs.variants['lit=false'], 'my_pack:block/brass_lantern');
+        const bs = JSON.parse(fs.readFileSync(path.join(dir, 'assets/my_pack/blockstates/brass_lantern.json'), 'utf-8'));
+        assert.deepStrictEqual(bs.variants['lit=true'], { model: 'my_pack:block/brass_lantern_lit' });
+        assert.deepStrictEqual(bs.variants['lit=false'], { model: 'my_pack:block/brass_lantern' });
         const item = JSON.parse(fs.readFileSync(path.join(dir, 'assets/my_pack/models/item/brass_lantern.json'), 'utf-8'));
         assert.strictEqual(item.parent, 'my_pack:block/brass_lantern_lit'); // itemFile 指向点亮态
     } finally {
@@ -190,9 +199,9 @@ test('variants 行 texture 非法路径 → 失败', () => {
 });
 
 console.log('=== 4. 状态展开 + blockstate JSON（1.21.1 格式） ===');
-test('无参数 → 单状态 {model}', () => {
+test('无参数 → 单状态 variants 空键（顶层必须有 variants/multipart）', () => {
     const b = { id: 'plain', namespace: 'ns', model: { type: 'cube_all', file: '' } };
-    assert.deepStrictEqual(S.buildBlockstatesJson(b), { model: 'ns:block/plain' });
+    assert.deepStrictEqual(S.buildBlockstatesJson(b), { variants: { '': { model: 'ns:block/plain' } } });
 });
 test('direction+boolean → 12 个组合全量展开', () => {
     const props = [
@@ -211,7 +220,7 @@ test('variants 键序 = 属性声明序（facing=...,waterlogged=...）', () => 
     const keys = Object.keys(out.variants);
     assert.strictEqual(keys.length, 12);
     assert.strictEqual(keys[0], 'facing=north,waterlogged=true');
-    assert.strictEqual(out.variants[keys[0]], 'my_pack:block/example_wall');
+    assert.deepStrictEqual(out.variants[keys[0]], { model: 'my_pack:block/example_wall' });
 });
 test('带旋转 → 对象形式 {model,x,y}', () => {
     const b = JSON.parse(JSON.stringify(goodBlock));
@@ -276,7 +285,7 @@ test('exportBlock 写出 blockstate + 模型 + 物品模型 + lang + 掉落 + �
         def.tags = ['minecraft:mineable/pickaxe'];
         const r = X.exportBlock(dir, def);
         assert.ok(r.ok, r.error);
-        const bs = JSON.parse(fs.readFileSync(path.join(dir, 'assets/my_pack/blockstate/example_wall.json'), 'utf-8'));
+        const bs = JSON.parse(fs.readFileSync(path.join(dir, 'assets/my_pack/blockstates/example_wall.json'), 'utf-8'));
         assert.strictEqual(Object.keys(bs.variants).length, 12);
         const blockModel = JSON.parse(fs.readFileSync(path.join(dir, 'assets/my_pack/models/block/example_wall.json'), 'utf-8'));
         assert.strictEqual(blockModel.parent, 'minecraft:block/cube_all');

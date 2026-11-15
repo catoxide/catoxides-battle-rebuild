@@ -61,6 +61,7 @@ const VanillaImport = require('./src/core/vanillaImport');
 const ItemBlockSchema = require('./src/core/itemBlockSchema');
 const ItemBlockExport = require('./src/core/itemBlockExport');
 const QuestSchema = require('./src/core/questSchema');
+const TechSchema = require('./src/core/techSchema');
 const RegionImport = require('./src/core/regionImport');
 const McAssets = require('./src/core/mcAssets');
 const McBlocks = require('./src/core/mcBlocks');
@@ -473,6 +474,7 @@ const MENU_STRINGS = {
         lang: '界面语言', collapse: '折叠 / 展开包列表', refresh: '重新加载列表',
         reload: '重新加载窗口', devtools: '开发者工具', zoomIn: '放大', zoomOut: '缩小', zoomReset: '实际大小',
         deploy: '部署状态', history: '提交回溯', modelEditor: '3D 模型编辑器', build: '打包当前包',
+        textureEditor: 'UI 贴图编辑器',
         about: '关于 ContentPack Editor',
     },
     en: {
@@ -480,6 +482,7 @@ const MENU_STRINGS = {
         lang: 'Language', collapse: 'Toggle Pack List', refresh: 'Reload Lists',
         reload: 'Reload Window', devtools: 'DevTools', zoomIn: 'Zoom In', zoomOut: 'Zoom Out', zoomReset: 'Actual Size',
         deploy: 'Deploy Status', history: 'Commit History', modelEditor: '3D Model Editor', build: 'Build Current Pack',
+        textureEditor: 'UI Texture Editor',
         about: 'About ContentPack Editor',
     },
 };
@@ -516,6 +519,7 @@ function buildAppMenu() {
                 act('deploy', { label: s.deploy, accelerator: 'CmdOrCtrl+D' }),
                 act('history', { label: s.history, accelerator: 'CmdOrCtrl+H' }),
                 act('modelEditor', { label: s.modelEditor, accelerator: 'CmdOrCtrl+M' }),
+                act('textureEditor', { label: s.textureEditor, accelerator: 'CmdOrCtrl+U' }),
                 { type: 'separator' },
                 act('build', { label: s.build, accelerator: 'CmdOrCtrl+Shift+B' }),
             ],
@@ -1098,6 +1102,109 @@ ipcMain.handle('modelEditor:writeContract', async (event, p) => {
         return { ok: true, data: { path: abs, sets: obj.sets.length } };
     } catch (e) {
         Logger.error('model-editor', 'writeContract 失败: ' + String(e.message || e));
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+// ---------- UI 贴图编辑器（texture-editor 子窗口；spec 唯一源 + 实时预览） ----------
+// 元素库 = texture-editor/library/vanilla-1.21.1（build-library.js 提炼）；渲染/校验全在渲染端 core（纯函数）。
+// 主进程只做 I/O：读元素库/预设/spec、写 spec；导出 PNG 复用 modelEditor:writeTexture。
+let textureEditorWin = null;
+const TEX_LIB_DIR = path.join(__dirname, 'texture-editor', 'library', 'vanilla-1.21.1');
+function createTextureEditorWindow() {
+    textureEditorWin = new BrowserWindow({
+        width: 1280,
+        height: 860,
+        minWidth: 900,
+        minHeight: 620,
+        title: 'UI 贴图编辑器',
+        webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: false,
+        },
+    });
+    textureEditorWin.loadFile(path.join(__dirname, 'texture-editor', 'index.html'));
+    guardRendererReload(textureEditorWin, 'UI 贴图编辑器窗口');
+    maybeOpenDevTools(textureEditorWin);
+    textureEditorWin.on('closed', () => { textureEditorWin = null; });
+}
+ipcMain.handle('textureEditor:open', () => {
+    try {
+        if (textureEditorWin && !textureEditorWin.isDestroyed()) { textureEditorWin.show(); textureEditorWin.focus(); }
+        else { createTextureEditorWindow(); Logger.info('texture-editor', '打开 UI 贴图编辑器窗口'); }
+        return { ok: true };
+    } catch (e) {
+        Logger.error('texture-editor', '打开 UI 贴图编辑器失败: ' + String(e.message || e));
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+// 读元素库：elements.json + 各精灵 dataURL/尺寸（渲染端用原生 Image 解码）
+ipcMain.handle('textureEditor:loadLibrary', () => {
+    try {
+        const elements = JSON.parse(fs.readFileSync(path.join(TEX_LIB_DIR, 'elements.json'), 'utf8'));
+        const sprites = {};
+        for (const [name, def] of Object.entries(elements.sprites || {})) {
+            const buf = fs.readFileSync(path.join(TEX_LIB_DIR, def.file));
+            const [w, h] = pngSize(buf);
+            sprites[name] = { dataUrl: 'data:image/png;base64,' + buf.toString('base64'), width: w, height: h };
+        }
+        return { ok: true, data: { elements, sprites } };
+    } catch (e) {
+        Logger.warn('texture-editor', 'loadLibrary 失败: ' + String(e.message || e));
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+ipcMain.handle('textureEditor:listPresets', () => {
+    try {
+        const dir = path.join(TEX_LIB_DIR, 'presets');
+        if (!fs.existsSync(dir)) return { ok: true, data: [] };
+        const data = fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => f.replace(/\.json$/, '')).sort();
+        return { ok: true, data };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+ipcMain.handle('textureEditor:readPreset', (event, name) => {
+    try {
+        if (typeof name !== 'string' || !/^[A-Za-z0-9_-]+$/.test(name)) return { ok: false, error: '非法预设名' };
+        const abs = path.join(TEX_LIB_DIR, 'presets', name + '.json');
+        if (!fs.existsSync(abs)) return { ok: false, error: '预设不存在: ' + name };
+        return { ok: true, data: JSON.parse(fs.readFileSync(abs, 'utf8')) };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+ipcMain.handle('textureEditor:openSpec', async (event) => {
+    try {
+        const win = BrowserWindow.fromWebContents(event.sender);
+        const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+            title: '打开 spec', filters: [{ name: 'JSON spec', extensions: ['json'] }], properties: ['openFile'],
+        });
+        if (canceled || !filePaths.length) return { ok: true, data: null };
+        const abs = path.resolve(filePaths[0]);
+        return { ok: true, data: { path: abs, content: fs.readFileSync(abs, 'utf8') } };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+ipcMain.handle('textureEditor:saveSpec', async (event, p) => {
+    try {
+        if (!p || typeof p.content !== 'string') return { ok: false, error: '参数无效' };
+        try { JSON.parse(p.content); } catch (e) { return { ok: false, error: 'spec JSON 无效: ' + e.message }; }
+        let abs = p.path ? path.resolve(p.path) : null;
+        if (!abs) {
+            const win = BrowserWindow.fromWebContents(event.sender);
+            const r = await dialog.showSaveDialog(win, { title: '保存 spec', defaultPath: 'spec.json', filters: [{ name: 'JSON spec', extensions: ['json'] }] });
+            if (r.canceled || !r.filePath) return { ok: true, data: null };
+            abs = path.resolve(r.filePath);
+        }
+        if (!abs.toLowerCase().endsWith('.json')) return { ok: false, error: '仅允许保存 .json' };
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, p.content, 'utf8');
+        return { ok: true, data: { path: abs } };
+    } catch (e) {
         return { ok: false, error: String(e.message || e) };
     }
 });
@@ -2559,6 +2666,89 @@ ipcMain.handle('quest:delete', async (event, packDir, id) => {
         if (entry) fs.unlinkSync(path.join(packDir, entry.file));
         Staging.removeStagedQuest(packNameOf(packDir), id);
         return { ok: true, data: { deleted: entry ? entry.file : null } };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+// --- 科技树（techs/tree.json；单文件 = 整棵树，直写正式包） ---
+// 权威：TechTreeLoader（解析/自检）、TechRequirementEngine（条件语义）。校验逻辑在 core/techSchema.js，
+// 渲染端保存前会先校验一遍；主进程这里必须再校一次 —— 渲染端不是可信边界。
+const TECH_TREE_REL = 'techs/tree.json';
+const TECH_CORE_NS = 'catoxidesbattlerebuild'; // ItemDefinition.location() 的缺省命名空间
+
+function techTreePath(packDir) {
+    return path.join(packDir, ...TECH_TREE_REL.split('/'));
+}
+
+/**
+ * 同包引用上下文：knownItems / knownQuests 用于「引用了不存在的同包内容」报错。
+ * 只有包显式声明过的命名空间才当成权威（导出的 items 全带 namespace）；
+ * 核心命名空间不纳入 —— 包里可能引用主 mod 的原版物品，不能一律判死。
+ */
+function techRefContext(packDir) {
+    const knownItems = new Set();
+    const knownQuests = new Set();
+    const packNamespaces = new Set();
+    for (const dirName of ['items', 'blocks']) {
+        const dir = path.join(packDir, dirName);
+        if (!fs.existsSync(dir)) continue;
+        for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.json'))) {
+            try {
+                const def = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf-8'));
+                if (!def || !def.id) continue;
+                const declared = def.namespace != null && String(def.namespace).trim() !== '';
+                const ns = declared ? String(def.namespace).trim() : TECH_CORE_NS;
+                knownItems.add(ns + ':' + def.id);
+                if (declared && ns !== TECH_CORE_NS) packNamespaces.add(ns);
+            } catch { /* JSON 错误由预检报告，这里只收集可用引用 */ }
+        }
+    }
+    const questsDir = path.join(packDir, 'quests');
+    if (fs.existsSync(questsDir)) {
+        for (const file of fs.readdirSync(questsDir).filter((f) => f.endsWith('.json'))) {
+            try {
+                const def = JSON.parse(fs.readFileSync(path.join(questsDir, file), 'utf-8'));
+                if (def && def.id) knownQuests.add(TECH_CORE_NS + ':' + String(def.id).trim());
+            } catch { /* 同上 */ }
+        }
+    }
+    return { knownItems, knownQuests, packNamespaces };
+}
+
+ipcMain.handle('tech:read', async (event, packDir) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        const refs = techRefContext(packDir);
+        const refData = {
+            items: [...refs.knownItems],
+            quests: [...refs.knownQuests],
+            namespaces: [...refs.packNamespaces],
+        };
+        const file = techTreePath(packDir);
+        if (!fs.existsSync(file)) return { ok: true, data: { exists: false, tree: null, refs: refData } };
+        const tree = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        return { ok: true, data: { exists: true, tree, refs: refData } };
+    } catch (e) {
+        return { ok: false, error: String(e.message || e) };
+    }
+});
+
+ipcMain.handle('tech:save', async (event, packDir, tree) => {
+    try {
+        packDir = safePackDir(packDir);
+        if (!packDir) return { ok: false, error: '非法的包目录（须位于包库或新建包目录内）' };
+        const refs = techRefContext(packDir);
+        const check = TechSchema.validateTree(tree, refs);
+        if (!check.valid) {
+            return { ok: false, error: '科技树校验失败:\n' + check.errors.join('\n'), data: { warnings: check.warnings } };
+        }
+        const json = TechSchema.buildTreeJson(tree);
+        const file = techTreePath(packDir);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, JSON.stringify(json, null, 2) + '\n', 'utf-8');
+        return { ok: true, data: { file: TECH_TREE_REL, warnings: check.warnings } };
     } catch (e) {
         return { ok: false, error: String(e.message || e) };
     }

@@ -205,7 +205,7 @@ npm start
 4. **「导出原版」产物**（1.21.1 原版文件，写入包目录，由主 mod 随 jar 挂进资源树）：
     - `assets/<ns>/models/item/<id>.json`（物品模型 / 方块物品模型）
     - `assets/<ns>/models/block/<file>.json`（方块模型；variants/multipart 引用的附加模型自动兜底生成）
-    - **`assets/<ns>/blockstate/<id>.json`（完整方块形态：全部状态组合 → 模型，含自定义参数）**
+    - **`assets/<ns>/blockstates/<id>.json`（完整方块形态：全部状态组合 → 模型，含自定义参数；目录名是复数，1.21.1 只读这个路径）**
     - `assets/<ns>/lang/en_us.json` / `zh_cn.json`（**合并写**）
     - `data/<ns>/loot_table/blocks/<id>.json`（挖掉掉自己）
     - `data/<ns|minecraft>/tags/block/...json`（原版数据标签，同包合并写）
@@ -255,6 +255,16 @@ npm start
 
 ---
 
+## 3f. UI 贴图工作流（texture-editor，0.2.2 新增）
+
+独立子窗口：菜单 **工具 → UI 贴图编辑器**（`Ctrl+U`）。把「画一张 MC 风格面板」变成可复现纯函数
+`spec.json + 原版元素库 → render() → PNG`；**零覆盖输出与原版逐字节相同**，改 `tokens` 只重着色 chrome、槽位不动。
+
+> 完整 spec 契约 / 四原语 / 无头 CLI（AI 驱动）/ 元素库格式 → [`texture-editor/README.md`](texture-editor/README.md)（指针，不在此重复）。
+> 日常只碰 spec 两个字段：`tokens`（换色）与 `layers`（几何/结构）；导出落盘到包 `assets/<ns>/textures/gui/<name>.png`。
+
+---
+
 ## 4. 文件产出对照（编辑器 → 游戏侧）
 
 | 编辑器产出 | 路径 | 游戏侧解析 |
@@ -265,8 +275,9 @@ npm start
 | 结构模板 | `data/<ns>/structure/<piece>.nbt` | 原版结构模板加载器 |
 | 模板池 / 结构 / 结构集合 | `data/<ns>/worldgen/...` | 原版 worldgen 注册表（jigsaw 引擎） |
 | 物品/方块定义（源格式） | `items/<id>.json`、`blocks/<id>.json` | `BatchContentRegistrar`（`registerItemsAndBlocksFromJar()`） |
-| 物品/方块原版文件 | `assets/<ns>/models/...`、`assets/<ns>/blockstate/<id>.json`、`lang`、`loot_table`、`tags` | 原版模型/blockstate/语言/掉落/标签加载器 |
+| 物品/方块原版文件 | `assets/<ns>/models/...`、`assets/<ns>/blockstates/<id>.json`、`lang`、`loot_table`、`tags` | 原版模型/blockstate/语言/掉落/标签加载器 |
 | 任务定义（源格式） | `quests/<id>.json` | `QuestDefinitionParser`（`registerQuestsFromJar()`，只扫第一层） |
+| UI 面板贴图（spec 派生） | `assets/<ns>/textures/gui/<name>.png` | 原版 GUI 贴图加载（九宫格面板，1×） |
 | 打包产物 | `contentpacks/<Module-Name>.jar` | `ContentPackLoader` |
 | 包声明 + 构建骨架 | `MANIFEST.MF`、`build.gradle`、`java/<入口类>.java` | 前者被 `ContentPackManifest` 解析；后两者供 `gradlew :packs:<目录>:contentpackJar` 构建 |
 
@@ -327,6 +338,8 @@ tools/contentpack-editor/
 │   │   ├── three.module.js      # Three.js（捆绑，3D 预览用）
 │   │   └── structurePreview.js  # 建筑结构 3D 预览（轨道相机/平移/拼合生长/图层/显隐）
 │   └── views/             # 视图组件（packList/entityList/entityEditor/structureList/structureEditor）
+├── model-editor/          # 3D 模型/动画编辑器（独立子窗口）
+├── texture-editor/        # UI 贴图生产链（独立子窗口；core 纯逻辑 + 元素库 + 无头 CLI，见其 README）
 ├── .scratch/              # 临时脚本（gitignore，不进版本库）
 └── test/                  # 测试（npm test = 11 个文件 / 301 个断言，0 失败）
                            #   其中 packScaffold.test.js(30) + packPreflight.test.js(20) 覆盖包骨架与预检

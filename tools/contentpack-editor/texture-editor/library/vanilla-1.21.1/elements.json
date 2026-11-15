@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "source": "minecraft-1.21.1",
+  "jarSha1": "e13934425b90b23f0be5c780df074dee6d8eca52",
+  "roles": {
+    "transparent": null,
+    "border": "#000000",
+    "bevelLight": "#FFFFFF",
+    "bevelDark": "#555555",
+    "body": "#C6C6C6",
+    "slotBg": "#8B8B8B",
+    "slotDark": "#373737"
+  },
+  "panel": {
+    "symbols": {
+      "5": "bevelDark",
+      ".": "transparent",
+      "#": "border",
+      "W": "bevelLight",
+      "B": "body"
+    },
+    "cornerSize": 4,
+    "corners": {
+      "TL": [
+        "..##",
+        ".#WW",
+        "#WWW",
+        "#WWW"
+      ],
+      "TR": [
+        "#...",
+        "W#..",
+        "WB#.",
+        "B55#"
+      ],
+      "BL": [
+        "#WWB",
+        ".#B5",
+        "..#5",
+        "...#"
+      ],
+      "BR": [
+        "555#",
+        "555#",
+        "55#.",
+        "##.."
+      ]
+    },
+    "edges": {
+      "top": [
+        "#",
+        "W",
+        "W",
+        "B"
+      ],
+      "bottom": [
+        "B",
+        "5",
+        "5",
+        "#"
+      ],
+      "left": [
+        "#",
+        "W",
+        "W",
+        "B"
+      ],
+      "right": [
+        "B",
+        "5",
+        "5",
+        "#"
+      ]
+    },
+    "center": "B"
+  },
+  "sprites": {
+    "slot": {
+      "file": "sprites/slot.png",
+      "size": [
+        18,
+        18
+      ]
+    }
+  }
+}

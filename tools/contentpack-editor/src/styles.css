@@ -842,3 +842,67 @@ body.ed-body { display: flex; flex-direction: column; height: 100vh; overflow: h
 .gh-plan .gh-sec { margin-top: 6px; font-size: 11px; color: var(--fg-dim); }
 .gh-plan .gh-change { font-size: 11px; word-break: break-all; }
 .gh-plan-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+/* 科技树编辑器（techs/tree.json）：手排画布 + 条件/成本/触发器表单 */
+.tech-layout { display: flex; flex-direction: column; gap: 8px; }
+.tech-page-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.tech-canvas-bar { align-items: center; gap: 8px; flex-wrap: wrap; }
+.tech-zoom { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-dim); }
+.tech-zoom input[type="range"] { width: 90px; accent-color: var(--acc); }
+.tech-canvas-wrap {
+  overflow: auto; max-height: 62vh; padding: 4px;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--card);
+}
+.tech-canvas {
+  position: relative; flex: none;
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,.06) 1px, transparent 1px);
+  border-radius: 4px;
+}
+.tech-links { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.tech-link {
+  fill: none; stroke: var(--acc); stroke-width: 1.5; opacity: .45;
+}
+.tech-node {
+  position: absolute; box-sizing: border-box; display: flex; flex-direction: column;
+  justify-content: center; gap: 1px; padding: 3px 6px; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 4px; background: var(--card2);
+  color: var(--fg); cursor: grab; user-select: none; line-height: 1.2;
+}
+.tech-node:active { cursor: grabbing; }
+.tech-node:hover { border-color: var(--acc); }
+.tech-node.selected { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc) inset; }
+.tech-node.collision { border-color: var(--err); background: rgba(243,139,168,.14); }
+.tech-node.has-quest::after {
+  content: '★'; position: absolute; right: 3px; top: 2px;
+  font-size: 9px; color: var(--warn);
+}
+.tech-node-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tech-node-sub {
+  font-family: ui-monospace, Consolas, monospace; font-size: .82em;
+  color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tech-section > .ib-sec-title { margin-bottom: 4px; }
+.tech-desc { resize: vertical; min-height: 48px; }
+.tech-list { display: flex; flex-direction: column; gap: 6px; }
+.tech-list-nested {
+  padding: 6px 8px; border: 1px dashed var(--border); border-radius: 4px;
+  background: rgba(255,255,255,.02);
+}
+.tech-add-row { align-items: center; gap: 6px; margin-top: 2px; }
+.tech-req-row {
+  display: flex; flex-direction: column; gap: 4px; padding: 6px 8px;
+  border: 1px solid var(--card2); border-radius: 4px; background: var(--card);
+}
+.tech-req-head { align-items: center; justify-content: space-between; gap: 6px; }
+.tech-req-row .f-label { font-size: 11px; color: var(--fg-dim); display: block; margin-bottom: 2px; }
+.tech-req-row .f-input { max-width: 420px; }
+.tech-research-row { flex-direction: row; align-items: center; justify-content: space-between; }
+.tech-research-row .li-text { min-width: 0; }
+.tech-trigger-table td:nth-child(1) {
+  font-family: ui-monospace, Consolas, monospace; font-size: 11px; white-space: nowrap;
+}
+.tech-trigger-table td:nth-child(2) { width: 60px; text-align: center; }
+.tech-trigger-table td:nth-child(3) { font-size: 11px; color: var(--fg-dim); word-break: break-all; }

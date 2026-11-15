@@ -6,7 +6,7 @@
 // 产物（1.21.1 路径，对照原版 jar 验证）：
 //   物品  assets/<ns>/models/item/<id>.json            物品模型
 //   方块  assets/<ns>/models/block/<file>.json         方块模型
-//         assets/<ns>/blockstate/<id>.json             方块形态（完整状态组合 → 模型，含自定义参数）
+//         assets/<ns>/blockstates/<id>.json            方块形态（完整状态组合 → 模型，含自定义参数）
 //         assets/<ns>/models/item/<id>.json            方块物品模型（parent 指方块模型）
 //   语言  assets/<ns>/lang/en_us.json / zh_cn.json     合并写（item.<ns>.<id> / block.<ns>.<id>）
 //   掉落  data/<ns>/loot_table/blocks/<id>.json        挖掉掉自己（loot.selfDrop，1.21.1 形状）
@@ -158,7 +158,8 @@ function exportBlock(packDir, def, allBlocks) {
         }
 
         // blockstate（完整方块形态：状态组合 → 模型，含自定义参数）
-        files.push(writeJson(packDir, `assets/${ns}/blockstate/${def.id}.json`,
+        // 注意目录是 blockstates/（复数）：1.21.1 客户端只列这个目录，单数 = 方块无模型（紫黑块）
+        files.push(writeJson(packDir, `assets/${ns}/blockstates/${def.id}.json`,
             S.buildBlockstatesJson(def)));
 
         // 方块物品模型

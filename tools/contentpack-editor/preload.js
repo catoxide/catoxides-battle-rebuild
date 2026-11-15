@@ -71,6 +71,10 @@ const api = {
     saveQuest: (packDir, def) => ipcRenderer.invoke('quest:save', packDir, def),
     deleteQuest: (packDir, id) => ipcRenderer.invoke('quest:delete', packDir, id),
 
+    // 科技树（techs/tree.json；单文件 = 整棵树，保存直写正式包）
+    readTechTree: (packDir) => ipcRenderer.invoke('tech:read', packDir),
+    saveTechTree: (packDir, tree) => ipcRenderer.invoke('tech:save', packDir, tree),
+
     // 游戏资源（vanilla 方块贴图）
     mcAssets: () => ipcRenderer.invoke('core:mcAssets'),
     mcBlockFaces: (blockId) => ipcRenderer.invoke('core:mcBlockFaces', blockId),
@@ -163,6 +167,14 @@ const api = {
     // W5.1 像素编辑：保存贴图（覆写已应用 / 对话框自选路径）
     writeRepoTexture: (p) => ipcRenderer.invoke('modelEditor:writeTexture', p),
     saveTextureDialog: (p) => ipcRenderer.invoke('modelEditor:saveTextureDialog', p),
+
+    // UI 贴图编辑器（texture-editor 子窗口；spec 唯一源 + 实时预览；导出 PNG 复用 writeRepoTexture）
+    openTextureEditor: () => ipcRenderer.invoke('textureEditor:open'),
+    texLoadLibrary: () => ipcRenderer.invoke('textureEditor:loadLibrary'),
+    texListPresets: () => ipcRenderer.invoke('textureEditor:listPresets'),
+    texReadPreset: (name) => ipcRenderer.invoke('textureEditor:readPreset', name),
+    texOpenSpec: () => ipcRenderer.invoke('textureEditor:openSpec'),
+    texSaveSpec: (p) => ipcRenderer.invoke('textureEditor:saveSpec', p),
 
     // W7 动画文档：p = {pack, rel}（rel = 包内模型相对路径 spark_models/**.json）
     loadAnimDoc: (p) => ipcRenderer.invoke('modelEditor:loadAnimDoc', p),

@@ -456,7 +456,7 @@ window.ItemBlockEditor = (function () {
             wrap.appendChild(buildBlockstatesEditor(bs));
         } else {
             wrap.appendChild(section('方块形态（blockstate）',
-                el('div', 'f-note', '单状态方块 → assets/<ns>/blockstate/<id>.json 输出 { "model": "<ns>:block/<file>" }。要状态组合请添加参数。'),
+                el('div', 'f-note', '单状态方块 → assets/<ns>/blockstates/<id>.json 输出 { "variants": { "": { "model": "<ns>:block/<file>" } } }。要状态组合请添加参数。'),
             ));
         }
         return wrap;
@@ -520,7 +520,7 @@ window.ItemBlockEditor = (function () {
     function buildBlockstatesEditor(bs) {
         const modeSel = sel([['variants', 'variants（组合 → 模型，最常用）'], ['multipart', 'multipart（层叠加，栅栏/墙一类）']], bs.mode || 'variants');
         const body = el('div');
-        const sec = section('方块形态定义（→ assets/<ns>/blockstate/<id>.json）',
+        const sec = section('方块形态定义（→ assets/<ns>/blockstates/<id>.json）',
             field('模式', modeSel),
             el('div', 'f-note', 'variants = 每个状态组合一行模型映射；multipart = 基础层 + 条件层叠加（when 命中才叠加）。'),
             body,
@@ -697,7 +697,7 @@ window.ItemBlockEditor = (function () {
         const d = S.def;
         const wrap = el('div');
         if (S.kind === 'block') {
-            wrap.appendChild(section('blockstate（完整方块形态 → assets/<ns>/blockstate/<id>.json）',
+            wrap.appendChild(section('blockstate（完整方块形态 → assets/<ns>/blockstates/<id>.json）',
                 pre(window.ItemBlockSchema.buildBlockstatesJson(d)),
             ));
             wrap.appendChild(section('方块模型（assets/<ns>/models/block/）',

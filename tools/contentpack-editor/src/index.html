@@ -151,6 +151,7 @@
         <option value="item" data-i18n="content.item">物品</option>
         <option value="block" data-i18n="content.block">方块</option>
         <option value="quest" data-i18n="quest.title">任务</option>
+        <option value="tech" data-i18n="tech.title">科技树</option>
         <option value="contract" data-i18n="contract.title">动画契约</option>
       </select>
       <span id="packNameLabel" class="muted"></span>
@@ -499,6 +500,20 @@
       <div id="questMount"></div>
     </div>
 
+    <!-- 科技树编辑器：techs/tree.json（单文件 = 整棵树；保存直写正式包） -->
+    <div id="techEditorContent" class="hidden">
+      <div class="editor-header">
+        <span class="editor-title" id="techTitle"></span>
+        <span class="editor-badge warn" id="techBadge"></span>
+        <div class="editor-actions">
+          <button class="btn ghost small" id="btnTechNewNode" data-i18n="tech.newNode" data-i18n-title="tech.newNodeTip">+ 节点</button>
+          <button class="btn ghost danger" id="btnTechDelete" disabled data-i18n="tech.deleteSelected" data-i18n-title="tech.deleteTip">删除选中</button>
+          <button class="btn accent" id="btnTechSave" data-i18n="tech.save" data-i18n-title="tech.saveTip">保存</button>
+        </div>
+      </div>
+      <div id="techMount"></div>
+    </div>
+
     <!-- TimeTape 状态机可视化编辑器（W2 图形节点 + W3 实时仿真） -->
     <div id="tapeEditorContent" class="hidden">
       <div class="editor-header">
@@ -537,6 +552,9 @@
 <script src="core/questSchema.js"></script>
 <script src="views/questList.js"></script>
 <script src="views/questEditor.js"></script>
+<script src="core/techSchema.js"></script>
+<script src="views/techList.js"></script>
+<script src="views/techEditor.js"></script>
 <script src="views/deployStatus.js"></script>
 <script src="views/gitHistoryView.js"></script>
 <script src="app.js"></script>

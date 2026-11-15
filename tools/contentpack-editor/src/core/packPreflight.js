@@ -11,6 +11,8 @@ const Scaffold = require('./packScaffold');
 const JarReader = require('./jarReader');
 const ItemBlockSchema = require('./itemBlockSchema');
 const QuestSchema = require('./questSchema');
+const TechSchema = require('./techSchema');
+const McAssets = require('./mcAssets');
 
 /**
  * 预检一个包目录。
@@ -84,6 +86,8 @@ function preflightPack(packDir, opts = {}) {
             }
         }
     }
+    // 注册成功 ≠ 能显示：缺 blockstate/模型/纹理时客户端只打日志、注册器 problems 仍为 0（紫黑块）
+    findings.push(...checkItemBlockAssets(packDir, items, blocks, opts));
 
     // --- 2c. 任务 JSON（quests/*.json，仅一级目录） ---
     // 权威：ContentPackContext.registerQuestsFromJar（只扫 quests/ 第一层）
@@ -141,6 +145,54 @@ function preflightPack(packDir, opts = {}) {
             }
             for (const warn of check.warnings) {
                 findings.push({ level: 'warn', code: 'W-Q-VALID', msg: `quests/${ent.name}: ${warn}`, src: 'questSchema（包 Java 工厂自定字段）' });
+            }
+        }
+    }
+
+    // --- 2d. 科技树 JSON（techs/tree.json，单文件 = 整棵树） ---
+    // 权威：TechTreeLoader.load 的严格解析 + techSchema 镜像（id/成环/成本/台子升级/布局）
+    const techTreeFile = path.join(packDir, 'techs', 'tree.json');
+    if (fs.existsSync(techTreeFile)) {
+        let tree = null;
+        try {
+            tree = JSON.parse(fs.readFileSync(techTreeFile, 'utf-8'));
+        } catch (e) {
+            findings.push({
+                level: 'error', code: 'E-TECH-JSON',
+                msg: `techs/tree.json 不是合法 JSON：${e.message}（整棵树不会加载）`,
+                src: 'TechTreeLoader.load',
+            });
+        }
+        if (tree) {
+            // 与编辑器 techRefContext 同口径：物品命名空间以 JSON 的 namespace 为准，缺省 = 核心命名空间
+            const knownItems = new Set();
+            const packNamespaces = new Set();
+            for (const item of items) {
+                if (!item || !item.id) continue;
+                const declared = item.namespace != null && String(item.namespace).trim() !== '';
+                const ns = declared ? String(item.namespace).trim() : 'catoxidesbattlerebuild';
+                knownItems.add(ns + ':' + item.id);
+                if (declared && ns !== 'catoxidesbattlerebuild') packNamespaces.add(ns);
+            }
+            const knownQuests = new Set(quests
+                .filter((q) => q && q.id)
+                .map((q) => 'catoxidesbattlerebuild:' + String(q.id).trim()));
+            const check = TechSchema.validateTree(tree, { knownItems, knownQuests, packNamespaces });
+            for (const err of check.errors) {
+                findings.push({ level: 'error', code: 'E-TECH-VALID', msg: `techs/tree.json: ${err}`, src: 'TechTreeLoader / techSchema' });
+            }
+            for (const warn of check.warnings) {
+                findings.push({ level: 'warn', code: 'W-TECH-VALID', msg: `techs/tree.json: ${warn}`, src: 'techSchema（布局重叠等提示）' });
+            }
+            const usage = TechSchema.collectTriggerUsage(tree);
+            if (usage.length) {
+                findings.push({
+                    level: 'info', code: 'I-TECH-TRIGGERS',
+                    msg: `科技树引用 ${usage.length} 个触发器：` +
+                        usage.map((u) => `${u.name}×${u.count}`).join('、') +
+                        '（运行期只有程序 post TechHooks.TriggerEvent 或 /techtree trigger 会置位）',
+                    src: 'TechHooks.TriggerEvent',
+                });
             }
         }
     }
@@ -247,6 +299,183 @@ function preflightPack(packDir, opts = {}) {
         gradleTask: `${Scaffold.gradleProjectPath(path.basename(packDir))}:contentpackJar`,
         gradleCommand: Scaffold.gradleBuildCommand(path.basename(packDir)),
     };
+}
+
+/**
+ * 物品/方块导出产物完整性（源定义 → 包内原版资源）。
+ *
+ * 游戏侧判定链：
+ *   物品  models/item/<id>.json → 纹理
+ *   方块  blockstates/<id>.json（复数）→ 模型 → 纹理
+ * 任一环缺失都不会阻止注册，但运行期表现为紫黑块 / 缺失模型，
+ * 且 BatchContentRegistrar.problems 仍为 0（2026-11-08 黄铜灯实证）。
+ */
+function checkItemBlockAssets(packDir, items, blocks, opts = {}) {
+    const findings = [];
+    const projectRoot = opts.root || null;
+    const packNs = new Set();
+    for (const def of [...items, ...blocks]) {
+        if (def && def.id) packNs.add(def.namespace || 'catoxidesbattlerebuild');
+    }
+    if (!packNs.size) return findings;
+    const vanillaReady = McAssets.isReady(McAssets.resolveRoot(projectRoot));
+
+    const seen = new Set();
+    const add = (level, code, msg, src) => {
+        const key = code + '\u0000' + msg;
+        if (seen.has(key)) return;
+        seen.add(key);
+        findings.push({ level, code, msg, src });
+    };
+    const abs = (rel) => path.join(packDir, ...rel.split('/'));
+    const inPack = (rel) => fs.existsSync(abs(rel));
+    // 包内先查：同名资源若被 vanilla/其它包提供，不能掩盖「本包没导出」
+    const exists = (rel) => inPack(rel) || !!McAssets.findAsset(projectRoot, rel, { packDir });
+
+    const splitRl = (rl) => {
+        const s = String(rl || '').trim();
+        const i = s.indexOf(':');
+        return i >= 0 ? { ns: s.slice(0, i), path: s.slice(i + 1) } : { ns: 'minecraft', path: s };
+    };
+    // 缺失等级：本包命名空间 / 本机有 vanilla 底 ⇒ error；其它外部命名空间（别的 mod）⇒ warn
+    const missingLevel = (ns) => (packNs.has(ns) || (ns === 'minecraft' && vanillaReady) ? 'error' : 'warn');
+    const missingHint = (ns) => (ns === 'minecraft' && !vanillaReady
+        ? '（本机未探测到 vanilla 资源根，无法确认原版资源是否存在）'
+        : packNs.has(ns) ? '（该命名空间由本包提供）' : '（外部命名空间，需其它 mod/资源包在运行期提供）');
+
+    const checkedTextures = new Set();
+    const checkTexture = (texId, ctx) => {
+        const s = String(texId || '').trim();
+        if (!s || s.startsWith('#')) return;
+        const { ns, path: p } = splitRl(s);
+        const rel = `assets/${ns}/textures/${p}.png`;
+        if (checkedTextures.has(rel)) return;
+        checkedTextures.add(rel);
+        if (exists(rel)) return;
+        add(missingLevel(ns), 'E-IB-NO-TEXTURE',
+            `${ctx} 引用的纹理 ${s} 不存在（${rel}）${missingHint(ns)}：客户端会渲染成紫黑格。`,
+            '客户端 TextureAtlas（Missing textures in model）');
+    };
+
+    const checkedModels = new Set();
+    const checkModel = (modelRef, ctx) => {
+        const s = String(modelRef || '').trim();
+        if (!s) return;
+        const { ns, path: p } = splitRl(s);
+        const rel = `assets/${ns}/models/${p}.json`;
+        if (checkedModels.has(rel)) return;
+        checkedModels.add(rel);
+        if (!exists(rel)) {
+            add(missingLevel(ns), 'E-IB-NO-MODEL',
+                `${ctx} 引用的模型 ${s} 不存在（${rel}）${missingHint(ns)}：客户端会报缺失模型。`,
+                '客户端 ModelManager（Unable to load model）');
+            return;
+        }
+        // 沿 parent 链解析纹理（parent 可能在本包、vanilla 或其它 mod）
+        const chain = McAssets._internals.loadModelChain(projectRoot, s, { packDir });
+        if (!chain) return;
+        const keys = new Set();
+        for (const node of chain) {
+            for (const k of Object.keys(node.raw.textures || {})) keys.add(k);
+        }
+        for (const k of keys) {
+            const texId = McAssets._internals.resolveTextureId(chain, k);
+            if (texId) checkTexture(texId, `${ctx} 的模型 ${s} 纹理 #${k}`);
+        }
+    };
+
+    // 1.21.1 允许 variant / multipart.apply 是「对象数组」（bedrock/bamboo 实证）；
+    // 唯一非法形状是裸字符串（黄铜灯实证：按对象反序列化 → missing model）
+    const checkApplyObject = (value, ctx, src) => {
+        const list = Array.isArray(value) ? value : [value];
+        if (!list.length) {
+            add('error', 'E-IB-BLOCKSTATE-SHAPE', `${ctx} 是空数组 —— 该状态没有可用模型。`, src);
+            return [];
+        }
+        const refs = [];
+        for (const v of list) {
+            if (!v || typeof v !== 'object' || Array.isArray(v) || typeof v.model !== 'string' || !v.model.trim()) {
+                add('error', 'E-IB-BLOCKSTATE-SHAPE',
+                    `${ctx} 不是 {model: "..."} 对象 —— 1.21.1 按对象反序列化，裸字符串/非法形状会被判成` +
+                    `「missing model for variant」⇒ 紫黑块。`,
+                    src);
+                return refs;
+            }
+            refs.push(v.model.trim());
+        }
+        return refs;
+    };
+
+    const checkBlockstateShape = (raw, ctx) => {
+        const refs = [];
+        const variants = raw.variants;
+        const hasVariants = !!variants && typeof variants === 'object' && !Array.isArray(variants);
+        if (hasVariants) {
+            for (const [key, value] of Object.entries(variants)) {
+                refs.push(...checkApplyObject(value, `${ctx}: variants["${key}"]`, '客户端 VariantDeserializer'));
+            }
+        }
+        if (Array.isArray(raw.multipart)) {
+            raw.multipart.forEach((entry, i) => {
+                const apply = entry && entry.apply;
+                refs.push(...checkApplyObject(apply, `${ctx}: multipart[${i}].apply`, '客户端 MultipartDeserializer'));
+            });
+        }
+        if (!hasVariants && !Array.isArray(raw.multipart)) {
+            add('error', 'E-IB-BLOCKSTATE-SHAPE',
+                `${ctx}: 既没有 variants 也没有 multipart —— 客户端会报 Exception loading blockstate definition。`,
+                '客户端 BlockStateModelLoader');
+        } else if (hasVariants && Object.keys(variants).length === 0) {
+            add('error', 'E-IB-BLOCKSTATE-SHAPE',
+                `${ctx}: variants 是空对象 —— 任何状态都没有模型。`,
+                '客户端 BlockStateModelLoader');
+        }
+        for (const ref of refs) checkModel(ref, `${ctx} 的 blockstate`);
+    };
+
+    const checkItemModel = (def, ctx) => {
+        const ns = def.namespace || 'catoxidesbattlerebuild';
+        const rel = `assets/${ns}/models/item/${def.id}.json`;
+        if (!inPack(rel)) {
+            add('error', 'E-IB-NO-ITEM-MODEL',
+                `${ctx}: 缺少 ${rel} —— 物品会注册成功，但没有物品模型 ⇒ 紫黑块/缺失模型。请在编辑器里导出原版资源。`,
+                '客户端 ModelManager（Unable to load model）');
+            return;
+        }
+        checkModel(`${ns}:item/${def.id}`, `${ctx} 的物品模型`);
+    };
+
+    for (const def of blocks) {
+        if (!def || !def.id) continue;
+        const ns = def.namespace || 'catoxidesbattlerebuild';
+        const ctx = `方块 ${ns}:${def.id}`;
+        const rel = `assets/${ns}/blockstates/${def.id}.json`;
+        const singular = `assets/${ns}/blockstate/${def.id}.json`;
+        if (!inPack(rel)) {
+            if (inPack(singular)) {
+                add('error', 'E-IB-BLOCKSTATE-DIR',
+                    `${ctx}: blockstate 写在了 ${singular}（单数）—— 1.21.1 客户端只读 blockstates/（复数，` +
+                    `原版 1062 个文件全在该目录），这份定义会被忽略 ⇒ 方块无模型（紫黑块）。把目录改成 blockstates/。`,
+                    '客户端 BlockStateModelLoader（只列 blockstates/）');
+            } else {
+                add('error', 'E-IB-NO-BLOCKSTATE',
+                    `${ctx}: 缺少 ${rel} —— 方块会注册成功，但客户端没有形态定义 ⇒ 紫黑块/缺失模型。请在编辑器里导出原版资源。`,
+                    '客户端 BlockStateModelLoader');
+            }
+        } else {
+            try {
+                checkBlockstateShape(JSON.parse(fs.readFileSync(abs(rel), 'utf-8')), ctx);
+            } catch (e) {
+                add('error', 'E-IB-BLOCKSTATE-JSON', `${ctx}: ${rel} 不是合法 JSON：${e.message}`, '客户端 BlockStateModelLoader');
+            }
+        }
+        if (def.blockItem !== false) checkItemModel(def, `方块物品 ${ns}:${def.id}`);
+    }
+    for (const def of items) {
+        if (!def || !def.id) continue;
+        checkItemModel(def, `物品 ${(def.namespace || 'catoxidesbattlerebuild')}:${def.id}`);
+    }
+    return findings;
 }
 
 /** 递归统计目录下 .json 文件数（用于「子目录里的 JSON 不会被扫描」提示） */

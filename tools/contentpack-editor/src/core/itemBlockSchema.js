@@ -212,6 +212,11 @@
                     if (!Number.isInteger(n) || n < 0 || n > 15) errors.push(`redstone.${k} 超出 0..15: ${rs[k]}`);
                 }
             }
+            // 红石行为会二次设置 lightLevel，完全覆盖 material.lightLevel（BatchContentRegistrar:281）
+            if (m.lightLevel !== undefined && m.lightLevel !== null && String(m.lightLevel) !== ''
+                && Number(m.lightLevel) > 0) {
+                errors.push('material.lightLevel 与 redstone 同时声明：红石行为会覆盖静态亮度，请删掉 lightLevel');
+            }
         }
         // 模型（导出需要；Java 侧不消费，纯编辑器契约）
         if (def.model && !MODEL_TYPES.includes(def.model.type)) {
@@ -224,7 +229,7 @@
 
     function validateBlockstates(def, props) {
         const errors = [];
-        // 无参数 = 单状态方块：blockstate 固定 {model: 默认模型}，无需（也不校验）blockstates 定义
+        // 无参数 = 单状态方块：blockstate 固定 {variants: {"": 默认模型}}，无需（也不校验）blockstates 定义
         if (!props.length) return errors;
         const bs = def.blockstates;
         if (!bs || typeof bs !== 'object' || (bs.mode !== 'variants' && bs.mode !== 'multipart')) {
@@ -325,10 +330,11 @@
     }
 
     /**
-     * 生成 1.21.1 blockstate 文件内容（assets/<ns>/blockstate/<id>.json 的 JSON 对象）。
-     * 对照原版 1.21.1 格式：
-     *   单状态   → { "model": "ns:..." }
-     *   variants → { "variants": { "k=v,k2=v2": "ns:..." | {"model","x","y"} } }
+     * 生成 1.21.1 blockstate 文件内容（assets/<ns>/blockstates/<id>.json 的 JSON 对象）。
+     * 1.21.1 只读 blockstates/（复数）；顶层必须有 variants 或 multipart（原版 1062 个文件无一例外），
+     * variants 的值一律是对象（没有字符串简写）。
+     *   单状态   → { "variants": { "": {"model": "ns:..."} } }
+     *   variants → { "variants": { "k=v,k2=v2": {"model","x","y"} } }
      *   multipart→ { "multipart": [ {"when":{...},"apply":{"model",...}}, {"apply":{...}} ] }
      */
     function buildBlockstatesJson(def) {
@@ -340,12 +346,11 @@
         const blockModelRef = () => modelRef(baseModel);
 
         if (!props.length) {
-            // 单状态方块
+            // 单状态方块：顶层仍必须是 variants（空键 = 无属性），否则加载器判「Neither variants nor multipart」
             if (bs && bs.mode === 'variants' && Array.isArray(bs.variants) && bs.variants.length) {
-                const r = bs.variants[0];
-                return variantObject(r, modelRef);
+                return { variants: { '': variantObject(bs.variants[0], modelRef) } };
             }
-            return { model: blockModelRef() };
+            return { variants: { '': { model: blockModelRef() } } };
         }
 
         if (bs && bs.mode === 'multipart' && Array.isArray(bs.multipart)) {
@@ -373,16 +378,15 @@
         return { variants };
     }
 
-    /** variant 值：无旋转 = 模型字符串；有旋转 = 对象（对照原版 blockstate 文件） */
+    /**
+     * variant 值：一律对象 {model, x?, y?}。
+     * 1.21.1 的 variants 元素按对象反序列化，裸字符串会被判成缺失模型
+     * ——原版 1062 个 blockstate 文件的 variants 值 100% 是对象。
+     */
     function variantObject(row, modelRef) {
-        const model = modelRef(row.model);
-        if ((row.x === undefined || row.x === null || row.x === 0)
-            && (row.y === undefined || row.y === null || row.y === 0)) {
-            return model;
-        }
-        const obj = { model };
-        if (row.x !== undefined && row.x !== null && row.x !== 0) obj.x = Number(row.x);
-        if (row.y !== undefined && row.y !== null && row.y !== 0) obj.y = Number(row.y);
+        const obj = { model: modelRef(row.model) };
+        if (row.x !== undefined && row.x !== null && Number(row.x) !== 0) obj.x = Number(row.x);
+        if (row.y !== undefined && row.y !== null && Number(row.y) !== 0) obj.y = Number(row.y);
         return obj;
     }
 

@@ -1,6 +1,6 @@
 // noBrowserPrompt.test.js - 防回归：Electron 不支持 window.prompt()（抛 "prompt() is not supported"）
 // 背景（10/09 真实 exe 日志）：模型编辑器 ✨新建 用三连 prompt()，真实应用里全部抛异常 → 功能不可用。
-// 规则：应用代码（src/、model-editor/，lib/ 除外）不得调用 prompt(；交互一律走 askModal（页面内模态框）。
+// 规则：应用代码（src/、model-editor/、texture-editor/，lib/ 除外）不得调用 prompt(；交互一律走 askModal（页面内模态框）。
 // 注：alert()/confirm() 在 Electron 有原生实现，暂不禁止（但新代码建议也避免）。
 'use strict';
 const fs = require('fs');
@@ -14,7 +14,7 @@ function t(name, fn) {
 }
 
 const ROOT = path.join(__dirname, '..');
-const TARGETS = [path.join(ROOT, 'src'), path.join(ROOT, 'model-editor')];
+const TARGETS = [path.join(ROOT, 'src'), path.join(ROOT, 'model-editor'), path.join(ROOT, 'texture-editor')];
 const SKIP = /[/\\]lib[/\\]/;
 
 function walk(dir, out = []) {
@@ -41,12 +41,12 @@ t('应用代码无 prompt() 调用（Electron 抛异常）', () => {
     assert.deepStrictEqual(hits, [], '发现 prompt() 调用:\n' + hits.join('\n'));
 });
 
-t('askModal.js 存在且被两个窗口引用', () => {
+t('askModal.js 存在且被各交互窗口引用', () => {
     assert.ok(fs.existsSync(path.join(ROOT, 'src', 'lib', 'askModal.js')));
-    const main = fs.readFileSync(path.join(ROOT, 'src', 'index.html'), 'utf8');
-    const me = fs.readFileSync(path.join(ROOT, 'model-editor', 'index.html'), 'utf8');
-    assert.ok(main.includes('askModal.js'), 'src/index.html 应引用 askModal.js');
-    assert.ok(me.includes('askModal.js'), 'model-editor/index.html 应引用 askModal.js');
+    for (const rel of ['src/index.html', 'model-editor/index.html', 'texture-editor/index.html']) {
+        const html = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+        assert.ok(html.includes('askModal.js'), `${rel} 应引用 askModal.js`);
+    }
 });
 
 console.log(`\n=== noBrowserPrompt 测试: ${passed} passed, ${failed} failed ===`);

@@ -892,6 +892,8 @@ module.exports = {
     blockAppearance,
     stripProps,
     texturePath,
+    findAsset, // 资源存在性查找（预检用：vanilla → 包 → 数据包 → mods）
+    modelRel,  // 模型 ID → assets/<ns>/models/<path>.json
     // P14 测试用
     _internals: {
         findAsset,
