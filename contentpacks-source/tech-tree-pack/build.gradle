@@ -1,7 +1,19 @@
-// tech-tree-pack —— 科技树包（无额外编译依赖）
+// tech-tree-pack —— 科技树包（可选适配 Create 6.0 应力 → 研究点）
 plugins {
     id 'java-library'
     id 'net.neoforged.gradle.userdev'
 }
 
 apply from: '../contentpack.gradle'
+
+repositories {
+    maven { name = 'Create Mod'; url = 'https://maven.createmod.net/' }
+}
+
+dependencies {
+    // 可选外部 mod：只编译期可见，接触点收敛在 compat/CreateStressCompat（未装 Create 时不加载）。
+    // 运行时对应实例里的 create-1.21.1-6.0.10.jar；6.0.10-281 与之 kinetic API 签名逐项一致。
+    compileOnly 'com.simibubi.create:create-1.21.1:6.0.10-281'
+    compileOnly 'dev.engine-room.flywheel:flywheel-neoforge-1.21.1:1.0.6'
+    compileOnly 'net.createmod.ponder:ponder-neoforge:1.0.82+mc1.21.1'
+}

@@ -801,7 +801,7 @@ public final class TechTreeScreen extends Screen {
             return TechClientState.points() >= techPoints.amount();
         }
         LocalPlayer player = player();
-        return player != null && cost.canPay(player);
+        return player != null && cost.canPay(player, null);
     }
 
     private boolean canUpgrade() {

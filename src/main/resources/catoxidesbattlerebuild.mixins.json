@@ -10,9 +10,21 @@
     "EnchantmentHelperMixin",
     "AnvilMenuMixin",
     "RepairItemRecipeMixin",
-    "LevelChunkMixin"
+    "LevelChunkMixin",
+    "SlotInsertGuardMixin",
+    "RandomizableContainerCanPlaceMixin",
+    "CompoundContainerAccessMixin",
+    "DebugLevelSourceMixin",
+    "AbstractContainerMenuInvoker",
+    "SlotPositionAccess",
+    "MenuTypeCreateMixin",
+    "InventoryMenuMixin"
   ],
   "client": [
+    "AbstractContainerScreenAccessMixin",
+    "ContainerBackgroundShiftMixin",
+    "EffectStackShiftMixin",
+    "GuiGraphicsScissorMixin"
   ],
   "server": [
   ],

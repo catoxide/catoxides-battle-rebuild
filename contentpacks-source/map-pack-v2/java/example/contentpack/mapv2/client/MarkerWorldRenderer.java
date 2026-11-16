@@ -311,7 +311,11 @@ public final class MarkerWorldRenderer {
 
     /**
      * 图标：走原版 GUI（快捷栏/背包）那条渲染路径 —— 方块是等轴测的立体图标（正面/侧面/顶面），
-     * 平面物品就是它的贴图。此处已经处于 y 向下的屏幕空间，和 GUI 的坐标系一致，所以不需要翻转。
+     * 平面物品就是它的贴图。
+     *
+     * <p>坐标系是 y 向下的屏幕空间，但物品模型是 y 向上；{@code GuiGraphics.renderItem} 里的
+     * {@code scale(16, -16, 16)} 就是干这个的，这里也要翻一次 Y，否则图标上下颠倒
+     * （对称的下界之星看不出来，船、矿车一眼就露馅）。
      *
      * <p>GUI 变换本身带 {@link #ITEM_GUI_SCALE} 缩放，所以外部 scale 先补回 1/0.625。
      */
@@ -326,7 +330,7 @@ public final class MarkerWorldRenderer {
         pose.pushPose();
         pose.translate(x, y, z);
         float normalized = scale / ITEM_GUI_SCALE;
-        pose.scale(normalized, normalized, normalized);
+        pose.scale(normalized, -normalized, normalized);
         renderer.render(stack, ItemDisplayContext.GUI, false, pose, buffer,
                 FULL_BRIGHT, OverlayTexture.NO_OVERLAY, model);
         pose.popPose();

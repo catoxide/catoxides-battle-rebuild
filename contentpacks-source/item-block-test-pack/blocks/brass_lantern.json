@@ -14,7 +14,7 @@
     "transparent": false,
     "randomTicks": false,
     "requiresTool": false,
-    "solid": false
+    "solid": true
   },
   "properties": [
     { "name": "lit", "type": "boolean", "default": "false", "labelZh": "点亮" }
@@ -27,7 +27,7 @@
   "blockstates": {
     "mode": "variants",
     "variants": [
-      { "when": { "lit": "true" }, "model": "brass_lantern_lit", "texture": "minecraft:block/redstone_lamp_lit" },
+      { "when": { "lit": "true" }, "model": "brass_lantern_lit", "texture": "minecraft:block/redstone_lamp_on" },
       { "when": { "lit": "false" }, "model": "brass_lantern" }
     ]
   },

@@ -36,9 +36,13 @@ public final class TechRequirementEngine {
     private TechRequirementEngine() {
     }
 
-    /** 解锁判定上下文（研究台位置与层级）。 */
-    public record Context(BlockPos tablePos, int tableTier) {
-        public static final Context NONE = new Context(null, 1);
+    /** 解锁判定上下文（研究台位置、层级与所在维度）。 */
+    public record Context(BlockPos tablePos, int tableTier, ResourceLocation dimension) {
+        public static final Context NONE = new Context(null, 1, null);
+
+        public Context(BlockPos tablePos, int tableTier) {
+            this(tablePos, tableTier, null);
+        }
     }
 
     /** capability 注册器：其它包注册自定义条件类型。 */
@@ -77,7 +81,7 @@ public final class TechRequirementEngine {
             case "tech" -> {
                 boolean all = true;
                 for (String node : requirement.strings("nodes")) {
-                    if (!TechService.isUnlocked(player, node)) {
+                    if (!TechService.isUnlocked(player, context, node)) {
                         all = false;
                         break;
                     }
@@ -100,7 +104,7 @@ public final class TechRequirementEngine {
             }
             case "advancement" -> hasAdvancement(player, requirement.string("id", ""));
             case "trigger" -> TechService.hasTrigger(player, requirement.string("name", ""));
-            case "tech_points" -> TechService.points(player) >= requirement.integer("min", 1);
+            case "tech_points" -> TechService.points(player, context) >= requirement.integer("min", 1);
             default -> {
                 TechHooks.RequirementExtension extension = EXTENSIONS.get(type);
                 yield extension != null && extension.satisfied(player, requirement.params());

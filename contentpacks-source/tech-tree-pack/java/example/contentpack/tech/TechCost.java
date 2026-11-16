@@ -17,10 +17,10 @@ public sealed interface TechCost
 
     int amount();
 
-    boolean canPay(Player player);
+    boolean canPay(Player player, TechTableKey table);
 
     /** 只在服务端线程、且 {@link #canPay} 已通过时调用。 */
-    void pay(ServerPlayer player);
+    void pay(ServerPlayer player, TechTableKey table);
 
     /** 纯文本摘要（任务描述/调试用）。 */
     String describePlain();
@@ -28,13 +28,13 @@ public sealed interface TechCost
     record ItemCost(ResourceLocation itemId, int amount) implements TechCost {
 
         @Override
-        public boolean canPay(Player player) {
+        public boolean canPay(Player player, TechTableKey table) {
             Item item = TechItems.resolve(itemId);
             return item != null && count(player, item) >= amount;
         }
 
         @Override
-        public void pay(ServerPlayer player) {
+        public void pay(ServerPlayer player, TechTableKey table) {
             Item item = TechItems.resolve(itemId);
             if (item != null) {
                 consume(player, item, amount);
@@ -50,12 +50,12 @@ public sealed interface TechCost
     record XpCost(int amount) implements TechCost {
 
         @Override
-        public boolean canPay(Player player) {
+        public boolean canPay(Player player, TechTableKey table) {
             return player.experienceLevel >= amount;
         }
 
         @Override
-        public void pay(ServerPlayer player) {
+        public void pay(ServerPlayer player, TechTableKey table) {
             player.giveExperienceLevels(-amount);
         }
 
@@ -65,17 +65,24 @@ public sealed interface TechCost
         }
     }
 
-    /** 科技点：玩家虚拟余额（存档级），不占物品栏。 */
+    /** 科技点：研究台虚拟余额（存档级），不占物品栏。 */
     record TechPointCost(int amount) implements TechCost {
 
         @Override
-        public boolean canPay(Player player) {
+        public boolean canPay(Player player, TechTableKey table) {
+            if (player instanceof ServerPlayer serverPlayer && table != null) {
+                return TechService.points(serverPlayer, table) >= amount;
+            }
             return TechService.points(player) >= amount;
         }
 
         @Override
-        public void pay(ServerPlayer player) {
-            TechService.spendPoints(player, amount);
+        public void pay(ServerPlayer player, TechTableKey table) {
+            if (table != null) {
+                TechService.spendPoints(player, table, amount);
+            } else {
+                TechService.spendPoints(player, amount);
+            }
         }
 
         @Override

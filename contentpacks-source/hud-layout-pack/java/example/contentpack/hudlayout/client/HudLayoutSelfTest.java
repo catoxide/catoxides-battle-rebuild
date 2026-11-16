@@ -10,6 +10,7 @@ import com.google.gson.JsonParser;
 import example.contentpack.hudlayout.layout.LayoutStore;
 import example.contentpack.hudlayout.layout.MoveAxis;
 
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -28,6 +29,8 @@ public final class HudLayoutSelfTest {
     private static final String TAG = "HudLayout";
     private static final int TRACK_X = 10;
     private static final int TRACK_WIDTH = 46;
+    /** Diagnostic label only: decode() logs "HUD layout <path> ..."; null reads as "null". */
+    private static final Path SELF_TEST = Path.of("self-test");
 
     private HudLayoutSelfTest() {
     }
@@ -103,7 +106,7 @@ public final class HudLayoutSelfTest {
     private static void testLayoutDecode() {
         Map<String, LayoutStore.State> v1 = LayoutStore.decode(parse(
                 """
-                {"schemaVersion":1,"groups":{"hotbar":{"x":10,"y":-4},"effects":{"x":0,"y":2}}}"""), null);
+                {"schemaVersion":1,"groups":{"hotbar":{"x":10,"y":-4},"effects":{"x":0,"y":2}}}"""), SELF_TEST);
         require(v1 != null, "schema 1 must still be readable");
         require(v1.size() == 2, "both schema-1 groups must survive: " + v1.size());
         require(v1.get("hotbar").x() == 10 && v1.get("hotbar").y() == -4, "schema-1 offset must be read verbatim");
@@ -111,28 +114,28 @@ public final class HudLayoutSelfTest {
 
         Map<String, LayoutStore.State> v2 = LayoutStore.decode(parse(
                 """
-                {"schemaVersion":2,"groups":{"map":{"x":3,"y":4,"axis":"vertical"}}}"""), null);
+                {"schemaVersion":2,"groups":{"map":{"x":3,"y":4,"axis":"vertical"}}}"""), SELF_TEST);
         require(v2 != null && v2.get("map").axis() == MoveAxis.VERTICAL, "schema-2 axis must be read");
         require(v2 != null && v2.get("map").x() == 3 && v2.get("map").y() == 4, "schema-2 offset must be read");
 
         // 手改配置文件写错一个词：这一组退回自由，别把整份布局丢掉
         Map<String, LayoutStore.State> typo = LayoutStore.decode(parse(
                 """
-                {"schemaVersion":2,"groups":{"map":{"x":3,"y":4,"axis":"diagonal"}}}"""), null);
+                {"schemaVersion":2,"groups":{"map":{"x":3,"y":4,"axis":"diagonal"}}}"""), SELF_TEST);
         require(typo != null && typo.get("map").axis() == MoveAxis.FREE, "unknown axis falls back to free");
         require(typo != null && typo.get("map").x() == 3, "an unknown axis must not discard the offset");
 
         Map<String, LayoutStore.State> junk = LayoutStore.decode(parse(
                 """
-                {"schemaVersion":2,"groups":{"broken":12,"half":{"x":1},"ok":{"x":1,"y":1}}}"""), null);
+                {"schemaVersion":2,"groups":{"broken":12,"half":{"x":1},"ok":{"x":1,"y":1}}}"""), SELF_TEST);
         require(junk != null && junk.size() == 1 && junk.get("ok") != null,
                 "only well-formed group entries are kept: " + (junk == null ? "null" : junk.keySet()));
 
-        require(LayoutStore.decode(parse("{\"schemaVersion\":0,\"groups\":{}}"), null) == null,
+        require(LayoutStore.decode(parse("{\"schemaVersion\":0,\"groups\":{}}"), SELF_TEST) == null,
                 "a version below the readable floor must be ignored");
-        require(LayoutStore.decode(parse("{\"schemaVersion\":99,\"groups\":{}}"), null) == null,
+        require(LayoutStore.decode(parse("{\"schemaVersion\":99,\"groups\":{}}"), SELF_TEST) == null,
                 "a version from the future must be ignored");
-        require(LayoutStore.decode(new JsonObject(), null) == null, "a missing schemaVersion must be ignored");
+        require(LayoutStore.decode(new JsonObject(), SELF_TEST) == null, "a missing schemaVersion must be ignored");
     }
 
     /**

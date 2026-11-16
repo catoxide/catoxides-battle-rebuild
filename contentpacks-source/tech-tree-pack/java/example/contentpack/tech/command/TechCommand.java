@@ -156,6 +156,10 @@ public final class TechCommand {
             source.sendFailure(Component.literal("未知科技节点: " + nodeId));
             return 0;
         }
+        if (!TechService.hasBoundTable(target)) {
+            source.sendFailure(Component.literal(noTableMessage(target)));
+            return 0;
+        }
         if (!TechService.forceUnlock(target, nodeId)) {
             source.sendFailure(Component.literal("解锁失败: " + nodeId));
             return 0;
@@ -166,6 +170,10 @@ public final class TechCommand {
     }
 
     private static int lock(CommandSourceStack source, String nodeId, ServerPlayer target) {
+        if (!TechService.hasBoundTable(target)) {
+            source.sendFailure(Component.literal(noTableMessage(target)));
+            return 0;
+        }
         if (!TechService.forceLock(target, nodeId)) {
             source.sendFailure(Component.literal("该玩家未解锁此节点: " + nodeId));
             return 0;
@@ -176,13 +184,21 @@ public final class TechCommand {
     }
 
     private static int showPoints(CommandSourceStack source, ServerPlayer target) {
+        if (!TechService.hasBoundTable(target)) {
+            source.sendFailure(Component.literal(noTableMessage(target)));
+            return 0;
+        }
         int balance = TechService.points(target);
         source.sendSuccess(() -> Component.literal(target.getScoreboardName()
-                + " 的科技点: " + balance), false);
+                + " 当前研究台的科技点: " + balance), false);
         return balance;
     }
 
     private static int setPoints(CommandSourceStack source, int value, ServerPlayer target) {
+        if (!TechService.hasBoundTable(target)) {
+            source.sendFailure(Component.literal(noTableMessage(target)));
+            return 0;
+        }
         int updated = TechService.setPoints(target, value);
         source.sendSuccess(() -> Component.literal("科技点已设为 " + updated
                 + "（" + target.getScoreboardName() + "）"), true);
@@ -190,10 +206,19 @@ public final class TechCommand {
     }
 
     private static int addPoints(CommandSourceStack source, int value, ServerPlayer target) {
+        if (!TechService.hasBoundTable(target)) {
+            source.sendFailure(Component.literal(noTableMessage(target)));
+            return 0;
+        }
         int updated = TechService.addPoints(target, value);
         source.sendSuccess(() -> Component.literal("科技点 " + (value >= 0 ? "+" : "")
                 + value + " → " + updated + "（" + target.getScoreboardName() + "）"), true);
         return updated;
+    }
+
+    private static String noTableMessage(ServerPlayer target) {
+        return "该玩家还没打开过研究台，进度与科技点归属台子，先在台子旁打开一次界面"
+                + (target == null ? "" : "（" + target.getScoreboardName() + "）");
     }
 
     private static int setTrigger(CommandSourceStack source, String name, boolean value,

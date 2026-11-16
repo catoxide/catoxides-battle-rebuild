@@ -38,7 +38,9 @@ import java.util.zip.InflaterInputStream;
  * ——维度 → 层（{@code top} 或 {@code y<absoluteY>}）→ 区域（512 格）。
  * 层名用绝对 y，世界高度变化后旧存档仍对应原来的高度。
  *
- * <p>格式（zlib 压缩的二进制，版本 1；v2 起带方块调色板）：
+ * <p>格式（zlib 压缩的二进制，版本 1；v2 起带方块调色板；v3 起带群系调色板；
+ * v5 起带表面栈调色板；v6 起表面栈每层带旋转；v8 起旋转按 22.5° 一档、矩形改存
+ * 旋转前的本地矩形）：
  * <pre>
  *   int  magic "MPT1"
  *   u8   version
@@ -51,8 +53,32 @@ import java.util.zip.InflaterInputStream;
  *   u16  blockPaletteSize
  *   UTF[] blockPalette
  *   short[] blockIndex (size*size)
+ *   -- v3 起 --
+ *   u16  biomePaletteSize
+ *   UTF[] biomePalette
+ *   short[] biomeIndex (size*size, -1 = 未记录)
+ *   -- v5 起 --
+ *   u16  stackPaletteSize
+ *   per stack:
+ *     u8   layerCount
+ *     per layer:
+ *       u8   u0, v0, u1, v1                    (0..64，v7 起；v6 及更早是 0..16)
+ *       u8   x0, z0, x1, z1                    (0..16，旋转前的本地矩形)
+ *       UTF  sprite                            (空 = 平色层，UV 全 0)
+ *       UTF  blockId
+ *       short y
+ *       int   argb
+ *       u8    alpha, count
+ *       u8    rotation                         (v6 起；v8 起 0..15 = 22.5° 顺时针，
+ *                                               v6/v7 是 0..3 = 90°)
+ *   u8   hasStackIndex (1 = 紧跟 short[] stackIndex，0 = 整块没有叠层)
+ *   short[] stackIndex (size*size, -1 = 该像素没有叠层)
  * </pre>
- * v1 文件仍可读：方块信息为空，hover 只能靠实时区块。
+ * v1–v5 文件仍可读：缺的通道为空（方块信息 / 群系信息 / 叠层信息），v5 的叠层
+ * 没有旋转字节，按 0 读。hover 回落实时区块或预测，渲染只画完整表面。
+ * v7 把叠层的 u/v 从十六等分改成六十四等分（床贴图是 64×64）；读 v6 及更早的
+ * 文件时乘 4 补到新格。v8 把旋转从 90° 档细到 22.5° 档、矩形改存旋转前的本地矩形；
+ * 读 v7 及更早的文件时把世界矩形折回本地矩形、档位乘 4。
  *
  * <p>分区从 128 改成 512 之前写下的旧文件不会作废：读盘时把 4×4 块旧文件
  * 折进对应的 512 分区（{@link #foldLegacy}），写回后旧文件改名 {@code .mpt.old} 退役。
@@ -64,7 +90,9 @@ public final class MapStorage {
 
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final int MAGIC = 0x4D505431; // "MPT1"
-    private static final int VERSION = 2;
+    private static final int VERSION = 8;
+    /** 单列最多存多少层；采集侧不会超过这个数，超了说明文件坏了。 */
+    private static final int MAX_STACK_LAYERS = 16;
     /** 旧版（512 之前）的分区边长：一块 512 分区 = 4×4 块旧文件。 */
     private static final int LEGACY_SIZE = 128;
     private static final int LEGACY_PER_SIDE = MapTile.SIZE / LEGACY_SIZE;
@@ -277,7 +305,9 @@ public final class MapStorage {
                 return;
             }
             MapTile remote = MapTile.fromData(raw.argb(), raw.height(), raw.fluid(), raw.known(),
-                    raw.blockIndex(), raw.blockPalette());
+                    raw.blockIndex(), raw.blockPalette(),
+                    raw.stackIndex(), raw.stackPalette(),
+                    raw.biomeIndex(), raw.biomePalette());
             // 下载在途期间玩家可能又采了同一块：磁盘上的本地像素也要保住
             MapTile existing = readDiskTile(worldId, key);
             if (existing != null) {
@@ -547,7 +577,9 @@ public final class MapStorage {
             // 退世界时 MapWorld 立刻清空，异步任务不能再去问「当前世界」
             SaveJob job = new SaveJob(key, worldId, MapTile.fromData(
                     tile.copyArgb(), tile.copyHeight(), tile.copyFluid(), tile.copyKnown(),
-                    tile.copyBlockIndex(), tile.copyBlockPalette()));
+                    tile.copyBlockIndex(), tile.copyBlockPalette(),
+                    tile.copyStackIndex(), tile.copyStackPalette(),
+                    tile.copyBiomeIndex(), tile.copyBiomePalette()));
             IO.execute(() -> write(job));
             submitted++;
         }
@@ -632,14 +664,32 @@ public final class MapStorage {
     /** 落盘并返回压缩后的字节：同一份字节既写本地，也用于上传共享。 */
     private static byte[] serialize(Path path, MapTile tile) throws IOException {
         byte[] bytes = encode(tile);
-        Files.createDirectories(path.getParent());
-        try (OutputStream file = new BufferedOutputStream(Files.newOutputStream(path))) {
-            file.write(bytes);
+        Path parent = path.getParent();
+        Files.createDirectories(parent);
+        // 直接写目标文件时被强退/崩溃会留下半截 zlib（读端只能一直报 truncated）；
+        // 先写同目录临时文件再原子替换，目标要么是旧文件要么是完整新文件。
+        Path temp = Files.createTempFile(parent, "tile-", ".tmp");
+        try {
+            try (OutputStream file = new BufferedOutputStream(Files.newOutputStream(temp))) {
+                file.write(bytes);
+            }
+            moveReplace(temp, path);
+        } finally {
+            Files.deleteIfExists(temp);
         }
         return bytes;
     }
 
-    /** 压缩成 MPT1 字节（版本 2 格式，见类注释）。 */
+    /** 自检用：当前格式编码再解码，验证每个通道都能原样回来。 */
+    static MapTile roundtripForTest(MapTile tile) throws IOException {
+        RawTile raw = decodeTile(encode(tile));
+        return MapTile.fromData(raw.argb(), raw.height(), raw.fluid(), raw.known(),
+                raw.blockIndex(), raw.blockPalette(),
+                raw.stackIndex(), raw.stackPalette(),
+                raw.biomeIndex(), raw.biomePalette());
+    }
+
+    /** 压缩成 MPT1 字节（版本 5 格式，见类注释）。 */
     private static byte[] encode(MapTile tile) throws IOException {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream(3 * 1024 * 1024);
         try (DataOutputStream out = new DataOutputStream(new DeflaterOutputStream(buffer))) {
@@ -662,6 +712,43 @@ public final class MapStorage {
             for (short index : tile.copyBlockIndex()) {
                 out.writeShort(index);
             }
+            java.util.List<String> biomes = tile.copyBiomePalette();
+            out.writeShort(biomes.size());
+            for (String biomeId : biomes) {
+                out.writeUTF(biomeId);
+            }
+            for (short index : tile.copyBiomeIndex()) {
+                out.writeShort(index);
+            }
+            java.util.List<java.util.List<MapStackLayer>> stacks = tile.copyStackPalette();
+            out.writeShort(stacks.size());
+            for (java.util.List<MapStackLayer> layers : stacks) {
+                out.writeByte(layers.size());
+                for (MapStackLayer layer : layers) {
+                    out.writeByte(layer.u0());
+                    out.writeByte(layer.v0());
+                    out.writeByte(layer.u1());
+                    out.writeByte(layer.v1());
+                    out.writeByte(layer.x0());
+                    out.writeByte(layer.z0());
+                    out.writeByte(layer.x1());
+                    out.writeByte(layer.z1());
+                    out.writeUTF(layer.sprite());
+                    out.writeUTF(layer.blockId());
+                    out.writeShort(layer.y());
+                    out.writeInt(layer.argb());
+                    out.writeByte(layer.alpha());
+                    out.writeByte(layer.count());
+                    out.writeByte(layer.rotation());
+                }
+            }
+            short[] stackIndex = tile.copyStackIndex();
+            out.writeByte(stackIndex == null ? 0 : 1);
+            if (stackIndex != null) {
+                for (short index : stackIndex) {
+                    out.writeShort(index);
+                }
+            }
         }
         return buffer.toByteArray();
     }
@@ -672,8 +759,18 @@ public final class MapStorage {
             Minecraft.getInstance().execute(() -> LOADING.remove(key));
             return;
         }
-        MapTile disk = readDiskTile(worldId, key);
+        boolean[] corrupt = new boolean[1];
+        MapTile disk = readDiskTile(worldId, key, corrupt);
         if (disk == null) {
+            if (corrupt[0]) {
+                // 解不出来的文件永远不会自己变好；留在索引里会让渲染每帧重排一次读。
+                // 挪到旁边留证据，并从索引摘掉：之后由服务端分发或重新采集补齐。
+                Path path = path(worldId, key);
+                if (Files.isRegularFile(path)) {
+                    quarantine(path);
+                }
+                EXISTING.remove(key);
+            }
             Minecraft.getInstance().execute(() -> LOADING.remove(key));
             return;
         }
@@ -750,7 +847,95 @@ public final class MapStorage {
                 blockIndex[i] = in.readShort();
             }
         }
-        return new RawTile(size, argb, height, fluid, known, blockIndex, blockPalette);
+        java.util.List<String> biomePalette = new java.util.ArrayList<>();
+        short[] biomeIndex = new short[pixels];
+        java.util.Arrays.fill(biomeIndex, (short) -1);
+        if (version >= 3) {
+            int paletteSize = in.readUnsignedShort();
+            for (int i = 0; i < paletteSize; i++) {
+                biomePalette.add(in.readUTF());
+            }
+            for (int i = 0; i < pixels; i++) {
+                biomeIndex[i] = in.readShort();
+            }
+        }
+        java.util.List<java.util.List<MapStackLayer>> stackPalette = new java.util.ArrayList<>();
+        short[] stackIndex = null;
+        if (version >= 5) {
+            int paletteSize = in.readUnsignedShort();
+            for (int i = 0; i < paletteSize; i++) {
+                int layerCount = in.readUnsignedByte();
+                if (layerCount > MAX_STACK_LAYERS) {
+                    throw new IOException("bad stack layer count " + layerCount);
+                }
+                java.util.List<MapStackLayer> layers = new java.util.ArrayList<>(layerCount);
+                for (int j = 0; j < layerCount; j++) {
+                    int u0 = in.readUnsignedByte();
+                    int v0 = in.readUnsignedByte();
+                    int u1 = in.readUnsignedByte();
+                    int v1 = in.readUnsignedByte();
+                    int x0 = in.readUnsignedByte();
+                    int z0 = in.readUnsignedByte();
+                    int x1 = in.readUnsignedByte();
+                    int z1 = in.readUnsignedByte();
+                    if (version < 7) {
+                        // v6 的贴图子矩形是十六等分，折到新的六十四等分
+                        u0 *= 4;
+                        v0 *= 4;
+                        u1 *= 4;
+                        v1 *= 4;
+                    }
+                    if (x1 > 16 || z1 > 16 || x1 <= x0 || z1 <= z0) {
+                        throw new IOException("bad stack rect");
+                    }
+                    String sprite = in.readUTF();
+                    String blockId = in.readUTF();
+                    // 平色层（v8 起空 sprite）没有贴图，UV 全 0；其余层必须是非空子矩形
+                    if (!sprite.isEmpty()
+                            && (u1 > MapStackLayer.UV_UNITS || v1 > MapStackLayer.UV_UNITS
+                            || u1 <= u0 || v1 <= v0)) {
+                        throw new IOException("bad stack uv");
+                    }
+                    short y = in.readShort();
+                    int argbValue = in.readInt();
+                    int alpha = in.readUnsignedByte();
+                    int count = in.readUnsignedByte();
+                    if (count < 1) {
+                        throw new IOException("bad stack layer count " + count);
+                    }
+                    // v5 没有旋转字节：老瓦片按 0 读，下一轮重采就补上
+                    int rotation = version >= 6 ? in.readUnsignedByte() : 0;
+                    if (version < 8) {
+                        // v6/v7 存的是世界矩形 + 90° 档位：折回本地矩形，档位细到 22.5°
+                        int[] local = MapStackLayer.unrotatedRect(rotation, x0, z0, x1, z1);
+                        x0 = local[0];
+                        z0 = local[1];
+                        x1 = local[2];
+                        z1 = local[3];
+                        rotation *= 4;
+                    }
+                    if (rotation > 15) {
+                        throw new IOException("bad stack rotation " + rotation);
+                    }
+                    layers.add(new MapStackLayer(sprite, u0, v0, u1, v1, x0, z0, x1, z1,
+                            blockId, y, argbValue, alpha, count, rotation));
+                }
+                stackPalette.add(java.util.List.copyOf(layers));
+            }
+            if (in.readUnsignedByte() != 0) {
+                stackIndex = new short[pixels];
+                for (int i = 0; i < pixels; i++) {
+                    stackIndex[i] = in.readShort();
+                }
+                for (short index : stackIndex) {
+                    if (index < -1 || index >= stackPalette.size()) {
+                        throw new IOException("bad stack index " + index);
+                    }
+                }
+            }
+        }
+        return new RawTile(size, argb, height, fluid, known, blockIndex, blockPalette,
+                stackIndex, stackPalette, biomeIndex, biomePalette);
     }
 
     private static void moveReplace(Path from, Path to) throws IOException {
@@ -762,12 +947,31 @@ public final class MapStorage {
         }
     }
 
+    /** 坏瓦片挪到同目录 {@code <名字>.corrupt} 留证据；已有旧证据直接覆盖。 */
+    private static void quarantine(Path path) {
+        Path target = path.resolveSibling(path.getFileName() + ".corrupt");
+        try {
+            moveReplace(path, target);
+            LOGGER.warn("[MapPack] quarantined corrupt tile {} -> {}", path, target);
+        } catch (IOException ex) {
+            LOGGER.warn("[MapPack] quarantine {} failed: {}", path, ex.getMessage());
+        }
+    }
+
     /**
      * 读磁盘上这块 512 分区的全部数据：新 512 文件 + 四象限的旧 128 文件（已知像素互补）。
      *
      * @return 磁盘上什么都没有时返回 {@code null}
      */
     private static MapTile readDiskTile(UUID worldId, TileKey key) {
+        return readDiskTile(worldId, key, null);
+    }
+
+    /**
+     * @param corrupt 非空时，任一参与读取的文件解不出来就置 {@code true}
+     *                （调用方据此判断「没数据」是缺文件还是文件坏了）
+     */
+    private static MapTile readDiskTile(UUID worldId, TileKey key, boolean[] corrupt) {
         MapTile tile = null;
         Path path = path(worldId, key);
         if (Files.isRegularFile(path)) {
@@ -775,9 +979,14 @@ public final class MapStorage {
                 RawTile raw = readTile(path);
                 if (raw.size() == MapTile.SIZE) {
                     tile = MapTile.fromData(raw.argb(), raw.height(), raw.fluid(), raw.known(),
-                            raw.blockIndex(), raw.blockPalette());
+                            raw.blockIndex(), raw.blockPalette(),
+                            raw.stackIndex(), raw.stackPalette(),
+                            raw.biomeIndex(), raw.biomePalette());
                 }
             } catch (IOException | RuntimeException ex) {
+                if (corrupt != null) {
+                    corrupt[0] = true;
+                }
                 LOGGER.warn("[MapPack] read {} failed: {}", path, ex.getMessage());
             }
         }
@@ -795,6 +1004,9 @@ public final class MapStorage {
                     raw = readTile(legacy);
                 } catch (IOException | RuntimeException ex) {
                     // 单块旧文件读不动不影响其它象限
+                    if (corrupt != null) {
+                        corrupt[0] = true;
+                    }
                     LOGGER.warn("[MapPack] read {} failed: {}", legacy, ex.getMessage());
                     continue;
                 }
@@ -823,8 +1035,16 @@ public final class MapStorage {
                 int palette = raw.blockIndex()[index];
                 String blockId = palette >= 0 && palette < raw.blockPalette().size()
                         ? raw.blockPalette().get(palette) : null;
+                int biomePalette = raw.biomeIndex()[index];
+                String biomeId = biomePalette >= 0 && biomePalette < raw.biomePalette().size()
+                        ? raw.biomePalette().get(biomePalette) : null;
+                short[] stackIndex = raw.stackIndex();
+                int stackPalette = stackIndex == null ? -1 : stackIndex[index];
+                java.util.List<MapStackLayer> stack = stackPalette >= 0
+                        && stackPalette < raw.stackPalette().size()
+                        ? raw.stackPalette().get(stackPalette) : java.util.List.of();
                 target.set(targetX, targetZ, raw.argb()[index], raw.height()[index],
-                        raw.fluid()[index], blockId);
+                        raw.fluid()[index], blockId, stack, biomeId);
             }
         }
     }
@@ -964,7 +1184,9 @@ public final class MapStorage {
 
     /** 读出来的原始像素（可能是 512 也可能是旧的 128），交给调用方决定怎么合。 */
     private record RawTile(int size, int[] argb, short[] height, byte[] fluid, boolean[] known,
-                           short[] blockIndex, java.util.List<String> blockPalette) {
+                           short[] blockIndex, java.util.List<String> blockPalette,
+                           short[] stackIndex, java.util.List<java.util.List<MapStackLayer>> stackPalette,
+                           short[] biomeIndex, java.util.List<String> biomePalette) {
     }
 
     private record TileKey(ResourceLocation dimension, String layer, int x, int z) {

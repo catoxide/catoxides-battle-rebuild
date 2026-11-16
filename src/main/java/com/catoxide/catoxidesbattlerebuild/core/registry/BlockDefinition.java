@@ -42,7 +42,7 @@ import java.util.Map;
  *
  * <p>blockstate 文件（variants/multipart → 模型映射）<b>不在 JSON 定义里</b>：
  * 它由编辑器「方块形态」页签生成并随原版导出写到
- * {@code assets/<ns>/blockstate/<id>.json}（数据包/资源范畴），
+ * {@code assets/<ns>/blockstates/<id>.json}（复数：1.21.1 客户端只读该目录），
  * 游戏侧状态空间则由本定义的 {@code properties} 在代码侧完整构建 —— 两边必须一致，
  * 编辑器的预检会校验。
  */

@@ -94,6 +94,18 @@ public final class MapStore {
         return tile.isKnown(localX, localZ) ? tile.blockAt(localX, localZ) : null;
     }
 
+    /** 该像素采集时记下的群系 ID；未采集或旧存档（v1/v2）返回 null。 */
+    public static String sampleBiome(ResourceLocation dimension, String layer,
+                                     int blockX, int blockZ) {
+        MapTile tile = get(dimension, layer, MapTile.tileCoord(blockX), MapTile.tileCoord(blockZ));
+        if (tile == null) {
+            return null;
+        }
+        int localX = MapTile.localCoord(blockX);
+        int localZ = MapTile.localCoord(blockZ);
+        return tile.isKnown(localX, localZ) ? tile.biomeAt(localX, localZ) : null;
+    }
+
     /** 正数水深、负数岩浆深度、0 非流体、{@link Integer#MIN_VALUE} 未采集。 */
     public static int sampleFluid(ResourceLocation dimension, String layer,
                                   int blockX, int blockZ) {
@@ -125,21 +137,55 @@ public final class MapStore {
                 continue;
             }
             return new StackSample(tile.colorAt(localX, localZ), tile.heightAt(localX, localZ),
-                    tile.fluidAt(localX, localZ), tile.blockAt(localX, localZ));
+                    tile.fluidAt(localX, localZ), tile.blockAt(localX, localZ),
+                    tile.stackAt(localX, localZ), tile.biomeAt(localX, localZ));
         }
         return UNKNOWN;
     }
 
-    /** 一个像素在叠层里看到的方块；{@link #color()} 为 0 表示整条栈都没采集。 */
-    public record StackSample(int color, int height, int fluid, String block) {
+    /**
+     * 一个像素在叠层里看到的方块与群系；{@link #color()} 为 0 表示整条栈都没采集。
+     *
+     * <p>{@link #block()} 是终点方块（最上面那块顶面完整且不透明的方块）；
+     * {@link #stack()} 是从上看下去的表面栈「上 → 下」（v5 起，旧存档为空），
+     * 最后一层是终点，前面的都是半透明/不完整的叠层。
+     * {@link #biome()} 是采集时记下的群系 ID（v3 起），区块卸载后仍可用；
+     * 旧存档或没记到时为 {@code null}。
+     */
+    public record StackSample(int color, int height, int fluid, String block,
+                              List<MapStackLayer> stack, String biome) {
 
         public boolean known() {
             return color != 0;
         }
+
+        /**
+         * 悬停读数：指针落在格内 {@code localX/localZ}（0..16）时看到的方块。
+         *
+         * <p>表面栈是「上 → 下」，从上往下找第一层覆盖该点的层 —— 一格里有半块形状
+         * 时（告示牌、生物头、火把、箱子边缘），指在形状上就报形状本身，指在露出的
+         * 地方就报下一层。没有层覆盖（空栈 / 残缺旧数据）回落栈顶，信息条不空。
+         */
+        public String blockAt(double localX, double localZ) {
+            for (MapStackLayer layer : stack) {
+                if (layer.covers(localX, localZ)) {
+                    return layer.blockId();
+                }
+            }
+            return visibleBlock();
+        }
+
+        /**
+         * 表面栈最上面那一层（从上看最先看到的东西），{@link #block()} 则是
+         * 「顶面占满整格且不透明」的终点方块。旧瓦片（v5 前没有表面栈）回落终点。
+         */
+        public String visibleBlock() {
+            return stack.isEmpty() ? block : stack.get(0).blockId();
+        }
     }
 
     private static final StackSample UNKNOWN =
-            new StackSample(0, Integer.MIN_VALUE, Integer.MIN_VALUE, null);
+            new StackSample(0, Integer.MIN_VALUE, Integer.MIN_VALUE, null, List.of(), null);
 
     /**
      * 视口内、内存中已存在的瓦片。

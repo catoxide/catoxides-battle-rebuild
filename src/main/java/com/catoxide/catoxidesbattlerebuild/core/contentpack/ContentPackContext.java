@@ -32,9 +32,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -611,11 +613,14 @@ public final class ContentPackContext {
         }
         List<ItemDefinition> items = new ArrayList<>();
         List<BlockDefinition> blocks = new ArrayList<>();
+        // jar 条目集合供注册器做客户端资源齐全检查（blockstates / models/item 是否存在）
+        Set<String> jarEntries = new HashSet<>();
         try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(loaded.get().jarFile())) {
             java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zip.entries();
             while (entries.hasMoreElements()) {
                 java.util.zip.ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
+                jarEntries.add(name);
                 String kind = null;
                 if (name.startsWith("items/") && name.endsWith(".json")
                         && name.indexOf('/', "items/".length()) == -1) {
@@ -645,7 +650,7 @@ public final class ContentPackContext {
         LogManager.serverInfo("ContentPackContext",
                 "Scanned pack jar %s for items/blocks: items=%d blocks=%d",
                 loaded.get().sourceJar(), items.size(), blocks.size());
-        return BatchContentRegistrar.registerAll(this, items, blocks);
+        return BatchContentRegistrar.registerAll(this, items, blocks, jarEntries);
     }
 
     // ==================== 跨包能力（Capability）====================

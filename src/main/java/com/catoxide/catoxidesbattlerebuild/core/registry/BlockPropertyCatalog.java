@@ -170,7 +170,8 @@ public final class BlockPropertyCatalog {
                 if (!spec.hasValues() || spec.values().size() < 2) {
                     problems.add("参数 '" + spec.name() + "' 需要 ≥2 个取值（原版 StateDefinition 拒绝 ≤1 取值的属性）");
                 }
-                if (spec.values().contains(null)) {
+                // values 来自 List.copyOf（不可变），ListN.contains(null) 会抛 NPE，不能用 contains
+                if (spec.values().stream().anyMatch(java.util.Objects::isNull)) {
                     problems.add("参数 '" + spec.name() + "' 含空取值");
                 }
             }

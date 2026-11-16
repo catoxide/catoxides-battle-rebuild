@@ -150,6 +150,17 @@ tasks.matching { it.name.startsWith('writeMinecraftClasspath') }.configureEach {
     inputs.property('gradleUserHome', gradle.gradleUserHomeDir.absolutePath)
 }
 
+// 同一缺陷的另一处：listLibraries / listTransformLibraries 的产物 libraries.txt 里写的是
+// 依赖 jar 的**绝对路径**，而 NeoGradle 内部缓存（ng_execute）的 key 只含 task.getClass()
+// 与 inputs（文件名+内容哈希，不含目录），故缓存目录搬迁后仍会恢复旧盘符路径。
+// 表现：transformSource 的 JST classpath 指向 C:\Users\catoxide\.gradle\...（不存在）→
+// NoSuchFileException；且 collect 阶段的命中 + list 阶段的未命中会在 ListLibraries.createList
+// 触发 NPE（CachedExecutionBuilder.executeAll 只在 miss 时向下传 state）。
+// 2026-11-11 实测：删掉那条缓存条目后重建，路径全部回到 D:\.gradle\caches\modules-2。
+tasks.matching { it.name in ['neoFormListLibraries', 'neoFormListTransformLibraries'] }.configureEach {
+    inputs.property('gradleUserHome', gradle.gradleUserHomeDir.absolutePath)
+}
+
 // NeoGradle 7.1.26 缺陷修正：DownloadAssets.assetIndex 约定值恒为 "asset-index"，
 // 而版本 JSON 里资源索引的真实 id 是另一个值（1.21.1 → "17"，URL 即 …/17.json）。
 // 离线模式下 indexes/asset-index.json 不存在 → 任务直接失败。

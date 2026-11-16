@@ -1,5 +1,5 @@
 {
-  "key.hudlayoutpack.open_editor": "HUD 布局编辑",
+  "key.hudlayoutpack.open_editor": "布局编辑（HUD / 容器）",
   "key.categories.hudlayoutpack": "HUD 布局",
 
   "catoxidesbattlerebuild.configuration.section.hud.layout.pack.client.toml": "HUD 布局",
@@ -26,5 +26,9 @@
   "hudlayout.axis.free": "自由",
   "hudlayout.axis.horizontal": "仅左右",
   "hudlayout.axis.vertical": "仅上下",
-  "hudlayout.panel.restart_hint": "橙色：已写入，但要重载或重启才生效。"
+  "hudlayout.panel.restart_hint": "橙色：已写入，但要重载或重启才生效。",
+
+  "hudlayout.ui_editor.title": "容器布局 %s",
+  "hudlayout.ui_editor.hint": "拖动移动 · 网格 %spx · 边/中线吸 2px · F8/ESC 保存退出 · R 复位",
+  "hudlayout.ui_editor.hint.effects": "右键橙色框：效果列贴顶 / 贴底"
 }

@@ -1,0 +1,7 @@
+{
+  "selector": "minecraft:barrel",
+  "priority": 1100,
+  "properties": {
+    "sable:mass": 0.6
+  }
+}

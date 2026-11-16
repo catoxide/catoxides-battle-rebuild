@@ -48,6 +48,7 @@ public final class SableMapSelfTest {
                 pose(100, 64, -200, 0, s, 0, c, 2, 3, 4, 5, 6, 7),
                 new Vec3(8.5, 9.25, 10.75), null);
         ok &= projectionCheck(service);
+        ok &= columnCheck(service);
         ok &= topDownCheck();
         ok &= viewportCheck();
         ok &= boundsCheck();
@@ -85,6 +86,48 @@ public final class SableMapSelfTest {
                 && !bounds.contains(20.0, 81.01, 30.0);
         if (!ok) {
             LogManager.clientError(TAG, "SubLevelBounds containment failed");
+        }
+        return ok;
+    }
+
+    /** 世界竖直列 ↔ 船体包围盒求交：平移、旋转、倾斜都要命中同一条世界竖直列。 */
+    private static boolean columnCheck(ISubLevelService service) {
+        boolean ok = true;
+        SubLevelBounds bounds = new SubLevelBounds(0, 0, 0, 9, 4, 9);
+
+        SubLevelInfo flat = new SubLevelInfo(UUID.randomUUID(), "flat",
+                pose(100, 64, -50, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0), bounds);
+        Vec3 flatTop = SubLevelColumns.topPoint(service, flat, 105.5, -45.5);
+        ok &= flatTop != null && near(flatTop.x, 5.5)
+                && near(flatTop.y, 5.0) && near(flatTop.z, 4.5);
+        ok &= SubLevelColumns.topPoint(service, flat, 120.5, -45.5) == null;
+
+        // 绕 Y +90°：局部中心 (5,0.5,5) 转到世界 (5,0.5,-5)，该世界列仍应命中局部中心列
+        double s = Math.sin(Math.PI / 4.0);
+        double c = Math.cos(Math.PI / 4.0);
+        SubLevelInfo yaw90 = new SubLevelInfo(UUID.randomUUID(), "yaw90",
+                pose(0, 0, 0, 0, s, 0, c, 1, 1, 1, 0, 0, 0),
+                new SubLevelBounds(0, 0, 0, 9, 0, 9));
+        Vec3 yawTop = SubLevelColumns.topPoint(service, yaw90, 5.0, -5.0);
+        ok &= yawTop != null && near(yawTop.x, 5.0)
+                && near(yawTop.y, 1.0) && near(yawTop.z, 5.0);
+
+        // 绕 Z 侧倾 30°：沿「局部中心的世界竖直列」求交，落点必须仍在该列上
+        double tilt = Math.toRadians(30.0);
+        SubLevelInfo tilted = new SubLevelInfo(UUID.randomUUID(), "tilted",
+                pose(100, 64, -50, 0, 0, Math.sin(tilt / 2.0), Math.cos(tilt / 2.0),
+                        1, 1, 1, 5, 0, 5), bounds);
+        Vec3 column = service.localToWorld(tilted, new Vec3(5.5, 2.5, 4.5));
+        Vec3 tiltedTop = SubLevelColumns.topPoint(service, tilted, column.x, column.z);
+        ok &= tiltedTop != null;
+        if (tiltedTop != null) {
+            Vec3 world = service.localToWorld(tilted, tiltedTop);
+            ok &= near(world.x, column.x) && near(world.z, column.z)
+                    && world.y > 60.0 && world.y < 71.0;
+        }
+
+        if (!ok) {
+            LogManager.clientError(TAG, "SubLevelColumns intersection failed");
         }
         return ok;
     }

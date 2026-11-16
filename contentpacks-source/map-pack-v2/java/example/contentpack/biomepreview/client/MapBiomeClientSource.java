@@ -80,7 +80,9 @@ public final class MapBiomeClientSource implements IMapBiomeSource {
         if (serverRadius > 0) {
             radius = Math.min(radius, serverRadius);
         }
-        int step = PreviewSettings.stepForRadius(radius);
+        // 客户端只报下限，步长由服务端按 resolutionTier / maxCellsPerAxis 抬高；
+        // 收到 serverStep 后跟上，避免无限重发
+        int step = BiomeRegionGrid.MIN_STEP;
         if (serverStep > 0) {
             step = Math.max(step, serverStep);
         }

@@ -9,6 +9,7 @@ import example.contentpack.mapv2.view.MapZoom;
 import example.contentpack.mapv2.view.UiScale;
 import org.slf4j.Logger;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -87,6 +88,61 @@ public final class MapV2SelfTest {
             failed++;
         }
         if (run("reveal-range", MapV2SelfTest::testRevealRange)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("tile-biome", MapV2SelfTest::testTileBiome)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("tile-stack", MapV2SelfTest::testTileStack)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("hover-block", MapV2SelfTest::testHoverBlock)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("face-color", MapV2SelfTest::testFaceColor)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("flat-cover", MapV2SelfTest::testFlatCover)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("surface-stack-rules", MapV2SelfTest::testSurfaceStackRules)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("surface-up-face", MapV2SelfTest::testSurfaceUpFace)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("waterlogged-split", MapV2SelfTest::testWaterloggedSplit)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("fluid-surfaces", MapV2SelfTest::testFluidSurfaces)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("bed-surfaces", MapV2SelfTest::testBedSurfaces)) {
+            passed++;
+        } else {
+            failed++;
+        }
+        if (run("entity-surfaces", MapV2SelfTest::testEntitySurfaces)) {
             passed++;
         } else {
             failed++;
@@ -349,8 +405,10 @@ public final class MapV2SelfTest {
      * 3×3 节点覆盖任意 2×2 spacing 的方形（格心到最近节点距离 ≤ spacing/√2）。
      */
     private static void testBiomeRegionGrid() {
-        require(BiomeRegionGrid.stepForRadius(2048, 129) == 32, "default profile is 32 blocks/cell");
-        require(BiomeRegionGrid.sizeForRadius(2048, 32) == 129, "default profile is 129 cells/axis");
+        require(BiomeRegionGrid.stepForRadius(1024, 513) == 4, "default profile is 4 blocks/cell");
+        require(BiomeRegionGrid.sizeForRadius(1024, 4) == 513, "default profile is 513 cells/axis");
+        require(BiomeRegionGrid.stepForRadius(2048, 513) == 8, "default budget at 2048 radius is 8 blocks/cell");
+        require(BiomeRegionGrid.stepForRadius(2048, 129) == 32, "legacy profile is 32 blocks/cell");
         require(BiomeRegionGrid.stepForRadius(256, 129) == 4, "small radius clamps to MIN_STEP");
         require(BiomeRegionGrid.stepForRadius(8192, 129) == 128, "large radius doubles the step");
         require(BiomeRegionGrid.stepForRadius(2048, 33) == 128, "tight budget widens the step");
@@ -464,6 +522,362 @@ public final class MapV2SelfTest {
     /** 探明范围：网格位序、半径圆、负坐标、增量幂等、结构单元对齐。 */
     private static void testRevealRange() {
         example.contentpack.mapv2.reveal.RevealSelfTest.run();
+    }
+
+    /**
+     * 群系写进瓦片：缺省为无记录；只有群系变化也要算改动；
+     * 补洞要连群系一起搬；磁盘格式往返后群系原样回来。
+     */
+    private static void testTileBiome() {
+        MapTile tile = new MapTile();
+        require(tile.biomeAt(0, 0) == null, "未采集像素没有群系");
+        tile.set(0, 0, 0xFF00FF00, 70, 0, "minecraft:grass_block", null, "minecraft:plains");
+        tile.set(1, 0, 0xFF808080, 64, 0, "minecraft:stone", null, null);
+        require("minecraft:plains".equals(tile.biomeAt(0, 0)), "群系应写进像素");
+        require(tile.biomeAt(1, 0) == null, "取不到群系时保持无记录");
+        require(!tile.set(0, 0, 0xFF00FF00, 70, 0, "minecraft:grass_block", null,
+                        "minecraft:plains"),
+                "完全相同的重写不算改动");
+        require(tile.set(0, 0, 0xFF00FF00, 70, 0, "minecraft:grass_block", null,
+                        "minecraft:desert"),
+                "只有群系变化也必须算改动（否则旧 v2 瓦片不会重存）");
+
+        MapTile copy = roundtrip(tile);
+        require("minecraft:desert".equals(copy.biomeAt(0, 0)), "磁盘往返后群系应原样回来");
+        require(copy.biomeAt(1, 0) == null, "无群系像素往返后仍无记录");
+        require("minecraft:grass_block".equals(copy.blockAt(0, 0)), "方块通道不受群系影响");
+
+        MapTile filled = new MapTile();
+        require(filled.fillUnknownFrom(tile) == 2, "两块已知像素都应补进来");
+        require("minecraft:desert".equals(filled.biomeAt(0, 0)), "补洞要连群系一起搬");
+    }
+
+    /**
+     * 表面栈通道：缺省为空；只有栈变化也算改动；往返和补洞都不丢；
+     * 整块没有栈时磁盘上不写下标数组。
+     */
+    private static void testTileStack() {
+        MapStackLayer glass = new MapStackLayer("minecraft:block/glass",
+                0, 0, 64, 64, 0, 0, 16, 16,
+                "minecraft:glass", 71, 0xFFC0D8E0, 64, 2, 1);
+        MapStackLayer grass = new MapStackLayer("minecraft:block/grass_block_top",
+                0, 0, 64, 64, 0, 0, 16, 16,
+                "minecraft:grass_block", 70, 0xFF00FF00, 255, 1, 0);
+        List<MapStackLayer> stack = List.of(glass, grass);
+
+        MapTile tile = new MapTile();
+        require(tile.stackAt(0, 0).isEmpty(), "未采集像素没有表面栈");
+        require(tile.copyStackIndex() == null, "没有栈时下标数组应保持不分配");
+        tile.set(0, 0, 0xFF00FF00, 71, 0, "minecraft:grass_block", stack, null);
+        tile.set(1, 0, 0xFF808080, 64, 0, "minecraft:stone", List.of(), null);
+        require(tile.stackAt(0, 0).equals(stack), "表面栈应写进像素");
+        require(tile.stackAt(1, 0).isEmpty(), "没栈的像素保持空");
+        require("minecraft:grass_block".equals(tile.blockAt(0, 0)), "栈不影响终点方块");
+        require(tile.heightAt(0, 0) == 71, "高度仍按这一列最高的非空气方块");
+        require(!tile.set(0, 0, 0xFF00FF00, 71, 0, "minecraft:grass_block", stack, null),
+                "完全相同的重写不算改动");
+        require(tile.set(0, 0, 0xFF00FF00, 71, 0, "minecraft:grass_block", List.of(), null),
+                "只有表面栈变化也必须算改动");
+        tile.set(0, 0, 0xFF00FF00, 71, 0, "minecraft:grass_block", stack, null);
+
+        MapTile copy = roundtrip(tile);
+        require(copy.stackAt(0, 0).equals(stack), "磁盘往返后表面栈应原样回来");
+        require(copy.stackAt(1, 0).isEmpty(), "空栈像素往返后仍为空");
+        require(copy.copyStackIndex() != null, "有栈的瓦片应写出下标数组");
+
+        MapTile filled = new MapTile();
+        require(filled.fillUnknownFrom(tile) == 2, "两块已知像素都应补进来");
+        require(filled.stackAt(0, 0).equals(stack), "补洞要连表面栈一起搬");
+
+        MapTile plain = new MapTile();
+        plain.set(0, 0, 0xFF808080, 64, 0, "minecraft:stone", null, null);
+        require(roundtrip(plain).copyStackIndex() == null,
+                "整块没有栈时下标数组应保持不分配");
+
+        // 床贴图是整张 64×64：UV 必须能落到像素（6..22 / 28..44），十六等分做不到
+        require(MapStackLayer.UV_UNITS == 64, "贴图子矩形按六十四等分存");
+        MapStackLayer foot = new MapStackLayer("minecraft:entity/bed/red",
+                6, 28, 22, 44, 0, 0, 16, 16, "minecraft:red_bed", 70, 0xFF8A2820, 255, 1, 2);
+        MapTile bedTile = new MapTile();
+        bedTile.set(2, 2, 0xFF8A2820, 70, 0, "minecraft:red_bed", List.of(foot), null);
+        MapStackLayer stored = roundtrip(bedTile).stackAt(2, 2).get(0);
+        require(stored.u0() == 6 && stored.v0() == 28
+                        && stored.u1() == 22 && stored.v1() == 44,
+                "床的 64×64 贴图子矩形往返后应逐像素不变: " + stored);
+
+        // v8：斜放告示牌存 0..15 档；平色层（生物头）没有贴图、UV 全 0
+        MapStackLayer diagonal = new MapStackLayer("minecraft:entity/signs/oak",
+                2, 0, 26, 4, 0, 7, 16, 9, "minecraft:oak_sign", 71, 0xFFB08A50, 255, 1, 2);
+        MapStackLayer skull = new MapStackLayer("", 0, 0, 0, 0, 4, 4, 12, 12,
+                "minecraft:skeleton_skull", 72, 0xFFB4B4B4, 255, 1, 0);
+        MapTile mixed = new MapTile();
+        mixed.set(3, 3, 0xFFB08A50, 72, 0, "minecraft:oak_sign",
+                List.of(diagonal, skull), null);
+        List<MapStackLayer> back = roundtrip(mixed).stackAt(3, 3);
+        require(back.size() == 2, "两层的栈往返后层数不变: " + back);
+        require(back.get(0).rotation() == 2, "斜放告示牌的 22.5° 档位要原样保留");
+        require(back.get(1).sprite().isEmpty() && back.get(1).rotation() == 0,
+                "平色层没有贴图、UV 全 0，往返后保持: " + back.get(1));
+        require(back.get(1).x0() == 4 && back.get(1).z1() == 12,
+                "平色层投影往返后不变: " + back.get(1));
+    }
+
+    /**
+     * 悬停按像素命中表面栈：指针在格内哪个 1/16 就报哪一层 —— 半块形状上报形状本身，
+     * 露出的部分报下一层；旋转必须和渲染端的位姿互逆。旧瓦片的空栈回落终点方块。
+     */
+    private static void testHoverBlock() {
+        int[][] rects = {{1, 1, 15, 15}, {0, 7, 16, 9}, {0, 0, 4, 16}};
+        double[][] probes = {{1.5, 1.5}, {8.5, 8.5}, {14.5, 0.5}, {3.5, 12.5}, {0.5, 15.5}};
+        for (int rotation = 0; rotation < 16; rotation++) {
+            for (int[] rect : rects) {
+                MapStackLayer layer = new MapStackLayer("minecraft:block/stone",
+                        0, 0, 64, 64, rect[0], rect[1], rect[2], rect[3],
+                        "minecraft:stone", 70, 0xFF808080, 255, 1, rotation);
+                for (double[] probe : probes) {
+                    boolean inside = probe[0] >= rect[0] && probe[0] < rect[2]
+                            && probe[1] >= rect[1] && probe[1] < rect[3];
+                    double[] world = rotateLocal(probe[0], probe[1], rotation * 22.5);
+                    require(layer.covers(world[0], world[1]) == inside,
+                            "指针命中必须与渲染旋转互逆: r=" + rotation
+                                    + " rect=" + Arrays.toString(rect) + " probe="
+                                    + Arrays.toString(probe) + " world=" + Arrays.toString(world));
+                }
+            }
+        }
+        MapStackLayer torch = new MapStackLayer("minecraft:block/torch",
+                6, 6, 10, 10, 7, 7, 9, 9, "minecraft:torch", 71, 0xFFFFC000, 255, 1, 0);
+        MapStackLayer grass = new MapStackLayer("minecraft:block/grass_block_top",
+                0, 0, 64, 64, 0, 0, 16, 16, "minecraft:grass_block", 70, 0xFF6A9E3A, 255, 1, 0);
+        require(torch.coverage() < 0.5f, "火把只占一格中间 2×2");
+        MapStore.StackSample hovered = new MapStore.StackSample(1, 71, Integer.MIN_VALUE,
+                "minecraft:grass_block", List.of(torch, grass), null);
+        require("minecraft:torch".equals(hovered.blockAt(8, 8)),
+                "指在火把上要报火把: " + hovered.blockAt(8, 8));
+        require("minecraft:grass_block".equals(hovered.blockAt(2, 2)),
+                "指在露出的地方要报下一层: " + hovered.blockAt(2, 2));
+        require("minecraft:grass_block".equals(hovered.block()), "终点方块不变（平色口径）");
+        // 残缺旧数据没有任何层覆盖时回落栈顶，信息条不能空
+        MapStore.StackSample onlyTorch = new MapStore.StackSample(1, 71, Integer.MIN_VALUE,
+                "minecraft:grass_block", List.of(torch), null);
+        require("minecraft:torch".equals(onlyTorch.blockAt(2, 2)),
+                "没有层覆盖时回落栈顶: " + onlyTorch.blockAt(2, 2));
+        MapStore.StackSample legacy = new MapStore.StackSample(1, 70, Integer.MIN_VALUE,
+                "minecraft:grass_block", List.of(), null);
+        require("minecraft:grass_block".equals(legacy.blockAt(8, 8)),
+                "旧瓦片没有表面栈时回落终点方块: " + legacy.blockAt(8, 8));
+    }
+
+    /** 与渲染端同一套顺时针旋转：绕格心 (8,8) 在 (x,z) 平面转 degrees。 */
+    private static double[] rotateLocal(double x, double z, double degrees) {
+        double theta = Math.toRadians(degrees);
+        double cos = Math.cos(theta);
+        double sin = Math.sin(theta);
+        double dx = x - MapStackLayer.UNITS / 2.0;
+        double dz = z - MapStackLayer.UNITS / 2.0;
+        return new double[]{
+                MapStackLayer.UNITS / 2.0 + dx * cos - dz * sin,
+                MapStackLayer.UNITS / 2.0 + dx * sin + dz * cos};
+    }
+
+    /**
+     * 没有 tintindex 的面记录贴图均值：渲染端拿「记录色 ÷ 贴图均值」当顶点色，
+     * 记录对了贴图原样画出；记成 {@code MapColor.PLANT}（#007C00）会把粉色花簇乘成纯绿。
+     */
+    private static void testFaceColor() {
+        require(MapColors.spriteOwned(false, false),
+                "没有 JSON 覆盖、没有方块级 tint 的面取贴图均值");
+        require(!MapColors.spriteOwned(true, false), "JSON 覆盖优先于贴图");
+        require(!MapColors.spriteOwned(false, true), "群系 tint 优先于贴图");
+
+        // 1.21.1 pink_petals.png 顶面 UV [0,0,8,8] 的 alpha 加权均值 #F599CB
+        float[] neutral = MapStackLayer.vertexTint(0xF5 / 255f, 0x99 / 255f, 0xCB / 255f,
+                0xF5 / 255f, 0x99 / 255f, 0xCB / 255f);
+        require(Math.abs(neutral[0] - 1f) < 1e-4f && Math.abs(neutral[1] - 1f) < 1e-4f
+                        && Math.abs(neutral[2] - 1f) < 1e-4f,
+                "记录色取贴图均值时顶点色为 1（贴图原样）: " + Arrays.toString(neutral));
+
+        // 旧口径把 MapColor.PLANT #007C00 记成这一面的颜色 → 比值只剩绿通道（红蓝归零）
+        float[] plant = MapStackLayer.vertexTint(0x00 / 255f, 0x7C / 255f, 0x00 / 255f,
+                0xF5 / 255f, 0x99 / 255f, 0xCB / 255f);
+        require(plant[0] < 1e-4f && plant[2] < 1e-4f && plant[1] > 0.7f,
+                "MapColor.PLANT ÷ 粉花贴图 = 只剩绿通道: " + Arrays.toString(plant));
+    }
+
+    /**
+     * 多部件地表覆盖物的平色规则：四片 8×8 的粉色花簇单独都够不到 {@code flatBaseIndex}
+     * （每片只占四分之一格、alpha &lt; 128），但整组并集盖满一格 —— 低缩放必须按整组取色，
+     * 否则「覆盖 × alpha」只有两成左右，被下面的草色吃掉。
+     */
+    private static void testFlatCover() {
+        // 1.21.1 pink_petals.png 四个 8×8 象限的 alpha 加权均值（Pillow 实测）
+        List<MapStackLayer> petals = List.of(
+                petal("block/pink_petals", 0, 0, 8, 8, 0, 0, 8, 8, 0xFFF599CB),
+                petal("block/pink_petals", 0, 8, 8, 16, 0, 8, 8, 16, 0xFFF7C9E6),
+                petal("block/pink_petals", 8, 8, 16, 16, 8, 8, 16, 16, 0xFFF8AFDA),
+                petal("block/pink_petals", 8, 0, 16, 8, 8, 0, 16, 8, 0xFFF6B1D7));
+        require(MapStackLayer.flatBaseIndex(petals) == -1,
+                "四片粉色花簇单独都够不到平色基底");
+        require(MapStackLayer.topGroupEnd(petals) == 4, "同一方块同一高度的四片算一组");
+        require(MapStackLayer.unionCoverage(petals, 4) == 256,
+                "四片分占四角、并集盖满整格: " + MapStackLayer.unionCoverage(petals, 4));
+        require(MapStackLayer.averageArgb(petals, 4) == 0xF6B0D8,
+                "整组平均色是粉的: " + Integer.toHexString(MapStackLayer.averageArgb(petals, 4)));
+        // 下面那块草地不属于这一组
+        MapStackLayer grass = new MapStackLayer("minecraft:block/grass_block_top",
+                0, 0, 64, 64, 0, 0, 16, 16, "minecraft:grass_block", 64, 0xFF6A9E3A, 255, 1, 0);
+        List<MapStackLayer> withGround = List.of(petals.get(0), petals.get(1),
+                petals.get(2), petals.get(3), grass);
+        require(MapStackLayer.topGroupEnd(withGround) == 4,
+                "一组只看栈顶连续的同方块同高度层: " + MapStackLayer.topGroupEnd(withGround));
+        // 叠在一起的两张整格层，并集仍是一格（不按面积相加）
+        MapStackLayer full = new MapStackLayer("minecraft:block/stone",
+                0, 0, 64, 64, 0, 0, 16, 16, "minecraft:stone", 65, 0xFF808080, 255, 1, 0);
+        require(MapStackLayer.unionCoverage(List.of(full, full), 2) == 256,
+                "重叠的矩形不重复计");
+        // 一满格 + 一角：平均色按投影面积加权，不按层数
+        require(MapStackLayer.averageArgb(List.of(full, petals.get(0)), 2) == 0x97858F,
+                "面积加权: " + Integer.toHexString(MapStackLayer.averageArgb(
+                        List.of(full, petals.get(0)), 2)));
+        // 单片的薄装饰不成组（铁轨、红石粉、发光地衣的顶面都是单张整格平面）
+        require(MapStackLayer.topGroupEnd(List.of(full)) == 1, "单片不成组");
+    }
+
+    private static MapStackLayer petal(String sprite, int u0, int v0, int u1, int v1,
+                                       int x0, int z0, int x1, int z1, int argb) {
+        return new MapStackLayer(sprite, u0, v0, u1, v1, x0, z0, x1, z1,
+                "minecraft:pink_petals", 64, argb, 60, 1, 0);
+    }
+
+    /** 表面栈的纯规则：相邻同形层合并计数、叠层不透明度、层数压暗、浅水透明度、旋转还原。 */
+    private static void testSurfaceStackRules() {
+        MapStackLayer leaf = new MapStackLayer("minecraft:block/oak_leaves",
+                0, 0, 64, 64, 0, 0, 16, 16, "minecraft:oak_leaves", 80, 0xFF3A6B21, 200, 1, 0);
+        MapStackLayer leafLower = new MapStackLayer("minecraft:block/oak_leaves",
+                0, 0, 64, 64, 0, 0, 16, 16, "minecraft:oak_leaves", 79, 0xFF3A6B21, 200, 1, 0);
+        MapStackLayer stone = new MapStackLayer("minecraft:block/stone",
+                0, 0, 64, 64, 0, 0, 16, 16, "minecraft:stone", 70, 0xFF808080, 255, 1, 0);
+        List<MapStackLayer> merged = MapStackLayer.merge(List.of(leaf, leafLower, stone));
+        require(merged.size() == 2, "相邻同形层应合并成一层: " + merged);
+        require(merged.get(0).count() == 2, "合并后计数为 2: " + merged.get(0));
+        require(merged.get(0).y() == 80, "合并后保留最上面那层的 y");
+        require(Math.abs(MapStackLayer.stackedAlpha(128, 1) - 128f / 255f) < 1e-6f,
+                "单层不透明度就是原值");
+        require(MapStackLayer.stackedAlpha(128, 3) > MapStackLayer.stackedAlpha(128, 1),
+                "叠得越多越不透明");
+        require(MapStackLayer.density(1) > MapStackLayer.density(4), "叠得越多越暗");
+        require(Math.abs(MapStackLayer.density(1) - 1f) < 1e-6f, "单层不压暗");
+        require(MapStackLayer.density(99) >= 0.72f, "压暗有下限，不把树冠压成黑块");
+        require(Math.abs(FluidSurfaces.WATER.alpha(1) - 0.45f) < 1e-6f, "1 格水 0.45");
+        require(FluidSurfaces.WATER.alpha(2) > FluidSurfaces.WATER.alpha(1), "越深越不透明");
+        require(Math.abs(FluidSurfaces.WATER.alpha(9) - 0.80f) < 1e-6f, "深水封顶 0.80");
+        // 贴图、位置都一样但旋转不同是两种朝向，不能合并计数
+        MapStackLayer turnedLeaf = new MapStackLayer("minecraft:block/oak_leaves",
+                0, 0, 64, 64, 0, 0, 16, 16, "minecraft:oak_leaves", 80, 0xFF3A6B21, 200, 1, 1);
+        require(MapStackLayer.merge(List.of(leaf, turnedLeaf)).size() == 2,
+                "旋转不同的层不能合并");
+        // 旋转前矩形：把结果顺时针转 r×90° 应回到原矩形（这里用不对称矩形验证每一档）
+        require(java.util.Arrays.equals(
+                        MapStackLayer.unrotatedRect(0, 2, 3, 5, 9), new int[]{2, 3, 5, 9}),
+                "r0 不改矩形");
+        require(java.util.Arrays.equals(
+                        MapStackLayer.unrotatedRect(1, 2, 3, 5, 9), new int[]{3, 11, 9, 14}),
+                "r1 逆时针还原");
+        require(java.util.Arrays.equals(
+                        MapStackLayer.unrotatedRect(2, 2, 3, 5, 9), new int[]{11, 7, 14, 13}),
+                "r2 对角翻转");
+        require(java.util.Arrays.equals(
+                        MapStackLayer.unrotatedRect(3, 2, 3, 5, 9), new int[]{7, 2, 13, 5}),
+                "r3 顺时针还原");
+
+        MapStackLayer glass = new MapStackLayer("minecraft:block/glass",
+                0, 0, 64, 64, 0, 0, 16, 16, "minecraft:glass", 81, 0xFFC0D8E0, 65, 1, 0);
+        MapStackLayer water = new MapStackLayer("minecraft:block/water_still",
+                0, 0, 64, 64, 0, 0, 16, 16, FluidSurfaces.WATER.layerId(),
+                70, 0xFF3F76E4, 115, 1, 0);
+        require(MapStackLayer.flatBaseIndex(List.of(leaf, leafLower)) == 0,
+                "树叶自己就是平色表面（低缩放不混下面）");
+        require(MapStackLayer.flatBaseIndex(List.of(glass, leaf)) == 1,
+                "玻璃盖在树叶上时，树叶是平色基底，只有玻璃在上面混色");
+        require(MapStackLayer.flatBaseIndex(List.of(water, stone)) == 0,
+                "水面是平色基底：低缩放只显示水色，不混水底");
+        require(MapStackLayer.flatBaseIndex(List.of(glass)) == -1,
+                "没有读起来不透明的层时用终点色");
+
+        MapStackLayer torch = new MapStackLayer("minecraft:block/torch",
+                28, 0, 36, 8, 7, 7, 9, 9, "minecraft:torch", 82, 0xFFFFC040, 255, 1, 0);
+        require(MapStackLayer.flatBaseIndex(List.of(torch, stone)) == 1,
+                "火把这类只占一角的顶面不当平色表面，落到下面的完整方块");
+        require(MapStackLayer.flatBaseIndex(List.of(torch)) == -1,
+                "整条栈只有小顶面时用终点色");
+    }
+
+    /** 顶面筛选：45° 斜面按几何法向收，不看原版烘焙给的 Direction。 */
+    private static void testSurfaceUpFace() {
+        example.contentpack.mapv2.client.BlockSurfacesSelfTest.run();
+    }
+
+    /** 含水方块：水层按液面高度插进方块自己的顶面之间（水面 14.2/16）。 */
+    private static void testWaterloggedSplit() {
+        require(MapCapture.fluidSplitIndex(14.2f, List.of(part(16f))) == 1,
+                "树叶顶面（16）在水面上，水层在叶下");
+        require(MapCapture.fluidSplitIndex(14.2f, List.of(part(8f))) == 0,
+                "下半台阶的板面（8）在水面下，水层在台阶上");
+        require(MapCapture.fluidSplitIndex(14.2f, List.of(part(16f), part(8f))) == 1,
+                "台阶只有高那级（16）在水面上");
+        require(MapCapture.fluidSplitIndex(14.2f, List.of(part(16f), part(15f), part(9f))) == 2,
+                "栅栏是混搭：柱子(16)和上横杆(15)在水面上，下横杆(9)在水面下");
+        require(MapCapture.fluidSplitIndex(14.2f, List.of()) == 0,
+                "没有顶面（水草/珊瑚）时水层直接排在最上面");
+    }
+
+    /** 流体表面登记表：水/岩浆的层 ID、贴图、不透明度和深度符号。 */
+    private static void testFluidSurfaces() {
+        // 只测纯参数；matches/of 要拿 FluidState，离线没有 bootstrap，留给启动自检
+        require("minecraft:water".equals(FluidSurfaces.WATER.layerId()), "水层 ID");
+        require("minecraft:block/water_still".equals(FluidSurfaces.WATER.sprite()), "水贴图");
+        require(!FluidSurfaces.WATER.opaque(), "水是半透明流体");
+        require(FluidSurfaces.WATER.shallowDepth() == 3, "水最多看穿 3 格");
+        require(FluidSurfaces.WATER.depthSign() == 1, "水按深度压暗");
+        require("minecraft:lava".equals(FluidSurfaces.LAVA.layerId()), "岩浆层 ID");
+        require("minecraft:block/lava_still".equals(FluidSurfaces.LAVA.sprite()), "岩浆贴图");
+        require(FluidSurfaces.LAVA.opaque(), "岩浆不透明：一层就是终点");
+        require(FluidSurfaces.LAVA.shallowDepth() == 0, "岩浆不做浅层透底");
+        require(Math.abs(FluidSurfaces.LAVA.alpha(1) - 1f) < 1e-6f, "岩浆层始终满不透明");
+        require(FluidSurfaces.LAVA.depthSign() == -1, "岩浆按深度提亮");
+        require(FluidSurfaces.isFluidLayer("minecraft:water"), "渲染端认水层");
+        require(FluidSurfaces.isFluidLayer("minecraft:lava"), "渲染端认岩浆层");
+        require(!FluidSurfaces.isFluidLayer("minecraft:stone"), "普通方块不是流体层");
+        require(!FluidSurfaces.isFluidLayer(null), "空 blockId 不是流体层");
+        // 炼药锅的内容物靠顶面贴图反查（方块自己的流体状态是空的）
+        require(FluidSurfaces.ofSprite("minecraft:block/water_still") == FluidSurfaces.WATER,
+                "水锅的内容物按水面贴图认成水");
+        require(FluidSurfaces.ofSprite("minecraft:block/lava_still") == FluidSurfaces.LAVA,
+                "岩浆锅的内容物按岩浆面贴图认成岩浆");
+        require(FluidSurfaces.ofSprite("minecraft:block/stone") == null, "石头贴图不是流体");
+    }
+
+    /** 床：头/脚分两片、朝向旋转与渲染器变换同口径。 */
+    private static void testBedSurfaces() {
+        example.contentpack.mapv2.client.BedSurfacesSelfTest.run();
+    }
+
+    /** 箱子/告示牌/潜影盒/潮涌核心/陶罐/生物头：合成顶面的 UV、投影、旋转档位。 */
+    private static void testEntitySurfaces() {
+        example.contentpack.mapv2.client.EntitySurfacesSelfTest.run();
+    }
+
+    private static example.contentpack.mapv2.client.BlockSurfaces.Part part(float height) {
+        return new example.contentpack.mapv2.client.BlockSurfaces.Part(
+                null, 0, 0, 64, 64, 0, 0, 16, 16, 255, height, 0, -1);
+    }
+
+    private static MapTile roundtrip(MapTile tile) {
+        try {
+            return MapStorage.roundtripForTest(tile);
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     private static int red(int argb) {

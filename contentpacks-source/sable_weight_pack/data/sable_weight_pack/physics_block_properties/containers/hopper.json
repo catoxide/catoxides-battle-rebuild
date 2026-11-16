@@ -1,0 +1,7 @@
+{
+  "selector": "minecraft:hopper",
+  "priority": 1100,
+  "properties": {
+    "sable:mass": 1.5
+  }
+}

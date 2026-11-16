@@ -347,6 +347,11 @@ public final class MarkerEditScreen extends Screen {
             y = parseCoordinate(yBox, 63);
             return MapHooks.INSTANCE.resolveCreate(level, new Vec3(x, y, z), null, data);
         }
+        // 扩展空间（Sable 甲板）直接给锚点：倾斜船体不能再走「高度 → 世界点反算」那条路
+        Vec3 anchored = MapHooks.INSTANCE.surfaceAnchor(level, x, z, data);
+        if (anchored != null) {
+            return anchored;
+        }
         Double deckY = MapHooks.INSTANCE.surfaceY(level, blockX, blockZ);
         if (deckY != null) {
             // 甲板顶面下一格：sub-level 包围盒最高到甲板方块本身

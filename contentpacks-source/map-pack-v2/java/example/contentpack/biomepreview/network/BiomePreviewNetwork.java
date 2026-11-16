@@ -77,11 +77,12 @@ public final class BiomePreviewNetwork {
                 return;
             }
 
-            // 客户端决定步长，服务端只做安全上限：半径不超过本服配置，步长限制在 4..1024，
-            // 再按本服 maxCellsPerAxis 抬高一次（客户端预算不可信，不能让小步长拖垮采样）
+            // 客户端只报下限；实际步长由本服配置决定：resolutionTier 的 4/8/16 是显式下限，
+            // maxCellsPerAxis 再保证单区域采样量不超预算（客户端预算不可信，不能让小步长拖垮采样）
             int radius = Math.min(Math.max(1, payload.radius()), PreviewSettings.radiusBlocks());
             int step = Math.max(SurfaceBiomeSampler.MIN_STEP_BLOCKS,
                     Math.min(1024, Math.max(SurfaceBiomeSampler.MIN_STEP_BLOCKS, payload.step())));
+            step = Math.max(step, PreviewSettings.stepBlocks());
             step = Math.max(step, BiomeRegionGrid.stepForRadius(radius, PreviewSettings.maxCellsPerAxis()));
             LOGGER.info("[BiomePreview] request received player={} dim={} center=({},{}) radius={} step={}",
                     player.getGameProfile().getName(), payload.dimension(),

@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "name": "side_panel",
+  "canvas": [62, 84],
+  "tokens": {
+    "border": "#0E141A",
+    "bevelLight": "#E6F0F7",
+    "bevelDark": "#46566A",
+    "body": "#C7D0DA"
+  },
+  "layers": [
+    { "id": "panel", "type": "nine_slice", "ref": "vanilla/panel", "rect": [0, 0, 62, 84] },
+    { "id": "storage", "type": "grid", "stamp": "vanilla/slot", "origin": [4, 4], "pitch": 18, "cols": 3, "rows": 3 },
+    { "id": "divider", "type": "rect", "rect": [4, 58, 54, 1], "color": "bevelDark" },
+    { "id": "upgrade_row", "type": "grid", "stamp": "vanilla/slot", "origin": [4, 62], "pitch": 18, "cols": 2, "rows": 1 }
+  ]
+}

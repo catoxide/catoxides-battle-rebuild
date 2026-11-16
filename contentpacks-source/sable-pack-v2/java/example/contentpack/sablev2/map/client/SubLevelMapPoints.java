@@ -4,6 +4,7 @@ import com.catoxide.catoxidesbattlerebuild.core.map.MapPointResolver;
 import com.catoxide.catoxidesbattlerebuild.core.sable.ISubLevelService;
 import com.catoxide.catoxidesbattlerebuild.core.sable.SubLevelInfo;
 import com.catoxide.catoxidesbattlerebuild.core.sable.SubLevelServiceRegistry;
+import example.contentpack.sablev2.map.SubLevelColumns;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -145,36 +146,59 @@ final class SubLevelMapPoints implements MapPointResolver {
 
     @Override
     public @Nullable Double surfaceY(Level level, int x, int z) {
+        ColumnHit hit = topHit(level, x + 0.5, z + 0.5);
+        return hit == null ? null : hit.world().y;
+    }
+
+    @Override
+    public @Nullable Vec3 surfaceAnchor(Level level, double x, double z, CompoundTag anchorData) {
+        ColumnHit hit = topHit(level, x, z);
+        if (hit == null) {
+            return null;
+        }
+        if (anchorData != null) {
+            anchorData.putString(KEY_SUB, hit.sub().id().toString());
+            anchorData.putDouble(KEY_X, hit.local().x);
+            anchorData.putDouble(KEY_Y, hit.local().y);
+            anchorData.putDouble(KEY_Z, hit.local().z);
+        }
+        return hit.world();
+    }
+
+    /**
+     * 该世界列上最高那艘船的锚点。
+     *
+     * <p>船体可能倾斜/侧倾，所以用世界竖直线与局部包围盒求交定位列，而不是在
+     * {@code pose.posY()} 处取一个探针点；包围盒内恰好是空列时退回求交点本身，
+     * 保证「点在船体图像上」不会因为该列没方块而跑去地表。
+     */
+    private static @Nullable ColumnHit topHit(Level level, double x, double z) {
         ISubLevelService service = SubLevelServiceRegistry.get();
         if (service == null || level == null) {
             return null;
         }
-
-        Double best = null;
+        ColumnHit best = null;
         List<SubLevelInfo> subs = service.getSubLevels(level);
         for (SubLevelInfo sub : subs) {
-            if (sub.bounds().isEmpty()) {
+            Vec3 point = SubLevelColumns.topPoint(service, sub, x, z);
+            if (point == null) {
                 continue;
             }
-            // 用姿态原点高度反算 x/z；对水平船体就是甲板平面
-            Vec3 probe = new Vec3(x + 0.5, sub.pose().posY(), z + 0.5);
-            Vec3 local = service.worldToLocal(sub, probe);
-            if (!sub.bounds().containsColumn(local.x, local.z)) {
-                continue;
-            }
-            int blockX = (int) Math.floor(local.x);
-            int blockZ = (int) Math.floor(local.z);
+            int blockX = (int) Math.floor(point.x);
+            int blockZ = (int) Math.floor(point.z);
             int top = service.topBlockY(level, sub, blockX, blockZ);
-            if (top == Integer.MIN_VALUE) {
-                continue;
-            }
-            double worldY = service.localToWorld(sub,
-                    new Vec3(blockX + 0.5, top + 1.0, blockZ + 0.5)).y;
-            if (best == null || worldY > best) {
-                best = worldY;
+            Vec3 local = top == Integer.MIN_VALUE
+                    ? point
+                    : new Vec3(blockX + 0.5, top + 1.0, blockZ + 0.5);
+            Vec3 world = service.localToWorld(sub, local);
+            if (best == null || world.y > best.world().y) {
+                best = new ColumnHit(sub, local, world);
             }
         }
         return best;
+    }
+
+    private record ColumnHit(SubLevelInfo sub, Vec3 local, Vec3 world) {
     }
 
     @Override

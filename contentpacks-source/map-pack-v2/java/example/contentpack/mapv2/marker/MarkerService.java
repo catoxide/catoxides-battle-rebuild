@@ -139,7 +139,12 @@ public final class MarkerService {
     }
 
     private static void tick(MinecraftServer server) {
-        if (++tickCounter % 20 != 0) {
+        tickCounter++;
+        // 实体标记跟随：4 次/秒；1 秒一跳在移动的船/矿车上太明显
+        if (tickCounter % 5 == 0) {
+            followEntities(server);
+        }
+        if (tickCounter % 20 != 0) {
             return;
         }
         long now = System.currentTimeMillis();
@@ -160,6 +165,47 @@ public final class MarkerService {
         // 实体标记：续原版发光（标记消失后不再续，最多 3 秒自然过期）
         for (MarkerDto marker : store.markers()) {
             applyGlow(server, marker);
+        }
+    }
+
+    /**
+     * 实体标记跟着实体走：位置变了就落盘并广播。
+     * 实体所在区块没加载时找不到它，标记停在最后一次位置。
+     */
+    private static void followEntities(MinecraftServer server) {
+        MarkerSavedData store = MarkerSavedData.get(server);
+        long now = System.currentTimeMillis();
+        for (MarkerDto marker : new ArrayList<>(store.markers())) {
+            if (marker.type() != MarkerType.ENTITY) {
+                continue;
+            }
+            UUID uuid = MarkerData.entityUuid(marker);
+            if (uuid == null) {
+                continue;
+            }
+            ServerLevel level = server.getLevel(
+                    ResourceKey.create(Registries.DIMENSION, marker.dimension()));
+            if (level == null) {
+                continue;
+            }
+            Entity entity = level.getEntity(uuid);
+            if (entity == null) {
+                continue;
+            }
+            double x = entity.getX();
+            double y = entity.getY() + entity.getBbHeight() * 0.5;
+            double z = entity.getZ();
+            if (Math.abs(x - marker.x()) < 0.05
+                    && Math.abs(y - marker.y()) < 0.05
+                    && Math.abs(z - marker.z()) < 0.05) {
+                continue;
+            }
+            MarkerDto moved = new MarkerDto(marker.id(), marker.owner(), marker.type(),
+                    marker.icon(), marker.dimension(), x, y, z, marker.entityId(),
+                    marker.slot(), marker.targetKey(), marker.data(),
+                    marker.createdAt(), marker.expiresAt());
+            store.replace(moved);
+            broadcast(server, moved, now);
         }
     }
 

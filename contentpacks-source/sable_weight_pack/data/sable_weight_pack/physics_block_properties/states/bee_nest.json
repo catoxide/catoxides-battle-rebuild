@@ -1,0 +1,14 @@
+{
+  "selector": "minecraft:bee_nest",
+  "priority": 1100,
+  "properties": {
+    "sable:mass": 0.6
+  },
+  "overrides": {
+    "honey_level=1": { "sable:mass": 0.7 },
+    "honey_level=2": { "sable:mass": 0.8 },
+    "honey_level=3": { "sable:mass": 0.9 },
+    "honey_level=4": { "sable:mass": 1.0 },
+    "honey_level=5": { "sable:mass": 1.1 }
+  }
+}

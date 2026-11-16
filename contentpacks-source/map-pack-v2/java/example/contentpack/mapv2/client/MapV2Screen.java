@@ -7,6 +7,7 @@ import example.contentpack.mapv2.MapLayer;
 import example.contentpack.mapv2.MapLayerSelection;
 import example.contentpack.mapv2.MapLayerStack;
 import example.contentpack.mapv2.MapStorage;
+import example.contentpack.mapv2.MapStackLayer;
 import example.contentpack.mapv2.MapStore;
 import example.contentpack.mapv2.MapTile;
 import example.contentpack.mapv2.marker.MarkerData;
@@ -63,6 +64,13 @@ public final class MapV2Screen extends Screen {
     private static final int BUTTON_WIDTH = 90;
     private static final int BUTTON_HEIGHT = 20;
     private static final int SIDE_BUTTON = 22;
+    /**
+     * 界面层的 z。原版 {@code GuiGraphics.renderItem} 把物品图标画在 z=150 并写深度，
+     * 而 {@code fill}/{@code drawString} 是 LEQUAL：后画在 z=0 的界面会被深度测试挡在图标
+     * 后面（灰信息框被结构/标记图标戳穿）。原版 {@code renderItemDecorations} 用 +200
+     * 画在图标前面，这里同一口径，整层界面抬到图标之上。
+     */
+    private static final float CHROME_Z = 200f;
 
     private final TileLodTextures textures = TileLodTextures.shared();
     private final List<MapUiButton> buttons = new ArrayList<>();
@@ -300,9 +308,14 @@ public final class MapV2Screen extends Screen {
         // 第四遍：标记（在画布内绘制，随地图一起裁剪/缩放）
         MarkerHud.renderFullmap(graphics, minecraft, left, top, viewWidth, viewHeight, bpp,
                 originX, originZ, dimension, partialTick);
+        // 头像和比例尺要压在图标之上（否则被标记/结构图标的 z=150 深度挡住）；
+        // 悬停暗底保持 z=0，它本来就该垫在图标下面
+        graphics.pose().pushPose();
+        graphics.pose().translate(0f, 0f, CHROME_Z);
         drawPlayerMarker(graphics, minecraft, left, top, originX, originZ);
-        highlightHoveredMarker(graphics, minecraft, mouseX, mouseY, layout, originX, originZ);
         drawScaleBarFrame(graphics, barLeft, barY, barRight);
+        graphics.pose().popPose();
+        highlightHoveredMarker(graphics, minecraft, mouseX, mouseY, layout, originX, originZ);
 
         graphics.disableScissor();
         graphics.pose().popPose();
@@ -318,6 +331,7 @@ public final class MapV2Screen extends Screen {
         int uiWidth = layout.uiWidth();
         int uiHeight = layout.uiHeight();
         graphics.pose().pushPose();
+        graphics.pose().translate(0f, 0f, CHROME_Z);
         graphics.pose().scale(layout.chromeScale(), layout.chromeScale(), 1f);
 
         drawStatus(graphics, minecraft, level, dimension, mouseX, mouseY, layout, originX, originZ);
@@ -505,10 +519,10 @@ public final class MapV2Screen extends Screen {
             if (mouseCanvasX >= layout.left() && mouseCanvasX < layout.left() + layout.viewWidth()
                     && mouseCanvasY >= layout.top()
                     && mouseCanvasY < layout.top() + layout.viewHeight()) {
-                int blockX = (int) Math.floor(
-                        MapProjection.world(mouseCanvasX - layout.left(), originX, bpp));
-                int blockZ = (int) Math.floor(
-                        MapProjection.world(mouseCanvasY - layout.top(), originZ, bpp));
+                double worldX = MapProjection.world(mouseCanvasX - layout.left(), originX, bpp);
+                double worldZ = MapProjection.world(mouseCanvasY - layout.top(), originZ, bpp);
+                int blockX = (int) Math.floor(worldX);
+                int blockZ = (int) Math.floor(worldZ);
                 StringBuilder text = new StringBuilder();
                 text.append(blockX).append(", ").append(blockZ);
                 MapStore.StackSample sample = MapStore.sampleStack(dimension,
@@ -518,15 +532,22 @@ public final class MapV2Screen extends Screen {
                     if (sample.known()) {
                         text.append("  y=").append(mapHeight);
                     }
-                    String block = MapProbe.blockName(sample.block());
+                    // 指针落在格内哪个 1/16：半块形状报形状本身，露出的地方报下一层
+                    String block = MapProbe.blockName(sample.blockAt(
+                            (worldX - blockX) * MapStackLayer.UNITS,
+                            (worldZ - blockZ) * MapStackLayer.UNITS));
                     if (block != null) {
                         text.append("  ").append(block);
                     }
                 }
-                // 已加载区块用世界真实群系（已确认）；只有未加载区域才用预测（前面缀 ~）
+                // 已加载区块用世界真实群系；已加载过、现在卸载了用瓦片里记下的群系（同样算确定值）；
+                // 从没采集过才用预测，前缀 ~ 表示「推算」
                 int biomeY = mapHeight != Integer.MIN_VALUE ? mapHeight
                         : level.getHeight(Heightmap.Types.WORLD_SURFACE, blockX, blockZ) - 1;
                 String actual = MapProbe.loadedBiomeName(level, blockX, biomeY, blockZ);
+                if (actual == null) {
+                    actual = MapProbe.recordedBiomeName(sample.biome());
+                }
                 if (actual != null) {
                     text.append("  ").append(actual);
                 } else if (MapLayer.showsBiome(layer, level.dimension() == Level.NETHER)) {
@@ -852,15 +873,19 @@ public final class MapV2Screen extends Screen {
         if (level == null || minecraft.player == null) {
             return;
         }
-        MapStore.StackSample sample = MapStore.sampleStack(level.dimension().location(),
-                MapLayerStack.sampleOrder(layers, layer), worldX, worldZ);
-        int surfaceY = sample.height();
-        Double deckY = MapHooks.INSTANCE.surfaceY(level, worldX, worldZ);
-        double y = deckY != null ? deckY : (surfaceY == Integer.MIN_VALUE ? 64.0 : surfaceY);
-        // 甲板锚点用顶面下一格探测：sub-level 包围盒最高到甲板方块本身
-        Vec3 probe = new Vec3(worldX + 0.5, deckY != null ? y - 1.0 : y, worldZ + 0.5);
         CompoundTag data = new CompoundTag();
-        Vec3 world = MapHooks.INSTANCE.resolveCreate(level, probe, null, data);
+        // 扩展空间（Sable 甲板）直接给锚点；没有覆盖才回落地表高度
+        Vec3 world = MapHooks.INSTANCE.surfaceAnchor(level, worldX + 0.5, worldZ + 0.5, data);
+        if (world == null) {
+            MapStore.StackSample sample = MapStore.sampleStack(level.dimension().location(),
+                    MapLayerStack.sampleOrder(layers, layer), worldX, worldZ);
+            int surfaceY = sample.height();
+            Double deckY = MapHooks.INSTANCE.surfaceY(level, worldX, worldZ);
+            double y = deckY != null ? deckY : (surfaceY == Integer.MIN_VALUE ? 64.0 : surfaceY);
+            // 甲板锚点用顶面下一格探测：sub-level 包围盒最高到甲板方块本身
+            Vec3 probe = new Vec3(worldX + 0.5, deckY != null ? y - 1.0 : y, worldZ + 0.5);
+            world = MapHooks.INSTANCE.resolveCreate(level, probe, null, data);
+        }
         ResourceLocation icon = ResourceLocation.withDefaultNamespace("nether_star");
         PacketDistributor.sendToServer(new MarkerCreatePayload(
                 MarkerType.PING.name(), icon, world.x, world.y, world.z,

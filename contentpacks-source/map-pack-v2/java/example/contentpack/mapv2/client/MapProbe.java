@@ -37,14 +37,16 @@ final class MapProbe {
     static Info probe(ClientLevel level, int x, int z, String layer) {
         ResourceLocation dimension = level.dimension().location();
         if (!isLoaded(level, x, z)) {
-            // 未加载：方块名来自瓦片快照（采集时记下的），群系用预测补
+            // 未加载：方块名/群系都来自瓦片快照（采集时记下的），没有群系记录才用预测补
             String mapBlock = blockName(MapStore.sampleBlock(dimension, layer, x, z));
-            String predicted = MapLayer.TOP.equals(layer)
-                    ? MapBiomeLayer.biomeNameAt(dimension, x, z) : null;
-            if (mapBlock == null && predicted == null) {
+            String biome = recordedBiomeName(MapStore.sampleBiome(dimension, layer, x, z));
+            if (biome == null && MapLayer.TOP.equals(layer)) {
+                biome = MapBiomeLayer.biomeNameAt(dimension, x, z);
+            }
+            if (mapBlock == null && biome == null) {
                 return null;
             }
-            return new Info(x, Integer.MIN_VALUE, z, mapBlock, predicted, true);
+            return new Info(x, Integer.MIN_VALUE, z, mapBlock, biome, true);
         }
         int y;
         if (MapLayer.TOP.equals(layer)) {
@@ -138,6 +140,19 @@ final class MapProbe {
         Holder<Biome> biome = chunk.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(y),
                 QuartPos.fromBlock(z));
         return biome.unwrapKey().map(key -> key.location().toString()).orElse(null);
+    }
+
+    /** 瓦片快照里记下的群系 id → 本地化名；没有记录返回 {@code null}（与预测值区分）。 */
+    static String recordedBiomeName(String biomeId) {
+        if (biomeId == null || biomeId.isBlank()) {
+            return null;
+        }
+        ResourceLocation location = ResourceLocation.tryParse(biomeId);
+        if (location == null) {
+            return biomeId;
+        }
+        return Component.translatable(
+                "biome." + location.getNamespace() + "." + location.getPath()).getString();
     }
 
     /** 瓦片快照里的方块 id → 当前语言显示名（悬停行与 {@link #probe} 共用）。 */

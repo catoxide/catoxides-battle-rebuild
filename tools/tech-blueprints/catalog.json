@@ -1,0 +1,2295 @@
+{
+  "calibers": [
+    "12g",
+    "308",
+    "30_06",
+    "338",
+    "357mag",
+    "40mm",
+    "45_70",
+    "45acp",
+    "50ae",
+    "50bmg",
+    "545x39",
+    "556x45",
+    "57x28",
+    "58x42",
+    "68x51fury",
+    "762x39",
+    "9mm",
+    "rpg_rocket"
+  ],
+  "guns": [
+    {
+      "id": "aa12",
+      "item": "tacz:aa12",
+      "name": "AA12 霰弹枪",
+      "tier": 4,
+      "ammo": "12g",
+      "bolt": "auto_12g",
+      "barrel": "barrel_12g_hp",
+      "frame": "frame_aa12",
+      "boltName": "12g自动枪机",
+      "barrelName": "12g高性能枪管",
+      "frameName": "AA12枪身"
+    },
+    {
+      "id": "ai_awp",
+      "item": "tacz:ai_awp",
+      "name": "精密国际 AWM 狙击步枪",
+      "tier": 4,
+      "ammo": "338",
+      "bolt": "bolt_338",
+      "barrel": "barrel_338_precise",
+      "frame": "frame_awp",
+      "boltName": ".338栓动步枪枪机",
+      "barrelName": ".338精密枪管",
+      "frameName": "AWP枪身"
+    },
+    {
+      "id": "ak47",
+      "item": "tacz:ak47",
+      "name": "AKM 突击步枪",
+      "tier": 1,
+      "ammo": "762x39",
+      "bolt": "auto_762x39",
+      "barrel": "barrel_762mm",
+      "frame": "frame_akm",
+      "boltName": "7.62x39通用自动枪机",
+      "barrelName": "7.62mm通用枪管",
+      "frameName": "AKM枪身"
+    },
+    {
+      "id": "aug",
+      "item": "tacz:aug",
+      "name": "AUG 突击步枪",
+      "tier": 2,
+      "ammo": "556x45",
+      "bolt": "auto_556x45",
+      "barrel": "barrel_556mm",
+      "frame": "frame_aug",
+      "boltName": "5.56x45通用自动枪机",
+      "barrelName": "5.56mm通用枪管",
+      "frameName": "AUG枪身"
+    },
+    {
+      "id": "ccrp:ak103",
+      "item": "ccrp:ak103",
+      "name": "AK103 突击步枪",
+      "tier": 2,
+      "ammo": "762x39",
+      "bolt": "auto_762x39",
+      "barrel": "barrel_762mm",
+      "frame": "frame_ak103",
+      "boltName": "7.62x39通用自动枪机",
+      "barrelName": "7.62mm通用枪管",
+      "frameName": "AK103枪身"
+    },
+    {
+      "id": "ccrp:ak105",
+      "item": "ccrp:zenit_ak105",
+      "name": "AK105 突击步枪",
+      "tier": 3,
+      "ammo": "545x39",
+      "bolt": "auto_545x39_precise",
+      "barrel": "barrel_545mm",
+      "frame": "frame_ak105",
+      "boltName": "5.45x39精密自动枪机",
+      "barrelName": "5.45mm通用枪管",
+      "frameName": "AK105枪身"
+    },
+    {
+      "id": "ccrp:ak74",
+      "item": "ccrp:ak74",
+      "name": "AK74 突击步枪",
+      "tier": 1,
+      "ammo": "545x39",
+      "bolt": "auto_545x39",
+      "barrel": "barrel_545mm",
+      "frame": "frame_ak74",
+      "boltName": "5.45x39通用自动枪机",
+      "barrelName": "5.45mm通用枪管",
+      "frameName": "AK74枪身"
+    },
+    {
+      "id": "ccrp:ak74m",
+      "item": "ccrp:ak74m",
+      "name": "AK74M 突击步枪",
+      "tier": 2,
+      "ammo": "545x39",
+      "bolt": "auto_545x39",
+      "barrel": "barrel_545mm",
+      "frame": "frame_ak74m",
+      "boltName": "5.45x39通用自动枪机",
+      "barrelName": "5.45mm通用枪管",
+      "frameName": "AK74M枪身"
+    },
+    {
+      "id": "ccrp:aks74u",
+      "item": "ccrp:aks74u",
+      "name": "AKS-74U 短突击步枪",
+      "tier": 1,
+      "ammo": "545x39",
+      "bolt": "auto_545x39",
+      "barrel": "barrel_545mm",
+      "frame": "frame_aks74u",
+      "boltName": "5.45x39通用自动枪机",
+      "barrelName": "5.45mm通用枪管",
+      "frameName": "AKS-74U枪身"
+    },
+    {
+      "id": "ccrp:am17",
+      "item": "ccrp:am17",
+      "name": "AM-17 短突击步枪",
+      "tier": 5,
+      "ammo": "545x39",
+      "bolt": "auto_545x39_adv",
+      "barrel": "barrel_545mm_hp",
+      "frame": "frame_am17",
+      "boltName": "5.45x39先进自动枪机",
+      "barrelName": "5.45mm高性能枪管",
+      "frameName": "AM17枪身"
+    },
+    {
+      "id": "ccrp:ar57",
+      "item": "ccrp:ar57",
+      "name": "AR57 冲锋枪",
+      "tier": 5,
+      "ammo": "57x28",
+      "bolt": "auto_57x28_adv",
+      "barrel": "barrel_57mm_long",
+      "frame": "frame_ar57",
+      "boltName": "5.7x28先进自动枪机",
+      "barrelName": "5.7mm长枪管",
+      "frameName": "AR57枪身"
+    },
+    {
+      "id": "ccrp:aug_a3",
+      "item": "ccrp:aug_a3",
+      "name": "AUG A3 突击步枪",
+      "tier": 3,
+      "ammo": "556x45",
+      "bolt": "auto_556x45_precise",
+      "barrel": "barrel_556mm",
+      "frame": "frame_aug_a3",
+      "boltName": "5.56x45精密自动枪机",
+      "barrelName": "5.56mm通用枪管",
+      "frameName": "AUG A3枪身"
+    },
+    {
+      "id": "ccrp:g28",
+      "item": "ccrp:hk_g28",
+      "name": "G28 精确射手步枪",
+      "tier": 3,
+      "ammo": "308",
+      "bolt": "sa_308",
+      "barrel": "barrel_762mm",
+      "frame": "frame_g28",
+      "boltName": ".308半自动步枪枪机",
+      "barrelName": "7.62mm通用枪管",
+      "frameName": "G28枪身"
+    },
+    {
+      "id": "ccrp:m110",
+      "item": "ccrp:m110",
+      "name": "M110 SASS 狙击步枪",
+      "tier": 4,
+      "ammo": "308",
+      "bolt": "sa_308",
+      "barrel": "barrel_762mm_hp",
+      "frame": "frame_m110",
+      "boltName": ".308半自动步枪枪机",
+      "barrelName": "7.62mm高性能枪管",
+      "frameName": "M110枪身"
+    },
+    {
+      "id": "ccrp:m4_sopmod2",
+      "item": "ccrp:camg_m4_sopmod2",
+      "name": "M4 SOPMOD II 突击步枪",
+      "tier": 4,
+      "ammo": "556x45",
+      "bolt": "auto_556x45_precise",
+      "barrel": "barrel_556mm_hp",
+      "frame": "frame_m4_sopmod2",
+      "boltName": "5.56x45精密自动枪机",
+      "barrelName": "5.56mm高性能枪管",
+      "frameName": "M4 SOPMOD II枪身"
+    },
+    {
+      "id": "ccrp:marlin_1895",
+      "item": "ccrp:marlin_1895",
+      "name": "马林 Model 1895",
+      "tier": 1,
+      "ammo": "45_70",
+      "bolt": "bolt_45_70",
+      "barrel": "barrel_45_long",
+      "frame": "frame_marlin1895",
+      "boltName": ".45-70栓动枪机",
+      "barrelName": ".45长枪管",
+      "frameName": "马林1895枪身"
+    },
+    {
+      "id": "ccrp:mk18_mjolnir",
+      "item": "ccrp:mk18_mjolnir",
+      "name": "MK18 SA-ASR",
+      "tier": 5,
+      "ammo": "556x45",
+      "bolt": "sa_338",
+      "barrel": "barrel_338_precise",
+      "frame": "frame_mk18",
+      "boltName": ".338半自动步枪枪机",
+      "barrelName": ".338精密枪管",
+      "frameName": "MK18枪身"
+    },
+    {
+      "id": "ccrp:mpx",
+      "item": "ccrp:mpx",
+      "name": "MPX 冲锋枪",
+      "tier": 3,
+      "ammo": "9mm",
+      "bolt": "auto_9mm_adv",
+      "barrel": "barrel_9mm_long",
+      "frame": "frame_mpx",
+      "boltName": "9mm先进自动枪机",
+      "barrelName": "9mm长枪管",
+      "frameName": "MPX枪身"
+    },
+    {
+      "id": "ccrp:sa58",
+      "item": "ccrp:dsa_sa58",
+      "name": "SA58 战斗步枪",
+      "tier": 4,
+      "ammo": "308",
+      "bolt": "auto_308_precise",
+      "barrel": "barrel_762mm_hp",
+      "frame": "frame_sa58",
+      "boltName": ".308精密自动枪机",
+      "barrelName": "7.62mm高性能枪管",
+      "frameName": "SA58枪身"
+    },
+    {
+      "id": "ccrp:sr25",
+      "item": "ccrp:sr25",
+      "name": "SR25 精确射手步枪",
+      "tier": 4,
+      "ammo": "308",
+      "bolt": "sa_308",
+      "barrel": "barrel_762mm_hp",
+      "frame": "frame_sr25",
+      "boltName": ".308半自动步枪枪机",
+      "barrelName": "7.62mm高性能枪管",
+      "frameName": "SR25枪身"
+    },
+    {
+      "id": "classicr:ak12",
+      "item": "classicr:ak12",
+      "name": "AK12 突击步枪",
+      "tier": 4,
+      "ammo": "545x39",
+      "bolt": "auto_545x39_precise",
+      "barrel": "barrel_545mm_hp",
+      "frame": "frame_ak12",
+      "boltName": "5.45x39精密自动枪机",
+      "barrelName": "5.45mm高性能枪管",
+      "frameName": "AK12枪身"
+    },
+    {
+      "id": "classicr:m60",
+      "item": "classicr:m60",
+      "name": "M60 通用机枪",
+      "tier": 4,
+      "ammo": "308",
+      "bolt": "auto_308_precise",
+      "barrel": "barrel_762mm_hp",
+      "frame": "frame_m60",
+      "boltName": ".308精密自动枪机",
+      "barrelName": "7.62mm高性能枪管",
+      "frameName": "M60枪身"
+    },
+    {
+      "id": "classicr:mgl_40mm",
+      "item": "classicr:mgl_40mm",
+      "name": "MGL 榴弹发射器",
+      "tier": 5,
+      "ammo": "40mm",
+      "bolt": "pin_40mm",
+      "barrel": "barrel_40mm",
+      "frame": "frame_mgl",
+      "boltName": "40mm榴弹发射器击针",
+      "barrelName": "40mm榴弹发射管",
+      "frameName": "MGL枪身"
+    },
+    {
+      "id": "classicr:mk47",
+      "item": "classicr:mk47",
+      "name": "MK47 突击步枪",
+      "tier": 5,
+      "ammo": "762x39",
+      "bolt": "auto_762x39_adv",
+      "barrel": "barrel_762mm_hp",
+      "frame": "frame_mk47",
+      "boltName": "7.62x39先进自动枪机",
+      "barrelName": "7.62mm高性能枪管",
+      "frameName": "MK47枪身"
+    },
+    {
+      "id": "classicr:ngsw_r_renewed",
+      "item": "classicr:ngsw_r_renewed",
+      "name": "M7 战斗步枪",
+      "tier": 5,
+      "ammo": "68x51fury",
+      "bolt": "auto_68x51_adv",
+      "barrel": "barrel_68mm_hp",
+      "frame": "frame_m7",
+      "boltName": "6.8x51先进自动枪机",
+      "barrelName": "6.8mm高性能枪管",
+      "frameName": "M7枪身"
+    },
+    {
+      "id": "db_long",
+      "item": "tacz:db_long",
+      "name": "DB-4 乌萨斯",
+      "tier": 1,
+      "ammo": "12g",
+      "bolt": "pin_12g",
+      "barrel": "barrel_12g",
+      "frame": "frame_db",
+      "boltName": "12g击针",
+      "barrelName": "12g通用枪管",
+      "frameName": "双管霰弹枪枪身"
+    },
+    {
+      "id": "db_short",
+      "item": "tacz:db_short",
+      "name": "DB-2 杜林人",
+      "tier": 1,
+      "ammo": "12g",
+      "bolt": "pin_12g",
+      "barrel": "barrel_12g",
+      "frame": "frame_db",
+      "boltName": "12g击针",
+      "barrelName": "12g通用枪管",
+      "frameName": "双管霰弹枪枪身"
+    },
+    {
+      "id": "deagle",
+      "item": "tacz:deagle",
+      "name": ".50 沙漠之鹰",
+      "tier": 3,
+      "ammo": "50ae",
+      "bolt": "pistol_bolt_precise",
+      "barrel": "barrel_50_short",
+      "frame": "frame_deagle",
+      "boltName": "精密手枪枪机",
+      "barrelName": ".50短枪管",
+      "frameName": "沙漠之鹰枪身"
+    },
+    {
+      "id": "deagle_golden",
+      "item": "tacz:deagle_golden",
+      "name": ".357 黄金沙漠之鹰",
+      "tier": 4,
+      "ammo": "357mag",
+      "bolt": "pistol_bolt_precise",
+      "barrel": "barrel_357mag",
+      "frame": "frame_deagle_golden",
+      "boltName": "精密手枪枪机",
+      "barrelName": ".357马格南枪管",
+      "frameName": "黄金沙漠之鹰枪身"
+    },
+    {
+      "id": "fn_evolys",
+      "item": "tacz:fn_evolys",
+      "name": "FN EVOLYS 机枪",
+      "tier": 3,
+      "ammo": "308",
+      "bolt": "auto_308",
+      "barrel": "barrel_762mm",
+      "frame": "frame_fnevolys",
+      "boltName": ".308通用自动枪机",
+      "barrelName": "7.62mm通用枪管",
+      "frameName": "FN EVOLYS枪身"
+    },
+    {
+      "id": "fn_fal",
+      "item": "tacz:fn_fal",
+      "name": "FN FAL 战斗步枪",
+      "tier": 3,
+      "ammo": "308",
+      "bolt": "auto_308",
+      "barrel": "barrel_762mm",
+      "frame": "frame_fnfal",
+      "boltName": ".308通用自动枪机",
+      "barrelName": "7.62mm通用枪管",
+      "frameName": "FN FAL枪身"
+    },
+    {
+      "id": "g36k",
+      "item": "tacz:g36k",
+      "name": "G36K 突击步枪",
+      "tier": 2,
+      "ammo": "556x45",
+      "bolt": "auto_556x45",
+      "barrel": "barrel_556mm",
+      "frame": "frame_g36",
+      "boltName": "5.56x45通用自动枪机",
+      "barrelName": "5.56mm通用枪管",
+      "frameName": "G36枪身"
+    },
+    {
+      "id": "glock_17",
+      "item": "tacz:glock_17",
+      "name": "格洛克 17 手枪",
+      "tier": 1,
+      "ammo": "9mm",
+      "bolt": "pistol_bolt",
+      "barrel": "barrel_9mm_short",
+      "frame": "frame_pistol",
+      "boltName": "通用手枪枪机",
+      "barrelName": "9mm短枪管",
+      "frameName": "通用手枪枪身"
+    },
+    {
+      "id": "hk_g3",
+      "item": "tacz:hk_g3",
+      "name": "G3 战斗步枪",
+      "tier": 3,
+      "ammo": "308",
+      "bolt": "auto_308",
+      "barrel": "barrel_762mm",
+      "frame": "frame_g3",
+      "boltName": ".308通用自动枪机",
+      "barrelName": "7.62mm通用枪管",
+      "frameName": "G3枪身"
+    },
+    {
+      "id": "hk_mp5a5",
+      "item": "tacz:hk_mp5a5",
+      "name": "MP5A5 冲锋枪",
+      "tier": 2,
+      "ammo": "9mm",
+      "bolt": "auto_9mm_precise",
+      "barrel": "barrel_9mm_long",
+      "frame": "frame_mp5",
+      "boltName": "9mm精密自动枪机",
+      "barrelName": "9mm长枪管",
+      "frameName": "MP5枪身"
+    },
+    {
+      "id": "hk416d",
+      "item": "tacz:hk416d",
+      "name": "HK-416A5 突击步枪",
+      "tier": 5,
+      "ammo": "556x45",
+      "bolt": "auto_556x45_adv",
+      "barrel": "barrel_556mm_hp",
+      "frame": "frame_hk416",
+      "boltName": "5.56x45先进自动枪机",
+      "barrelName": "5.56mm高性能枪管",
+      "frameName": "HK416枪身"
+    },
+    {
+      "id": "m1014",
+      "item": "tacz:m1014",
+      "name": "M1014 战斗霰弹枪",
+      "tier": 2,
+      "ammo": "12g",
+      "bolt": "sa_12g",
+      "barrel": "barrel_12g",
+      "frame": "frame_m1014",
+      "boltName": "12g半自动枪机",
+      "barrelName": "12g通用枪管",
+      "frameName": "M1014枪身"
+    },
+    {
+      "id": "m107",
+      "item": "tacz:m107",
+      "name": "M107 .50口径反器材步枪",
+      "tier": 5,
+      "ammo": "50bmg",
+      "bolt": "sa_50bmg",
+      "barrel": "barrel_50_long",
+      "frame": "frame_m107",
+      "boltName": ".50BMG半自动枪机",
+      "barrelName": ".50长枪管",
+      "frameName": "M107枪身"
+    },
+    {
+      "id": "m16a1",
+      "item": "tacz:m16a1",
+      "name": "M16A1 制式步枪",
+      "tier": 1,
+      "ammo": "556x45",
+      "bolt": "auto_556x45",
+      "barrel": "barrel_556mm",
+      "frame": "frame_m16",
+      "boltName": "5.56x45通用自动枪机",
+      "barrelName": "5.56mm通用枪管",
+      "frameName": "M16枪身"
+    },
+    {
+      "id": "m16a4",
+      "item": "tacz:m16a4",
+      "name": "M16A4 制式步枪",
+      "tier": 1,
+      "ammo": "556x45",
+      "bolt": "br_556x45",
+      "barrel": "barrel_556mm",
+      "frame": "frame_m16",
+      "boltName": "5.56x45连发枪机",
+      "barrelName": "5.56mm通用枪管",
+      "frameName": "M16枪身"
+    },
+    {
+      "id": "m1911",
+      "item": "tacz:m1911",
+      "name": "M1911 手枪",
+      "tier": 2,
+      "ammo": "45acp",
+      "bolt": "pistol_bolt_precise",
+      "barrel": "barrel_45_short",
+      "frame": "frame_pistol",
+      "boltName": "精密手枪枪机",
+      "barrelName": ".45短枪管",
+      "frameName": "通用手枪枪身"
+    },
+    {
+      "id": "m249",
+      "item": "tacz:m249",
+      "name": "M249 机枪",
+      "tier": 2,
+      "ammo": "556x45",
+      "bolt": "auto_556x45",
+      "barrel": "barrel_556mm",
+      "frame": "frame_m249",
+      "boltName": "5.56x45通用自动枪机",
+      "barrelName": "5.56mm通用枪管",
+      "frameName": "M249枪身"
+    },
+    {
+      "id": "m320",
+      "item": "tacz:m320",
+      "name": "M320 榴弹发射器",
+      "tier": 3,
+      "ammo": "40mm",
+      "bolt": "pin_40mm",
+      "barrel": "barrel_40mm",
+      "frame": "frame_m320",
+      "boltName": "40mm榴弹发射器击针",
+      "barrelName": "40mm榴弹发射管",
+      "frameName": "M320枪身"
+    },
+    {
+      "id": "m4a1",
+      "item": "tacz:m4a1",
+      "name": "M4A1 卡宾枪",
+      "tier": 3,
+      "ammo": "556x45",
+      "bolt": "auto_556x45_precise",
+      "barrel": "barrel_556mm",
+      "frame": "frame_m4a1",
+      "boltName": "5.56x45精密自动枪机",
+      "barrelName": "5.56mm通用枪管",
+      "frameName": "M4A1枪身"
+    },
+    {
+      "id": "m700",
+      "item": "tacz:m700",
+      "name": "M700 狙击步枪",
+      "tier": 3,
+      "ammo": "30_06",
+      "bolt": "bolt_30_06",
+      "barrel": "barrel_30_06",
+      "frame": "frame_m700",
+      "boltName": ".30-06栓动步枪枪机",
+      "barrelName": ".30-06枪管",
+      "frameName": "M700枪身"
+    },
+    {
+      "id": "m870",
+      "item": "tacz:m870",
+      "name": "M870 霰弹枪",
+      "tier": 2,
+      "ammo": "12g",
+      "bolt": "sa_12g",
+      "barrel": "barrel_12g",
+      "frame": "frame_m870",
+      "boltName": "12g半自动枪机",
+      "barrelName": "12g通用枪管",
+      "frameName": "M870枪身"
+    },
+    {
+      "id": "m95",
+      "item": "tacz:m95",
+      "name": "M95 .50口径反器材步枪",
+      "tier": 5,
+      "ammo": "50bmg",
+      "bolt": "bolt_50bmg",
+      "barrel": "barrel_50_long",
+      "frame": "frame_m95",
+      "boltName": ".50BMG栓动枪机",
+      "barrelName": ".50长枪管",
+      "frameName": "M95枪身"
+    },
+    {
+      "id": "minigun",
+      "item": "tacz:minigun",
+      "name": "M134 转管机枪",
+      "tier": 5,
+      "ammo": "308",
+      "bolt": "revolver_308",
+      "barrel": "barrel_762mm_hp",
+      "frame": "frame_m134",
+      "boltName": ".308转轮枪机",
+      "barrelName": "7.62mm高性能枪管",
+      "frameName": "M134枪身"
+    },
+    {
+      "id": "mk14",
+      "item": "tacz:mk14",
+      "name": "MK14 EBR 精确射手步枪",
+      "tier": 4,
+      "ammo": "308",
+      "bolt": "auto_308_precise",
+      "barrel": "barrel_762mm_hp",
+      "frame": "frame_mk14",
+      "boltName": ".308精密自动枪机",
+      "barrelName": "7.62mm高性能枪管",
+      "frameName": "MK14枪身"
+    },
+    {
+      "id": "p90",
+      "item": "tacz:p90",
+      "name": "P90 冲锋枪",
+      "tier": 4,
+      "ammo": "57x28",
+      "bolt": "auto_57x28_precise",
+      "barrel": "barrel_57mm_short",
+      "frame": "frame_p90",
+      "boltName": "5.7x28精密自动枪机",
+      "barrelName": "5.7mm短枪管",
+      "frameName": "P90枪身"
+    },
+    {
+      "id": "qbz_191",
+      "item": "tacz:qbz_191",
+      "name": "191式 突击步枪",
+      "tier": 5,
+      "ammo": "58x42",
+      "bolt": "auto_58x42_adv",
+      "barrel": "barrel_58mm_hp",
+      "frame": "frame_qbz191",
+      "boltName": "5.8x42先进自动枪机",
+      "barrelName": "5.8mm高性能枪管",
+      "frameName": "QBZ-191枪身"
+    },
+    {
+      "id": "qbz_95",
+      "item": "tacz:qbz_95",
+      "name": "95式 \"长弓\" 突击步枪",
+      "tier": 2,
+      "ammo": "58x42",
+      "bolt": "auto_58x42_precise",
+      "barrel": "barrel_58mm",
+      "frame": "frame_qbz95",
+      "boltName": "5.8x42精密自动枪机",
+      "barrelName": "5.8mm通用枪管",
+      "frameName": "QBZ-95枪身"
+    },
+    {
+      "id": "rpg7",
+      "item": "tacz:rpg7",
+      "name": "RPG-7 火箭筒",
+      "tier": 5,
+      "ammo": "rpg_rocket",
+      "bolt": "rpg7_trigger",
+      "barrel": "barrel_rpg7",
+      "frame": "frame_rpg7",
+      "boltName": "RPG-7扳机",
+      "barrelName": "RPG-7筒身",
+      "frameName": "RPG-7枪身"
+    },
+    {
+      "id": "rpk",
+      "item": "tacz:rpk",
+      "name": "RPK 轻机枪",
+      "tier": 2,
+      "ammo": "762x39",
+      "bolt": "auto_762x39",
+      "barrel": "barrel_762mm",
+      "frame": "frame_rpk",
+      "boltName": "7.62x39通用自动枪机",
+      "barrelName": "7.62mm通用枪管",
+      "frameName": "RPK枪身"
+    },
+    {
+      "id": "scar_h",
+      "item": "tacz:scar_h",
+      "name": "SCAR-H 战斗步枪",
+      "tier": 4,
+      "ammo": "308",
+      "bolt": "auto_308_precise",
+      "barrel": "barrel_762mm_hp",
+      "frame": "frame_scar_h",
+      "boltName": ".308精密自动枪机",
+      "barrelName": "7.62mm高性能枪管",
+      "frameName": "SCAR-H枪身"
+    },
+    {
+      "id": "scar_l",
+      "item": "tacz:scar_l",
+      "name": "SCAR-L 突击步枪",
+      "tier": 3,
+      "ammo": "556x45",
+      "bolt": "auto_556x45_precise",
+      "barrel": "barrel_556mm",
+      "frame": "frame_scar_l",
+      "boltName": "5.56x45精密自动枪机",
+      "barrelName": "5.56mm通用枪管",
+      "frameName": "SCAR-L枪身"
+    },
+    {
+      "id": "sks_tactical",
+      "item": "tacz:sks_tactical",
+      "name": "SKS 战术步枪",
+      "tier": 1,
+      "ammo": "762x39",
+      "bolt": "sa_762x39",
+      "barrel": "barrel_762mm",
+      "frame": "frame_sks",
+      "boltName": "7.62x39半自动枪机",
+      "barrelName": "7.62mm通用枪管",
+      "frameName": "SKS枪身"
+    },
+    {
+      "id": "spas_12",
+      "item": "tacz:spas_12",
+      "name": "SPAS-12 多功能霰弹枪",
+      "tier": 3,
+      "ammo": "12g",
+      "bolt": "sa_12g",
+      "barrel": "barrel_12g_hp",
+      "frame": "frame_spas12",
+      "boltName": "12g半自动枪机",
+      "barrelName": "12g高性能枪管",
+      "frameName": "SPAS-12枪身"
+    },
+    {
+      "id": "spr15hb",
+      "item": "tacz:spr15hb",
+      "name": "SPR-15 HB \"射手座\" 反狙击步枪",
+      "tier": 2,
+      "ammo": "556x45",
+      "bolt": "br_556x45",
+      "barrel": "barrel_556mm",
+      "frame": "frame_spr15",
+      "boltName": "5.56x45连发枪机",
+      "barrelName": "5.56mm通用枪管",
+      "frameName": "SPR-15枪身"
+    },
+    {
+      "id": "springfield1873",
+      "item": "tacz:springfield1873",
+      "name": "春田 1873 活门步枪",
+      "tier": 1,
+      "ammo": "45_70",
+      "bolt": "bolt_45_70",
+      "barrel": "barrel_45_long",
+      "frame": "frame_springfield1873",
+      "boltName": ".45-70栓动枪机",
+      "barrelName": ".45长枪管",
+      "frameName": "春田1873枪身"
+    },
+    {
+      "id": "type_81",
+      "item": "tacz:type_81",
+      "name": "81-1式 制式步枪",
+      "tier": 2,
+      "ammo": "762x39",
+      "bolt": "auto_762x39",
+      "barrel": "barrel_762mm",
+      "frame": "frame_type81",
+      "boltName": "7.62x39通用自动枪机",
+      "barrelName": "7.62mm通用枪管",
+      "frameName": "81-1式枪身"
+    },
+    {
+      "id": "ump45",
+      "item": "tacz:ump45",
+      "name": "UMP45 冲锋枪",
+      "tier": 1,
+      "ammo": "45acp",
+      "bolt": "auto_45",
+      "barrel": "barrel_45_short",
+      "frame": "frame_ump45",
+      "boltName": ".45通用自动枪机",
+      "barrelName": ".45短枪管",
+      "frameName": "UMP45枪身"
+    },
+    {
+      "id": "uzi",
+      "item": "tacz:uzi",
+      "name": "乌兹冲锋枪",
+      "tier": 1,
+      "ammo": "9mm",
+      "bolt": "auto_9mm",
+      "barrel": "barrel_9mm_short",
+      "frame": "frame_uzi",
+      "boltName": "9mm通用自动枪机",
+      "barrelName": "9mm短枪管",
+      "frameName": "乌兹冲锋枪枪身"
+    },
+    {
+      "id": "vector45",
+      "item": "tacz:vector45",
+      "name": "维克托 冲锋枪",
+      "tier": 4,
+      "ammo": "45acp",
+      "bolt": "auto_45_precise",
+      "barrel": "barrel_45_long",
+      "frame": "frame_vector",
+      "boltName": ".45精密自动枪机",
+      "barrelName": ".45长枪管",
+      "frameName": "维克托枪身"
+    }
+  ],
+  "bolts": [
+    {
+      "id": "auto_45",
+      "name": ".45通用自动枪机",
+      "tier": 1,
+      "guns": [
+        "ump45"
+      ],
+      "calibers": [
+        "45acp"
+      ]
+    },
+    {
+      "id": "auto_545x39",
+      "name": "5.45x39通用自动枪机",
+      "tier": 1,
+      "guns": [
+        "ccrp:aks74u",
+        "ccrp:ak74m",
+        "ccrp:ak74"
+      ],
+      "calibers": [
+        "545x39"
+      ]
+    },
+    {
+      "id": "auto_556x45",
+      "name": "5.56x45通用自动枪机",
+      "tier": 1,
+      "guns": [
+        "m249",
+        "m16a1",
+        "aug",
+        "g36k"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "auto_762x39",
+      "name": "7.62x39通用自动枪机",
+      "tier": 1,
+      "guns": [
+        "ak47",
+        "rpk",
+        "type_81",
+        "ccrp:ak103"
+      ],
+      "calibers": [
+        "762x39"
+      ]
+    },
+    {
+      "id": "auto_9mm",
+      "name": "9mm通用自动枪机",
+      "tier": 1,
+      "guns": [
+        "uzi"
+      ],
+      "calibers": [
+        "9mm"
+      ]
+    },
+    {
+      "id": "bolt_30_06",
+      "name": ".30-06栓动步枪枪机",
+      "tier": 1,
+      "guns": [
+        "m700"
+      ],
+      "calibers": [
+        "30_06"
+      ]
+    },
+    {
+      "id": "bolt_45_70",
+      "name": ".45-70栓动枪机",
+      "tier": 1,
+      "guns": [
+        "springfield1873",
+        "ccrp:marlin_1895"
+      ],
+      "calibers": [
+        "45_70"
+      ]
+    },
+    {
+      "id": "br_556x45",
+      "name": "5.56x45连发枪机",
+      "tier": 1,
+      "guns": [
+        "m16a4",
+        "spr15hb"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "pin_12g",
+      "name": "12g击针",
+      "tier": 1,
+      "guns": [
+        "db_short",
+        "db_long"
+      ],
+      "calibers": [
+        "12g"
+      ]
+    },
+    {
+      "id": "pistol_bolt",
+      "name": "通用手枪枪机",
+      "tier": 1,
+      "guns": [
+        "glock_17"
+      ],
+      "calibers": [
+        "9mm"
+      ]
+    },
+    {
+      "id": "sa_762x39",
+      "name": "7.62x39半自动枪机",
+      "tier": 1,
+      "guns": [
+        "sks_tactical"
+      ],
+      "calibers": [
+        "762x39"
+      ]
+    },
+    {
+      "id": "auto_45_precise",
+      "name": ".45精密自动枪机",
+      "tier": 2,
+      "guns": [
+        "vector45"
+      ],
+      "calibers": [
+        "45acp"
+      ]
+    },
+    {
+      "id": "auto_58x42_precise",
+      "name": "5.8x42精密自动枪机",
+      "tier": 2,
+      "guns": [
+        "qbz_95"
+      ],
+      "calibers": [
+        "58x42"
+      ]
+    },
+    {
+      "id": "auto_9mm_precise",
+      "name": "9mm精密自动枪机",
+      "tier": 2,
+      "guns": [
+        "hk_mp5a5"
+      ],
+      "calibers": [
+        "9mm"
+      ]
+    },
+    {
+      "id": "pistol_bolt_precise",
+      "name": "精密手枪枪机",
+      "tier": 2,
+      "guns": [
+        "deagle",
+        "deagle_golden",
+        "m1911"
+      ],
+      "calibers": [
+        "357mag",
+        "45acp",
+        "50ae"
+      ]
+    },
+    {
+      "id": "sa_12g",
+      "name": "12g半自动枪机",
+      "tier": 2,
+      "guns": [
+        "m870",
+        "spas_12",
+        "m1014"
+      ],
+      "calibers": [
+        "12g"
+      ]
+    },
+    {
+      "id": "auto_308",
+      "name": ".308通用自动枪机",
+      "tier": 3,
+      "guns": [
+        "hk_g3",
+        "fn_fal",
+        "fn_evolys"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "auto_545x39_precise",
+      "name": "5.45x39精密自动枪机",
+      "tier": 3,
+      "guns": [
+        "ccrp:ak105",
+        "classicr:ak12"
+      ],
+      "calibers": [
+        "545x39"
+      ]
+    },
+    {
+      "id": "auto_556x45_precise",
+      "name": "5.56x45精密自动枪机",
+      "tier": 3,
+      "guns": [
+        "m4a1",
+        "scar_l",
+        "ccrp:aug_a3",
+        "ccrp:m4_sopmod2"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "auto_762x39_precise",
+      "name": "7.62x39精密自动枪机",
+      "tier": 3,
+      "guns": [],
+      "calibers": []
+    },
+    {
+      "id": "auto_9mm_adv",
+      "name": "9mm先进自动枪机",
+      "tier": 3,
+      "guns": [
+        "ccrp:mpx"
+      ],
+      "calibers": [
+        "9mm"
+      ]
+    },
+    {
+      "id": "pin_40mm",
+      "name": "40mm榴弹发射器击针",
+      "tier": 3,
+      "guns": [
+        "m320",
+        "classicr:mgl_40mm"
+      ],
+      "calibers": [
+        "40mm"
+      ]
+    },
+    {
+      "id": "sa_308",
+      "name": ".308半自动步枪枪机",
+      "tier": 3,
+      "guns": [
+        "ccrp:sr25",
+        "ccrp:m110",
+        "ccrp:g28"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "auto_12g",
+      "name": "12g自动枪机",
+      "tier": 4,
+      "guns": [
+        "aa12"
+      ],
+      "calibers": [
+        "12g"
+      ]
+    },
+    {
+      "id": "auto_308_precise",
+      "name": ".308精密自动枪机",
+      "tier": 4,
+      "guns": [
+        "scar_h",
+        "mk14",
+        "ccrp:sa58",
+        "classicr:m60"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "auto_57x28_precise",
+      "name": "5.7x28精密自动枪机",
+      "tier": 4,
+      "guns": [
+        "p90"
+      ],
+      "calibers": [
+        "57x28"
+      ]
+    },
+    {
+      "id": "bolt_338",
+      "name": ".338栓动步枪枪机",
+      "tier": 4,
+      "guns": [
+        "ai_awp"
+      ],
+      "calibers": [
+        "338"
+      ]
+    },
+    {
+      "id": "auto_308_adv",
+      "name": ".308先进自动枪机",
+      "tier": 5,
+      "guns": [],
+      "calibers": []
+    },
+    {
+      "id": "auto_545x39_adv",
+      "name": "5.45x39先进自动枪机",
+      "tier": 5,
+      "guns": [
+        "ccrp:am17"
+      ],
+      "calibers": [
+        "545x39"
+      ]
+    },
+    {
+      "id": "auto_556x45_adv",
+      "name": "5.56x45先进自动枪机",
+      "tier": 5,
+      "guns": [
+        "hk416d"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "auto_57x28_adv",
+      "name": "5.7x28先进自动枪机",
+      "tier": 5,
+      "guns": [
+        "ccrp:ar57"
+      ],
+      "calibers": [
+        "57x28"
+      ]
+    },
+    {
+      "id": "auto_58x42_adv",
+      "name": "5.8x42先进自动枪机",
+      "tier": 5,
+      "guns": [
+        "qbz_191"
+      ],
+      "calibers": [
+        "58x42"
+      ]
+    },
+    {
+      "id": "auto_68x51_adv",
+      "name": "6.8x51先进自动枪机",
+      "tier": 5,
+      "guns": [
+        "classicr:ngsw_r_renewed"
+      ],
+      "calibers": [
+        "68x51fury"
+      ]
+    },
+    {
+      "id": "auto_762x39_adv",
+      "name": "7.62x39先进自动枪机",
+      "tier": 5,
+      "guns": [
+        "classicr:mk47"
+      ],
+      "calibers": [
+        "762x39"
+      ]
+    },
+    {
+      "id": "bolt_50bmg",
+      "name": ".50BMG栓动枪机",
+      "tier": 5,
+      "guns": [
+        "m95"
+      ],
+      "calibers": [
+        "50bmg"
+      ]
+    },
+    {
+      "id": "revolver_308",
+      "name": ".308转轮枪机",
+      "tier": 5,
+      "guns": [
+        "minigun"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "rpg7_trigger",
+      "name": "RPG-7扳机",
+      "tier": 5,
+      "guns": [
+        "rpg7"
+      ],
+      "calibers": [
+        "rpg_rocket"
+      ]
+    },
+    {
+      "id": "sa_338",
+      "name": ".338半自动步枪枪机",
+      "tier": 5,
+      "guns": [
+        "ccrp:mk18_mjolnir"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "sa_50bmg",
+      "name": ".50BMG半自动枪机",
+      "tier": 5,
+      "guns": [
+        "m107"
+      ],
+      "calibers": [
+        "50bmg"
+      ]
+    }
+  ],
+  "barrels": [
+    {
+      "id": "barrel_12g",
+      "name": "12g通用枪管",
+      "tier": 1,
+      "guns": [
+        "db_short",
+        "db_long",
+        "m870",
+        "m1014"
+      ],
+      "calibers": [
+        "12g"
+      ]
+    },
+    {
+      "id": "barrel_30_06",
+      "name": ".30-06枪管",
+      "tier": 1,
+      "guns": [
+        "m700"
+      ],
+      "calibers": [
+        "30_06"
+      ]
+    },
+    {
+      "id": "barrel_45_short",
+      "name": ".45短枪管",
+      "tier": 1,
+      "guns": [
+        "ump45",
+        "m1911"
+      ],
+      "calibers": [
+        "45acp"
+      ]
+    },
+    {
+      "id": "barrel_545mm",
+      "name": "5.45mm通用枪管",
+      "tier": 1,
+      "guns": [
+        "ccrp:aks74u",
+        "ccrp:ak74m",
+        "ccrp:ak105",
+        "ccrp:ak74"
+      ],
+      "calibers": [
+        "545x39"
+      ]
+    },
+    {
+      "id": "barrel_556mm",
+      "name": "5.56mm通用枪管",
+      "tier": 1,
+      "guns": [
+        "m4a1",
+        "m249",
+        "m16a1",
+        "m16a4",
+        "scar_l",
+        "aug",
+        "spr15hb",
+        "g36k",
+        "ccrp:aug_a3"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "barrel_762mm",
+      "name": "7.62mm通用枪管",
+      "tier": 1,
+      "guns": [
+        "ak47",
+        "hk_g3",
+        "sks_tactical",
+        "rpk",
+        "type_81",
+        "fn_fal",
+        "fn_evolys",
+        "ccrp:g28",
+        "ccrp:ak103"
+      ],
+      "calibers": [
+        "308",
+        "762x39"
+      ]
+    },
+    {
+      "id": "barrel_9mm_short",
+      "name": "9mm短枪管",
+      "tier": 1,
+      "guns": [
+        "glock_17",
+        "uzi"
+      ],
+      "calibers": [
+        "9mm"
+      ]
+    },
+    {
+      "id": "barrel_45_long",
+      "name": ".45长枪管",
+      "tier": 2,
+      "guns": [
+        "vector45",
+        "springfield1873",
+        "ccrp:marlin_1895"
+      ],
+      "calibers": [
+        "45_70",
+        "45acp"
+      ]
+    },
+    {
+      "id": "barrel_58mm",
+      "name": "5.8mm通用枪管",
+      "tier": 2,
+      "guns": [
+        "qbz_95"
+      ],
+      "calibers": [
+        "58x42"
+      ]
+    },
+    {
+      "id": "barrel_9mm_long",
+      "name": "9mm长枪管",
+      "tier": 2,
+      "guns": [
+        "hk_mp5a5",
+        "ccrp:mpx"
+      ],
+      "calibers": [
+        "9mm"
+      ]
+    },
+    {
+      "id": "barrel_12g_hp",
+      "name": "12g高性能枪管",
+      "tier": 3,
+      "guns": [
+        "aa12",
+        "spas_12"
+      ],
+      "calibers": [
+        "12g"
+      ]
+    },
+    {
+      "id": "barrel_40mm",
+      "name": "40mm榴弹发射管",
+      "tier": 3,
+      "guns": [
+        "m320",
+        "classicr:mgl_40mm"
+      ],
+      "calibers": [
+        "40mm"
+      ]
+    },
+    {
+      "id": "barrel_50_short",
+      "name": ".50短枪管",
+      "tier": 3,
+      "guns": [
+        "deagle"
+      ],
+      "calibers": [
+        "50ae"
+      ]
+    },
+    {
+      "id": "barrel_338_precise",
+      "name": ".338精密枪管",
+      "tier": 4,
+      "guns": [
+        "ai_awp",
+        "ccrp:mk18_mjolnir"
+      ],
+      "calibers": [
+        "338",
+        "556x45"
+      ]
+    },
+    {
+      "id": "barrel_357mag",
+      "name": ".357马格南枪管",
+      "tier": 4,
+      "guns": [
+        "deagle_golden"
+      ],
+      "calibers": [
+        "357mag"
+      ]
+    },
+    {
+      "id": "barrel_545mm_hp",
+      "name": "5.45mm高性能枪管",
+      "tier": 4,
+      "guns": [
+        "ccrp:am17",
+        "classicr:ak12"
+      ],
+      "calibers": [
+        "545x39"
+      ]
+    },
+    {
+      "id": "barrel_556mm_hp",
+      "name": "5.56mm高性能枪管",
+      "tier": 4,
+      "guns": [
+        "hk416d",
+        "ccrp:m4_sopmod2"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "barrel_57mm_short",
+      "name": "5.7mm短枪管",
+      "tier": 4,
+      "guns": [
+        "p90"
+      ],
+      "calibers": [
+        "57x28"
+      ]
+    },
+    {
+      "id": "barrel_762mm_hp",
+      "name": "7.62mm高性能枪管",
+      "tier": 4,
+      "guns": [
+        "scar_h",
+        "mk14",
+        "minigun",
+        "ccrp:sr25",
+        "ccrp:m110",
+        "ccrp:sa58",
+        "classicr:mk47",
+        "classicr:m60"
+      ],
+      "calibers": [
+        "308",
+        "762x39"
+      ]
+    },
+    {
+      "id": "barrel_50_long",
+      "name": ".50长枪管",
+      "tier": 5,
+      "guns": [
+        "m95",
+        "m107"
+      ],
+      "calibers": [
+        "50bmg"
+      ]
+    },
+    {
+      "id": "barrel_57mm_long",
+      "name": "5.7mm长枪管",
+      "tier": 5,
+      "guns": [
+        "ccrp:ar57"
+      ],
+      "calibers": [
+        "57x28"
+      ]
+    },
+    {
+      "id": "barrel_58mm_hp",
+      "name": "5.8mm高性能枪管",
+      "tier": 5,
+      "guns": [
+        "qbz_191"
+      ],
+      "calibers": [
+        "58x42"
+      ]
+    },
+    {
+      "id": "barrel_68mm_hp",
+      "name": "6.8mm高性能枪管",
+      "tier": 5,
+      "guns": [
+        "classicr:ngsw_r_renewed"
+      ],
+      "calibers": [
+        "68x51fury"
+      ]
+    },
+    {
+      "id": "barrel_rpg7",
+      "name": "RPG-7筒身",
+      "tier": 5,
+      "guns": [
+        "rpg7"
+      ],
+      "calibers": [
+        "rpg_rocket"
+      ]
+    }
+  ],
+  "frames": [
+    {
+      "id": "frame_ak74",
+      "name": "AK74枪身",
+      "tier": 1,
+      "guns": [
+        "ccrp:ak74"
+      ],
+      "calibers": [
+        "545x39"
+      ]
+    },
+    {
+      "id": "frame_akm",
+      "name": "AKM枪身",
+      "tier": 1,
+      "guns": [
+        "ak47"
+      ],
+      "calibers": [
+        "762x39"
+      ]
+    },
+    {
+      "id": "frame_aks74u",
+      "name": "AKS-74U枪身",
+      "tier": 1,
+      "guns": [
+        "ccrp:aks74u"
+      ],
+      "calibers": [
+        "545x39"
+      ]
+    },
+    {
+      "id": "frame_db",
+      "name": "双管霰弹枪枪身",
+      "tier": 1,
+      "guns": [
+        "db_short",
+        "db_long"
+      ],
+      "calibers": [
+        "12g"
+      ]
+    },
+    {
+      "id": "frame_m16",
+      "name": "M16枪身",
+      "tier": 1,
+      "guns": [
+        "m16a1",
+        "m16a4"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "frame_marlin1895",
+      "name": "马林1895枪身",
+      "tier": 1,
+      "guns": [
+        "ccrp:marlin_1895"
+      ],
+      "calibers": [
+        "45_70"
+      ]
+    },
+    {
+      "id": "frame_pistol",
+      "name": "通用手枪枪身",
+      "tier": 1,
+      "guns": [
+        "glock_17",
+        "m1911"
+      ],
+      "calibers": [
+        "45acp",
+        "9mm"
+      ]
+    },
+    {
+      "id": "frame_sks",
+      "name": "SKS枪身",
+      "tier": 1,
+      "guns": [
+        "sks_tactical"
+      ],
+      "calibers": [
+        "762x39"
+      ]
+    },
+    {
+      "id": "frame_springfield1873",
+      "name": "春田1873枪身",
+      "tier": 1,
+      "guns": [
+        "springfield1873"
+      ],
+      "calibers": [
+        "45_70"
+      ]
+    },
+    {
+      "id": "frame_ump45",
+      "name": "UMP45枪身",
+      "tier": 1,
+      "guns": [
+        "ump45"
+      ],
+      "calibers": [
+        "45acp"
+      ]
+    },
+    {
+      "id": "frame_uzi",
+      "name": "乌兹冲锋枪枪身",
+      "tier": 1,
+      "guns": [
+        "uzi"
+      ],
+      "calibers": [
+        "9mm"
+      ]
+    },
+    {
+      "id": "frame_ak103",
+      "name": "AK103枪身",
+      "tier": 2,
+      "guns": [
+        "ccrp:ak103"
+      ],
+      "calibers": [
+        "762x39"
+      ]
+    },
+    {
+      "id": "frame_ak74m",
+      "name": "AK74M枪身",
+      "tier": 2,
+      "guns": [
+        "ccrp:ak74m"
+      ],
+      "calibers": [
+        "545x39"
+      ]
+    },
+    {
+      "id": "frame_aug",
+      "name": "AUG枪身",
+      "tier": 2,
+      "guns": [
+        "aug"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "frame_g36",
+      "name": "G36枪身",
+      "tier": 2,
+      "guns": [
+        "g36k"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "frame_m1014",
+      "name": "M1014枪身",
+      "tier": 2,
+      "guns": [
+        "m1014"
+      ],
+      "calibers": [
+        "12g"
+      ]
+    },
+    {
+      "id": "frame_m249",
+      "name": "M249枪身",
+      "tier": 2,
+      "guns": [
+        "m249"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "frame_m870",
+      "name": "M870枪身",
+      "tier": 2,
+      "guns": [
+        "m870"
+      ],
+      "calibers": [
+        "12g"
+      ]
+    },
+    {
+      "id": "frame_mp5",
+      "name": "MP5枪身",
+      "tier": 2,
+      "guns": [
+        "hk_mp5a5"
+      ],
+      "calibers": [
+        "9mm"
+      ]
+    },
+    {
+      "id": "frame_qbz95",
+      "name": "QBZ-95枪身",
+      "tier": 2,
+      "guns": [
+        "qbz_95"
+      ],
+      "calibers": [
+        "58x42"
+      ]
+    },
+    {
+      "id": "frame_rpk",
+      "name": "RPK枪身",
+      "tier": 2,
+      "guns": [
+        "rpk"
+      ],
+      "calibers": [
+        "762x39"
+      ]
+    },
+    {
+      "id": "frame_spr15",
+      "name": "SPR-15枪身",
+      "tier": 2,
+      "guns": [
+        "spr15hb"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "frame_type81",
+      "name": "81-1式枪身",
+      "tier": 2,
+      "guns": [
+        "type_81"
+      ],
+      "calibers": [
+        "762x39"
+      ]
+    },
+    {
+      "id": "frame_ak105",
+      "name": "AK105枪身",
+      "tier": 3,
+      "guns": [
+        "ccrp:ak105"
+      ],
+      "calibers": [
+        "545x39"
+      ]
+    },
+    {
+      "id": "frame_aug_a3",
+      "name": "AUG A3枪身",
+      "tier": 3,
+      "guns": [
+        "ccrp:aug_a3"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "frame_deagle",
+      "name": "沙漠之鹰枪身",
+      "tier": 3,
+      "guns": [
+        "deagle"
+      ],
+      "calibers": [
+        "50ae"
+      ]
+    },
+    {
+      "id": "frame_fnevolys",
+      "name": "FN EVOLYS枪身",
+      "tier": 3,
+      "guns": [
+        "fn_evolys"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "frame_fnfal",
+      "name": "FN FAL枪身",
+      "tier": 3,
+      "guns": [
+        "fn_fal"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "frame_g28",
+      "name": "G28枪身",
+      "tier": 3,
+      "guns": [
+        "ccrp:g28"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "frame_g3",
+      "name": "G3枪身",
+      "tier": 3,
+      "guns": [
+        "hk_g3"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "frame_m320",
+      "name": "M320枪身",
+      "tier": 3,
+      "guns": [
+        "m320"
+      ],
+      "calibers": [
+        "40mm"
+      ]
+    },
+    {
+      "id": "frame_m4a1",
+      "name": "M4A1枪身",
+      "tier": 3,
+      "guns": [
+        "m4a1"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "frame_m700",
+      "name": "M700枪身",
+      "tier": 3,
+      "guns": [
+        "m700"
+      ],
+      "calibers": [
+        "30_06"
+      ]
+    },
+    {
+      "id": "frame_mpx",
+      "name": "MPX枪身",
+      "tier": 3,
+      "guns": [
+        "ccrp:mpx"
+      ],
+      "calibers": [
+        "9mm"
+      ]
+    },
+    {
+      "id": "frame_scar_l",
+      "name": "SCAR-L枪身",
+      "tier": 3,
+      "guns": [
+        "scar_l"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "frame_spas12",
+      "name": "SPAS-12枪身",
+      "tier": 3,
+      "guns": [
+        "spas_12"
+      ],
+      "calibers": [
+        "12g"
+      ]
+    },
+    {
+      "id": "frame_aa12",
+      "name": "AA12枪身",
+      "tier": 4,
+      "guns": [
+        "aa12"
+      ],
+      "calibers": [
+        "12g"
+      ]
+    },
+    {
+      "id": "frame_ak12",
+      "name": "AK12枪身",
+      "tier": 4,
+      "guns": [
+        "classicr:ak12"
+      ],
+      "calibers": [
+        "545x39"
+      ]
+    },
+    {
+      "id": "frame_awp",
+      "name": "AWP枪身",
+      "tier": 4,
+      "guns": [
+        "ai_awp"
+      ],
+      "calibers": [
+        "338"
+      ]
+    },
+    {
+      "id": "frame_deagle_golden",
+      "name": "黄金沙漠之鹰枪身",
+      "tier": 4,
+      "guns": [
+        "deagle_golden"
+      ],
+      "calibers": [
+        "357mag"
+      ]
+    },
+    {
+      "id": "frame_m110",
+      "name": "M110枪身",
+      "tier": 4,
+      "guns": [
+        "ccrp:m110"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "frame_m4_sopmod2",
+      "name": "M4 SOPMOD II枪身",
+      "tier": 4,
+      "guns": [
+        "ccrp:m4_sopmod2"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "frame_m60",
+      "name": "M60枪身",
+      "tier": 4,
+      "guns": [
+        "classicr:m60"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "frame_mk14",
+      "name": "MK14枪身",
+      "tier": 4,
+      "guns": [
+        "mk14"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "frame_p90",
+      "name": "P90枪身",
+      "tier": 4,
+      "guns": [
+        "p90"
+      ],
+      "calibers": [
+        "57x28"
+      ]
+    },
+    {
+      "id": "frame_sa58",
+      "name": "SA58枪身",
+      "tier": 4,
+      "guns": [
+        "ccrp:sa58"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "frame_scar_h",
+      "name": "SCAR-H枪身",
+      "tier": 4,
+      "guns": [
+        "scar_h"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "frame_sr25",
+      "name": "SR25枪身",
+      "tier": 4,
+      "guns": [
+        "ccrp:sr25"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "frame_vector",
+      "name": "维克托枪身",
+      "tier": 4,
+      "guns": [
+        "vector45"
+      ],
+      "calibers": [
+        "45acp"
+      ]
+    },
+    {
+      "id": "frame_am17",
+      "name": "AM17枪身",
+      "tier": 5,
+      "guns": [
+        "ccrp:am17"
+      ],
+      "calibers": [
+        "545x39"
+      ]
+    },
+    {
+      "id": "frame_ar57",
+      "name": "AR57枪身",
+      "tier": 5,
+      "guns": [
+        "ccrp:ar57"
+      ],
+      "calibers": [
+        "57x28"
+      ]
+    },
+    {
+      "id": "frame_hk416",
+      "name": "HK416枪身",
+      "tier": 5,
+      "guns": [
+        "hk416d"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "frame_m107",
+      "name": "M107枪身",
+      "tier": 5,
+      "guns": [
+        "m107"
+      ],
+      "calibers": [
+        "50bmg"
+      ]
+    },
+    {
+      "id": "frame_m134",
+      "name": "M134枪身",
+      "tier": 5,
+      "guns": [
+        "minigun"
+      ],
+      "calibers": [
+        "308"
+      ]
+    },
+    {
+      "id": "frame_m7",
+      "name": "M7枪身",
+      "tier": 5,
+      "guns": [
+        "classicr:ngsw_r_renewed"
+      ],
+      "calibers": [
+        "68x51fury"
+      ]
+    },
+    {
+      "id": "frame_m95",
+      "name": "M95枪身",
+      "tier": 5,
+      "guns": [
+        "m95"
+      ],
+      "calibers": [
+        "50bmg"
+      ]
+    },
+    {
+      "id": "frame_mgl",
+      "name": "MGL枪身",
+      "tier": 5,
+      "guns": [
+        "classicr:mgl_40mm"
+      ],
+      "calibers": [
+        "40mm"
+      ]
+    },
+    {
+      "id": "frame_mk18",
+      "name": "MK18枪身",
+      "tier": 5,
+      "guns": [
+        "ccrp:mk18_mjolnir"
+      ],
+      "calibers": [
+        "556x45"
+      ]
+    },
+    {
+      "id": "frame_mk47",
+      "name": "MK47枪身",
+      "tier": 5,
+      "guns": [
+        "classicr:mk47"
+      ],
+      "calibers": [
+        "762x39"
+      ]
+    },
+    {
+      "id": "frame_qbz191",
+      "name": "QBZ-191枪身",
+      "tier": 5,
+      "guns": [
+        "qbz_191"
+      ],
+      "calibers": [
+        "58x42"
+      ]
+    },
+    {
+      "id": "frame_rpg7",
+      "name": "RPG-7枪身",
+      "tier": 5,
+      "guns": [
+        "rpg7"
+      ],
+      "calibers": [
+        "rpg_rocket"
+      ]
+    }
+  ]
+}

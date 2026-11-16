@@ -102,6 +102,17 @@ public final class BatchContentRegistrar {
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static Result registerAll(ContentPackContext ctx, List<ItemDefinition> items, List<BlockDefinition> blocks) {
+        return registerAll(ctx, items, blocks, null);
+    }
+
+    /**
+     * {@link #registerAll(ContentPackContext, List, List)} 的重载，额外校验包 jar 内的客户端资源齐全。
+     *
+     * @param jarEntries 当前包 jar 的条目名集合；{@code null} = 不检查（直接传定义列表的调用方）
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static Result registerAll(ContentPackContext ctx, List<ItemDefinition> items, List<BlockDefinition> blocks,
+                                     Set<String> jarEntries) {
         BlockPropertyRegistry.ensureStandardLoaded();
         IEventBus bus = ctx.getModEventBus();
         String packId = ctx.currentPackId();
@@ -110,6 +121,11 @@ public final class BatchContentRegistrar {
 
         List<ItemDefinition> itemList = items != null ? items : List.of();
         List<BlockDefinition> blockList = blocks != null ? blocks : List.of();
+
+        // ---- 客户端资源齐全（注册成功 ≠ 能显示：缺文件时客户端只打日志，problems 仍为 0）----
+        if (jarEntries != null) {
+            problems.addAll(verifyClientResources(jarEntries, itemList, blockList));
+        }
 
         // ---- 重名预检（同批内 + 已注册）----
         Set<String> seen = new HashSet<>();
@@ -481,7 +497,72 @@ public final class BatchContentRegistrar {
                 p.add("blockEntity.type=custom 缺少 class 全限定类名");
             }
         }
+        // 红石行为会二次设置 lightLevel，完全覆盖 material.lightLevel 的静态值
+        if (def.redstone() != null && m.lightLevel() > 0) {
+            p.add("material.lightLevel 与 redstone 同时声明：红石行为会覆盖静态亮度，请删掉 lightLevel");
+        }
         return p;
+    }
+
+    /**
+     * 注册期客户端资源齐全检查（只查包 jar 里必须存在的两类文件）。
+     *
+     * <p>注册成功只保证「内容存在」；客户端渲染还需要
+     * {@code blockstates/<id>.json → 模型 → 纹理}。缺文件时游戏只打日志
+     * （{@code Exception loading blockstate definition} / {@code Unable to load model} /
+     * {@code Missing textures in model}），注册器 problems 仍是 0 —— 紫黑块就这样混过去。
+     * 这里把「jar 里有没有 blockstate / 物品模型」并入 problems，让 validate-game 的
+     * {@code problems=[1-9]} 闸门直接红。
+     *
+     * <p>纹理存在性不在注册期查：服务端没有客户端资源，其它 mod/原版纹理也无法在这里可靠判定
+     * —— 那条链由编辑器打包前预检（packPreflight）和客户端日志闸门覆盖。
+     */
+    static List<String> verifyClientResources(Set<String> jarEntries, List<ItemDefinition> items,
+                                              List<BlockDefinition> blocks) {
+        List<String> p = new ArrayList<>();
+        for (ItemDefinition def : items) {
+            if (!validId(def.id(), def.namespace())) {
+                continue; // 非法定义由 validateItem 报，避免重复噪音
+            }
+            String ns = def.location().getNamespace();
+            String rel = "assets/" + ns + "/models/item/" + def.id() + ".json";
+            if (!jarEntries.contains(rel)) {
+                p.add("物品 " + def.location() + ": 包内缺少 " + rel
+                        + "（已注册但客户端没有物品模型 ⇒ 紫黑块/缺失模型）");
+            }
+        }
+        for (BlockDefinition def : blocks) {
+            if (!validId(def.id(), def.namespace())) {
+                continue;
+            }
+            String ns = def.location().getNamespace();
+            String rel = "assets/" + ns + "/blockstates/" + def.id() + ".json";
+            if (!jarEntries.contains(rel)) {
+                String singular = "assets/" + ns + "/blockstate/" + def.id() + ".json";
+                if (jarEntries.contains(singular)) {
+                    p.add("方块 " + def.location() + ": blockstate 在 " + singular
+                            + "（单数）—— 1.21.1 客户端只读 blockstates/（复数），该文件会被忽略 ⇒ 紫黑块");
+                } else {
+                    p.add("方块 " + def.location() + ": 包内缺少 " + rel
+                            + "（已注册但客户端没有形态定义 ⇒ 紫黑块/缺失模型）");
+                }
+            }
+            if (def.blockItem()) {
+                String itemRel = "assets/" + ns + "/models/item/" + def.id() + ".json";
+                if (!jarEntries.contains(itemRel)) {
+                    p.add("方块 " + def.location() + ": 包内缺少 " + itemRel
+                            + "（方块物品没有物品模型 ⇒ 物品栏紫黑块）");
+                }
+            }
+        }
+        return p;
+    }
+
+    private static boolean validId(String id, String namespace) {
+        if (id == null || !ID_PATTERN.matcher(id).matches()) {
+            return false;
+        }
+        return namespace == null || namespace.isEmpty() || NS_PATTERN.matcher(namespace).matches();
     }
 
     private static Rarity parseRarity(String name) {

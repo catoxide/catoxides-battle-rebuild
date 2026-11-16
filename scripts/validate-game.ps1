@@ -297,6 +297,10 @@ if ($Phase -in 'all', 'models') {
         -SuccessRegex 'Sound engine started' `
         -FailRegex @(
             'Unable to load model:',
+            # blockstates 缺失/写错目录/变体形状非法：方块注册成功但渲染成紫黑块
+            'Exception loading blockstate definition',
+            # 模型引用的纹理不存在（如 minecraft:block/redstone_lamp_lit）：紫黑格
+            'Missing textures in model',
             'Missing sound for event:',
             'quarantined at',
             'Failed to load ContentPack',

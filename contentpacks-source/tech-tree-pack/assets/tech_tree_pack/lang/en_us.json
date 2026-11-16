@@ -41,6 +41,7 @@
   "tech_tree_pack.msg.too_far": "Too far from the research table",
   "tech_tree_pack.msg.not_table": "There is no research table here",
   "block.tech_tree_pack.research_table": "Research Table",
+  "block.tech_tree_pack.stress_converter": "Stress Converter",
   "itemGroup.tech_tree_pack:pack_tech_tree_pack": "Tech Tree",
   "item.tech_tree_pack.auto_45_blueprint": "Blueprint: .45通用自动枪机",
   "item.tech_tree_pack.auto_545x39_blueprint": "Blueprint: 5.45x39通用自动枪机",

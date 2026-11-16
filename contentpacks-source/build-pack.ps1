@@ -55,6 +55,15 @@ Get-ChildItem $srcAbs -Directory | ForEach-Object {
         Copy-Item $_.FullName (Join-Path $temp $_.Name) -Recurse -Force
     }
 }
+# 顶层散装文件也要进包（config-declarations.json 等）。早先只拷目录，配置声明被静默丢弃，
+# 运行期表现为 "has no registered config '<id>'" 并把整个包隔离 —— 打包成功、零警告。
+# 排除表与 contentpack.gradle 的 from(projectDir) 保持一致。
+$junkFiles = @("MANIFEST.MF", "build.gradle", "settings.gradle", "contentpack.disabled")
+Get-ChildItem $srcAbs -File | ForEach-Object {
+    if ($junkFiles -notcontains $_.Name) {
+        Copy-Item $_.FullName (Join-Path $temp $_.Name) -Force
+    }
+}
 # 3b. Compile/collect entry classes: prefer independent compile (pack java/ sources), fallback main mod output
 $srcJava = Join-Path $srcAbs "java"
 $entryClasses = if ($pkgPath) { Join-Path $classes $pkgPath } else { $null }
@@ -116,10 +125,13 @@ if (Test-Path $srcJava) {
 $outJarAbs = Join-Path $root $OutJar
 Push-Location $temp
 try {
-    # Collect top-level items: entry package + entities + all resource dirs (skip META-INF/classes-out/java, handled separately)
+    # Collect top-level items: entry package + loose files + entities + all resource dirs (skip META-INF/classes-out/java)
     $topItems = @()
     if ($topPkg) { $topItems += $topPkg }
     $topItems += "entities"
+    Get-ChildItem $temp -File | ForEach-Object {
+        $topItems += $_.Name
+    }
     Get-ChildItem $temp -Directory | ForEach-Object {
         if ($_.Name -ne "META-INF" -and $_.Name -ne "entities" -and $_.Name -ne $topPkg -and $_.Name -ne "classes-out" -and $_.Name -ne "java") {
             $topItems += $_.Name

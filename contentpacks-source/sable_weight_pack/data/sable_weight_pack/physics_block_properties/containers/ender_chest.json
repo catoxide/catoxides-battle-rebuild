@@ -1,0 +1,7 @@
+{
+  "selector": "minecraft:ender_chest",
+  "priority": 1100,
+  "properties": {
+    "sable:mass": 1.5
+  }
+}

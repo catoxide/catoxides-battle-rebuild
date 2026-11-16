@@ -60,6 +60,20 @@ public interface MapPointResolver {
     Double surfaceY(Level level, int x, int z);
 
     /**
+     * 世界 (x,z) 列在扩展空间里对应的锚点（例如 Sable 船体甲板）。
+     *
+     * <p>与 {@link #surfaceY} 的区别：这里直接把锚点写进 {@code anchorData} 并返回世界坐标，
+     * 不再走「先取高度、再把世界点反算回局部空间」——船体倾斜时那条路会把点丢到包围盒外。
+     *
+     * @param anchorData 标点扩展载荷，写入内容会随标点保存/同步
+     * @return 世界坐标；{@code null} 表示本解析器没有覆盖该列
+     */
+    @Nullable
+    default Vec3 surfaceAnchor(Level level, double x, double z, CompoundTag anchorData) {
+        return null;
+    }
+
+    /**
      * 该方块位置是否属于「不应当被普通地图采集」的分离空间（如 plot 中的船体）。
      */
     default boolean isDetached(Level level, BlockPos pos) {

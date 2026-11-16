@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=west": { "model": "tech_tree_pack:block/stress_converter" },
+    "facing=north": { "model": "tech_tree_pack:block/stress_converter", "y": 90 },
+    "facing=east": { "model": "tech_tree_pack:block/stress_converter", "y": 180 },
+    "facing=south": { "model": "tech_tree_pack:block/stress_converter", "y": 270 }
+  }
+}

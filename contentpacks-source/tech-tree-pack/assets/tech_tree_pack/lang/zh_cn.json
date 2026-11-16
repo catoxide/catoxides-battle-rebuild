@@ -41,6 +41,7 @@
   "tech_tree_pack.msg.too_far": "离研究台太远了",
   "tech_tree_pack.msg.not_table": "这里没有研究台",
   "block.tech_tree_pack.research_table": "研究台",
+  "block.tech_tree_pack.stress_converter": "应力研究转换器",
   "itemGroup.tech_tree_pack:pack_tech_tree_pack": "科技树",
   "item.tech_tree_pack.auto_45_blueprint": "§a.45通用自动枪机 蓝图",
   "item.tech_tree_pack.auto_545x39_blueprint": "§a5.45x39通用自动枪机 蓝图",

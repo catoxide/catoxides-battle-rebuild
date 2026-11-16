@@ -7,6 +7,7 @@ import example.contentpack.tech.network.TechSyncPayload;
 import example.contentpack.tech.network.TechTableSyncPayload;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
@@ -46,41 +47,112 @@ public final class TechService {
         return tree;
     }
 
+    // ==================== 研究台身份 ====================
+
+    public static TechTableKey tableKey(ServerLevel level, BlockPos pos) {
+        return pos == null ? null : TechTableKey.of(level, pos);
+    }
+
+    /** 玩家最近使用的台子；从未打开过研究台时为 null。 */
+    public static TechTableKey boundTable(ServerPlayer player) {
+        TechRequirementEngine.Context context = lastTable.get(player.getUUID());
+        if (context == null || context.tablePos() == null) {
+            return null;
+        }
+        ResourceLocation dimension = context.dimension() != null
+                ? context.dimension()
+                : player.serverLevel().dimension().location();
+        return new TechTableKey(dimension, context.tablePos());
+    }
+
+    public static boolean hasBoundTable(ServerPlayer player) {
+        return boundTable(player) != null;
+    }
+
+    /** 条件上下文对应的台子：优先上下文里的坐标，否则回落到玩家当前台子。 */
+    public static TechTableKey key(ServerPlayer player, TechRequirementEngine.Context context) {
+        if (context != null && context.tablePos() != null) {
+            ResourceLocation dimension = context.dimension() != null
+                    ? context.dimension()
+                    : player.serverLevel().dimension().location();
+            return new TechTableKey(dimension, context.tablePos());
+        }
+        return boundTable(player);
+    }
+
     // ==================== 科技点 ====================
 
-    /** 玩家科技点余额；客户端（无服务端）返回 0，界面用同步下来的值。 */
+    /** 玩家当前台子的科技点余额；客户端（无服务端）返回 0，界面用同步下来的值。 */
     public static int points(Player player) {
         if (!(player instanceof ServerPlayer serverPlayer) || serverPlayer.getServer() == null) {
             return 0;
         }
-        return data(serverPlayer).points(player.getUUID());
+        TechTableKey table = boundTable(serverPlayer);
+        return table == null ? 0 : data(serverPlayer).points(table);
     }
 
-    /** 发放科技点并立即同步余额。返回新余额。 */
+    public static int points(ServerPlayer player, TechRequirementEngine.Context context) {
+        if (player.getServer() == null) {
+            return 0;
+        }
+        TechTableKey table = key(player, context);
+        return table == null ? 0 : data(player).points(table);
+    }
+
+    public static int points(ServerPlayer player, TechTableKey table) {
+        if (player.getServer() == null || table == null) {
+            return 0;
+        }
+        return data(player).points(table);
+    }
+
+    /** 发放科技点到玩家当前台子并立即同步余额。返回新余额。 */
     public static int addPoints(ServerPlayer player, int amount) {
         if (player.getServer() == null || amount <= 0) {
             return points(player);
         }
-        int updated = data(player).addPoints(player.getUUID(), amount);
-        sync(player);
-        LogManager.serverInfo(TAG, "granted %d tech point(s) to %s (balance=%d)",
-                amount, player.getName().getString(), updated);
-        return updated;
-    }
-
-    /** 直接设置余额（指令/调试）。 */
-    public static int setPoints(ServerPlayer player, int value) {
-        int updated = data(player).setPoints(player.getUUID(), value);
-        sync(player);
-        return updated;
-    }
-
-    /** 扣除科技点（调用方已确保余额足够）。 */
-    public static boolean spendPoints(ServerPlayer player, int amount) {
-        if (player.getServer() == null) {
-            return false;
+        TechTableKey table = boundTable(player);
+        if (table == null) {
+            LogManager.serverWarn(TAG, "%s has no bound research table; %d tech point(s) not credited",
+                    player.getName().getString(), amount);
+            return 0;
         }
-        return data(player).spendPoints(player.getUUID(), amount);
+        int updated = data(player).addPoints(table, amount);
+        sync(player);
+        LogManager.serverInfo(TAG, "granted %d tech point(s) to table %s (balance=%d)",
+                amount, table.pos().toShortString(), updated);
+        return updated;
+    }
+
+    /** 机器/指令直接给指定台子加点（无需玩家打开界面）。 */
+    public static int addPoints(ServerLevel level, BlockPos pos, int amount) {
+        if (level == null || pos == null || amount <= 0) {
+            return 0;
+        }
+        TechTableKey table = TechTableKey.of(level, pos);
+        return TechSavedData.get(level.getServer().overworld()).addPoints(table, amount);
+    }
+
+    /** 直接设置玩家当前台子的余额（指令/调试）。 */
+    public static int setPoints(ServerPlayer player, int value) {
+        TechTableKey table = boundTable(player);
+        if (table == null) {
+            return 0;
+        }
+        int updated = data(player).setPoints(table, value);
+        sync(player);
+        return updated;
+    }
+
+    /** 从玩家当前台子扣点（调用方已确保余额足够）。 */
+    public static boolean spendPoints(ServerPlayer player, int amount) {
+        TechTableKey table = boundTable(player);
+        return table != null && data(player).spendPoints(table, amount);
+    }
+
+    public static boolean spendPoints(ServerPlayer player, TechTableKey table, int amount) {
+        return player.getServer() != null && table != null
+                && data(player).spendPoints(table, amount);
     }
 
     public static void setQuestReward(ResourceLocation questId, int points) {
@@ -142,32 +214,46 @@ public final class TechService {
 
     // ==================== 解锁状态 ====================
 
-    /** 节点当前是否解锁；声明了 {@code resetAfterTicks} / {@code resetWhen} 的节点满足条件后自动回退。 */
+    /** 玩家当前台子上该节点是否解锁；没有绑定台子时为 false。 */
     public static boolean isUnlocked(ServerPlayer player, String nodeId) {
+        TechTableKey table = boundTable(player);
+        return table != null && isUnlocked(player, table, nodeId);
+    }
+
+    /** 指定条件上下文（或当前台子）上该节点是否解锁。 */
+    public static boolean isUnlocked(ServerPlayer player, TechRequirementEngine.Context context,
+                                     String nodeId) {
+        TechTableKey table = key(player, context);
+        return table != null && isUnlocked(player, table, nodeId);
+    }
+
+    /**
+     * 节点当前是否解锁；声明了 {@code resetAfterTicks} / {@code resetWhen} 的节点满足条件后自动回退。
+     */
+    private static boolean isUnlocked(ServerPlayer player, TechTableKey table, String nodeId) {
         if (player.getServer() == null || nodeId == null) {
             return false;
         }
         TechSavedData data = data(player);
-        UUID playerId = player.getUUID();
-        if (!data.isUnlocked(playerId, nodeId)) {
+        if (!data.isUnlocked(table, nodeId)) {
             return false;
         }
         TechNode node = tree.node(nodeId);
         if (node != null && node.resetAfterTicks() > 0) {
-            long unlockedAt = data.unlockTime(playerId, nodeId);
+            long unlockedAt = data.unlockTime(table, nodeId);
             if (unlockedAt > 0
                     && System.currentTimeMillis() - unlockedAt >= node.resetAfterTicks() * MILLIS_PER_TICK) {
-                data.lock(playerId, nodeId);
-                LogManager.serverInfo(TAG, "node '%s' reset for %s (after %d ticks)",
-                        nodeId, player.getName().getString(), node.resetAfterTicks());
+                data.lock(table, nodeId);
+                LogManager.serverInfo(TAG, "node '%s' reset on table %s (after %d ticks)",
+                        nodeId, table.pos().toShortString(), node.resetAfterTicks());
                 return false;
             }
         }
         if (node != null && !node.resetWhen().isEmpty()
                 && requirementsMet(player, node.resetWhen(), contextOf(player))) {
-            data.lock(playerId, nodeId);
-            LogManager.serverInfo(TAG, "node '%s' reset for %s (resetWhen met)",
-                    nodeId, player.getName().getString());
+            data.lock(table, nodeId);
+            LogManager.serverInfo(TAG, "node '%s' reset on table %s (resetWhen met)",
+                    nodeId, table.pos().toShortString());
             return false;
         }
         return true;
@@ -177,7 +263,8 @@ public final class TechService {
         if (player.getServer() == null) {
             return List.of();
         }
-        return List.copyOf(data(player).unlocked(player.getUUID()));
+        TechTableKey table = boundTable(player);
+        return table == null ? List.of() : List.copyOf(data(player).unlocked(table));
     }
 
     // ==================== 条件判定 ====================
@@ -216,10 +303,11 @@ public final class TechService {
     public static List<TechSyncPayload.ResearchState> researchStates(ServerPlayer player,
                                                                      TechRequirementEngine.Context context) {
         List<TechSyncPayload.ResearchState> out = new ArrayList<>();
+        TechTableKey table = key(player, context);
         long now = System.currentTimeMillis();
         for (TechTree.Research entry : tree.research()) {
             boolean visible = requirementsMet(player, entry.visibleWhen(), context);
-            long last = data(player).researchTime(player.getUUID(), entry.id());
+            long last = table == null ? 0L : data(player).researchTime(table, entry.id());
             long readyAt = entry.cooldownTicks() <= 0 ? 0L
                     : last + entry.cooldownTicks() * MILLIS_PER_TICK;
             out.add(new TechSyncPayload.ResearchState(entry.id(), visible,
@@ -249,10 +337,12 @@ public final class TechService {
         if (table == TableCheck.TOO_FAR) {
             return UnlockResult.TOO_FAR;
         }
+        TechTableKey tableKey = TechTableKey.of(player.serverLevel(), tablePos);
         TechRequirementEngine.Context context =
-                new TechRequirementEngine.Context(tablePos, TechBlocks.tierAt(player.serverLevel(), tablePos));
+                new TechRequirementEngine.Context(tablePos, TechBlocks.tierAt(player.serverLevel(), tablePos),
+                        tableKey.dimension());
 
-        if (isUnlocked(player, nodeId)) {
+        if (isUnlocked(player, tableKey, nodeId)) {
             return UnlockResult.ALREADY_UNLOCKED;
         }
         if (!requirementsMet(player, node.visibleWhen(), context)
@@ -260,7 +350,7 @@ public final class TechService {
             return UnlockResult.MISSING_REQUIREMENT;
         }
         for (TechCost cost : node.costs()) {
-            if (!cost.canPay(player)) {
+            if (!cost.canPay(player, tableKey)) {
                 return UnlockResult.INSUFFICIENT_RESOURCES;
             }
         }
@@ -275,11 +365,11 @@ public final class TechService {
             }
         }
         for (TechCost cost : node.costs()) {
-            cost.pay(player);
+            cost.pay(player, tableKey);
         }
         TechSavedData data = data(player);
-        data.unlock(player.getUUID(), nodeId);
-        data.recordUnlockTime(player.getUUID(), nodeId, System.currentTimeMillis());
+        data.unlock(tableKey, nodeId);
+        data.recordUnlockTime(tableKey, nodeId, System.currentTimeMillis());
         for (String trigger : node.unlockTriggers()) {
             data.setTrigger(player.getUUID(), trigger, true);
         }
@@ -287,19 +377,21 @@ public final class TechService {
         lastTable.put(player.getUUID(), context);
         sync(player, context);
         QuestSystem.getInstance().checkAllQuests(player);
-        LogManager.serverInfo(TAG, "unlocked '%s' for %s", nodeId, player.getName().getString());
+        LogManager.serverInfo(TAG, "unlocked '%s' on table %s for %s",
+                nodeId, tablePos.toShortString(), player.getName().getString());
         return UnlockResult.OK;
     }
 
-    /** 指令/调试：绕过条件与成本直接解锁。 */
+    /** 指令/调试：绕过条件与成本直接解锁（作用于玩家当前台子）。 */
     public static boolean forceUnlock(ServerPlayer player, String nodeId) {
         TechNode node = tree.node(nodeId);
-        if (node == null || player.getServer() == null) {
+        TechTableKey table = boundTable(player);
+        if (node == null || table == null || player.getServer() == null) {
             return false;
         }
         TechSavedData data = data(player);
-        data.unlock(player.getUUID(), nodeId);
-        data.recordUnlockTime(player.getUUID(), nodeId, System.currentTimeMillis());
+        data.unlock(table, nodeId);
+        data.recordUnlockTime(table, nodeId, System.currentTimeMillis());
         for (String trigger : node.unlockTriggers()) {
             data.setTrigger(player.getUUID(), trigger, true);
         }
@@ -309,10 +401,11 @@ public final class TechService {
     }
 
     public static boolean forceLock(ServerPlayer player, String nodeId) {
-        if (player.getServer() == null) {
+        TechTableKey table = boundTable(player);
+        if (table == null || player.getServer() == null) {
             return false;
         }
-        boolean removed = data(player).lock(player.getUUID(), nodeId);
+        boolean removed = data(player).lock(table, nodeId);
         sync(player);
         QuestSystem.getInstance().checkAllQuests(player);
         return removed;
@@ -332,34 +425,36 @@ public final class TechService {
         if (table == TableCheck.TOO_FAR) {
             return SubmitResult.TOO_FAR;
         }
+        TechTableKey tableKey = TechTableKey.of(player.serverLevel(), tablePos);
         TechRequirementEngine.Context context =
-                new TechRequirementEngine.Context(tablePos, TechBlocks.tierAt(player.serverLevel(), tablePos));
+                new TechRequirementEngine.Context(tablePos, TechBlocks.tierAt(player.serverLevel(), tablePos),
+                        tableKey.dimension());
         if (!requirementsMet(player, entry.visibleWhen(), context)
                 || !requirementsMet(player, entry.requirements(), context)) {
             return SubmitResult.MISSING_REQUIREMENT;
         }
         long now = System.currentTimeMillis();
-        long last = data(player).researchTime(player.getUUID(), researchId);
+        long last = data(player).researchTime(tableKey, researchId);
         if (entry.cooldownTicks() > 0
                 && last > 0
                 && now - last < entry.cooldownTicks() * MILLIS_PER_TICK) {
             return SubmitResult.COOLDOWN;
         }
         for (TechCost cost : entry.costs()) {
-            if (!cost.canPay(player)) {
+            if (!cost.canPay(player, tableKey)) {
                 return SubmitResult.INSUFFICIENT_RESOURCES;
             }
         }
         for (TechCost cost : entry.costs()) {
-            cost.pay(player);
+            cost.pay(player, tableKey);
         }
         TechSavedData data = data(player);
-        data.recordResearchTime(player.getUUID(), researchId, now);
-        data.addPoints(player.getUUID(), entry.points());
+        data.recordResearchTime(tableKey, researchId, now);
+        data.addPoints(tableKey, entry.points());
         lastTable.put(player.getUUID(), context);
         sync(player, context);
-        LogManager.serverInfo(TAG, "%s submitted research '%s' (+%d points)",
-                player.getName().getString(), researchId, entry.points());
+        LogManager.serverInfo(TAG, "%s submitted research '%s' on table %s (+%d points)",
+                player.getName().getString(), researchId, tablePos.toShortString(), entry.points());
         return SubmitResult.OK;
     }
 
@@ -385,19 +480,20 @@ public final class TechService {
         if (upgrade == null) {
             return UpgradeResult.MAX_TIER;
         }
+        TechTableKey tableKey = TechTableKey.of(player.serverLevel(), pos);
         for (TechCost cost : upgrade.costs()) {
-            if (!cost.canPay(player)) {
+            if (!cost.canPay(player, tableKey)) {
                 return UpgradeResult.INSUFFICIENT_RESOURCES;
             }
         }
         for (TechCost cost : upgrade.costs()) {
-            cost.pay(player);
+            cost.pay(player, tableKey);
         }
         BlockState state = player.serverLevel().getBlockState(pos);
         player.serverLevel().setBlock(pos, TechBlocks.withTier(state, upgrade.to()), Block.UPDATE_ALL);
         PacketDistributor.sendToPlayer(player, new TechTableSyncPayload(pos, upgrade.to()));
         TechRequirementEngine.Context context =
-                new TechRequirementEngine.Context(pos, upgrade.to());
+                new TechRequirementEngine.Context(pos, upgrade.to(), tableKey.dimension());
         lastTable.put(player.getUUID(), context);
         sync(player, context);
         LogManager.serverInfo(TAG, "table at %s upgraded %d -> %d for %s",
@@ -440,9 +536,10 @@ public final class TechService {
         if (player.getServer() == null) {
             return;
         }
+        TechTableKey table = key(player, context);
         PacketDistributor.sendToPlayer(player, new TechSyncPayload(
-                unlocked(player),
-                points(player),
+                table == null ? List.of() : List.copyOf(data(player).unlocked(table)),
+                table == null ? 0 : data(player).points(table),
                 visibleNodeIds(player, context),
                 metNodeIds(player, context),
                 researchStates(player, context)));
@@ -450,7 +547,8 @@ public final class TechService {
 
     /** 记下玩家正在使用的台子（打开界面时调用，保证后续同步使用正确层级）。 */
     public static void bindTable(ServerPlayer player, BlockPos pos, int tier) {
-        lastTable.put(player.getUUID(), new TechRequirementEngine.Context(pos, tier));
+        lastTable.put(player.getUUID(), new TechRequirementEngine.Context(
+                pos, tier, player.serverLevel().dimension().location()));
     }
 
     // ==================== 内部 ====================

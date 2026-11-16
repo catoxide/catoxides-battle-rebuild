@@ -16,7 +16,7 @@ import java.util.Optional;
  *
  * <ul>
  *   <li>取值就是 JSON 里声明的字符串（如 {@code "idle"/"charging"/"overcharged"}）；</li>
- *   <li>blockstate 文件（{@code assets/<ns>/blockstate/<block>.json}）里的
+ *   <li>blockstate 文件（{@code assets/<ns>/blockstates/<block>.json}，复数目录）里的
  *       {@code prop=取值} 与原版块完全一致 —— 编辑器导出的原版文件零转换；</li>
  *   <li>游戏侧只按字符串名解析，不关心背后的 Java 类型。</li>
  * </ul>

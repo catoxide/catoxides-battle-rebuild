@@ -1,0 +1,11 @@
+// ============================================================
+// ContentPack: sable_weight_pack
+// 纯数据包（无入口类）：只提供 data/<ns>/physics_block_properties/*.json，
+// 由 Sable 的 PhysicsBlockPropertiesDefinitionLoader 读取。
+// 构建约定全部在 ../contentpack.gradle（共享单一真源）。
+// ============================================================
+plugins {
+    id 'java-library'
+    id 'net.neoforged.gradle.userdev'
+}
+apply from: '../contentpack.gradle'

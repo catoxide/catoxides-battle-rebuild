@@ -16,6 +16,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -30,7 +31,10 @@ import net.neoforged.neoforge.network.PacketDistributor;
  * <p>玩法入口是研究台的右键交互（不是按键）：交互时绑定「哪一张台子」，
  * 节点的条件（{@code requirements}）、可见性（{@code visibleWhen}）与可重置解锁
  * 全部由 {@code techs/tree.json} 声明，条件类型可通过 {@link TechHooks} 扩展。
- * 科技点是绑定玩家的虚拟余额（存档级）：完成任务、或在界面里按钮提交研究项获得。
+ * 科技点与解锁进度归属于具体的研究台（维度 + 坐标），完成任务或在界面里按钮提交研究项
+ * 都会计入玩家最近打开的那张台子；玩家自身只保留触发器与任务完成记录。
+ * <p>可选适配 Create：装了 Create 6.0 才注册应力 → 研究点转换机（接触点收敛在
+ * {@code compat/CreateStressCompat}，缺失时本包其余功能不受影响）。
  */
 public class TechTreePack implements ContentPack {
 
@@ -107,6 +111,15 @@ public class TechTreePack implements ContentPack {
         // 8. /techtree 调试命令（包内自定义，暂无全局命令规范）
         NeoForge.EVENT_BUS.addListener((RegisterCommandsEvent event) ->
                 TechCommand.register(event.getDispatcher()));
+
+        // 9. 可选联动：Create 应力 → 研究点。桥接类只在 gate 通过后首次引用
+        //    （design/PACK_DEPS_AND_LINKAGE.md §4 软依赖三件套）。
+        if (ModList.get().isLoaded("create")) {
+            example.contentpack.tech.compat.CreateStressCompat.register(context);
+        } else {
+            LogManager.serverInfo(TAG,
+                    "Create not installed: stress converter disabled");
+        }
 
         LogManager.serverInfo(TAG, "TechTreePack registered");
     }

@@ -185,6 +185,25 @@ public final class MapHooks implements MapApi {
         return null;
     }
 
+    /** 世界列在扩展空间（如 Sable 甲板）上的锚点；第一个非 null 解析器生效。 */
+    @Nullable
+    public Vec3 surfaceAnchor(Level level, double x, double z, CompoundTag anchorData) {
+        if (level == null) {
+            return null;
+        }
+        for (MapPointResolver resolver : resolvers) {
+            try {
+                Vec3 world = resolver.surfaceAnchor(level, x, z, anchorData);
+                if (world != null) {
+                    return world;
+                }
+            } catch (Throwable t) {
+                LogManager.clientWarn(TAG, "surfaceAnchor failed: {}", t.getMessage());
+            }
+        }
+        return null;
+    }
+
     /** 是否是普通地图不应采集的分离空间（plot 里的船体等）。 */
     public boolean isDetached(Level level, BlockPos pos) {
         if (level == null || pos == null) {

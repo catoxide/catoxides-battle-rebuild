@@ -259,7 +259,7 @@ public final class MapV2ClientEvents {
                     data.putString(MarkerData.KEY_PLAYER_NAME,
                             playerEntity.getGameProfile().getName());
                 }
-                icon = fallbackEntityIcon(entity.getType());
+                icon = fallbackEntityIcon(entity);
             }
         } else if (subLevelHit instanceof BlockHitResult subBlock) {
             // 局部坐标；交给 MapHooks.resolveCreate 转世界坐标
@@ -294,8 +294,16 @@ public final class MapV2ClientEvents {
                 entityId, -1, targetKey, data, sticky));
     }
 
-    /** 头像画不出来时的兜底图标：刷怪蛋 → 玩家头 → 下界之星。 */
-    private static ResourceLocation fallbackEntityIcon(EntityType<?> type) {
+    /**
+     * 实体标记的兜底图标：先用实体自己的「原型物品」（船 → 船、矿车 → 矿车、画 → 画…），
+     * 再刷怪蛋，最后玩家头 / 下界之星。
+     */
+    private static ResourceLocation fallbackEntityIcon(Entity entity) {
+        ItemStack pick = entity.getPickResult();
+        if (pick != null && !pick.isEmpty()) {
+            return BuiltInRegistries.ITEM.getKey(pick.getItem());
+        }
+        EntityType<?> type = entity.getType();
         SpawnEggItem egg = SpawnEggItem.byId(type);
         if (egg != null) {
             return BuiltInRegistries.ITEM.getKey(egg);

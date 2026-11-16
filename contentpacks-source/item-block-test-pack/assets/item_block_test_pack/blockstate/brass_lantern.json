@@ -1,6 +1,0 @@
-{
-  "variants": {
-    "lit=true": "item_block_test_pack:block/brass_lantern_lit",
-    "lit=false": "item_block_test_pack:block/brass_lantern"
-  }
-}

@@ -502,6 +502,8 @@
                 "1: 4-block cells (finest; 44 us per chunk, 181 ms per 1024x1024 tile on one thread).",
                 "2: 8-block cells (10 us per chunk).",
                 "3: 16-block cells (coarsest; 2.8 us per chunk).",
+                "On the server this is the minimum step sent to clients; on the client it only toggles the layer (0 = off).",
+                "The actual step also grows when radiusBlocks needs more than maxCellsPerAxis samples per axis.",
                 "Sampling always runs on a background pool at low priority and pauses itself when the server tick gets slow."
               ]
             }
@@ -513,25 +515,27 @@
             {
               "key": "radiusBlocks",
               "type": "int",
-              "default": 2048,
+              "default": 1024,
               "tier": "HOT",
               "min": 256,
               "max": 8192,
               "comment": [
                 "Biome prediction radius in blocks, measured as a circle from the request centre.",
-                "Bigger than a vanilla map but still bounded; anything outside stays blank."
+                "1024 matches the default 1024-block fullscreen map and the default reveal radius (64 chunks).",
+                "Larger radii coarsen the grid to fit maxCellsPerAxis; anything outside the circle stays blank."
               ]
             },
             {
               "key": "maxCellsPerAxis",
               "type": "int",
-              "default": 129,
+              "default": 513,
               "tier": "HOT",
               "min": 33,
               "max": 513,
               "comment": [
                 "Upper bound on samples per axis for one region.",
-                "The sampling step is coarsened automatically to fit; larger values look finer and cost more server time."
+                "Default 513 with radiusBlocks 1024 gives 4-block cells.",
+                "Lower values coarsen the grid; larger radii also coarsen it automatically."
               ]
             },
             {
