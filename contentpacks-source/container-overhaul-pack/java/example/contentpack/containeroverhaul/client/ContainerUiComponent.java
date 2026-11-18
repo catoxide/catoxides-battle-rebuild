@@ -1,21 +1,28 @@
 package example.contentpack.containeroverhaul.client;
 
-import net.minecraft.client.gui.GuiGraphics;
+import example.contentpack.containeroverhaul.ui.Panel;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 
+import java.util.List;
+
 /**
- * 容器屏上的一块自绘 UI。每个部件自己判断「这一屏有没有我」，再自己画。
+ * 容器屏上的一块自绘 UI。每个部件自己判断「这一屏有没有我」，再交出这一帧的面板声明。
  *
- * <p>部件之间不相互引用：物品栏底板只看菜单里的物品栏槽位，储物/升级板只看
- * {@code SidePanelMounts}。所以某一块缺席不会带走其它块 —— 侧面板没挂上时底板照画。
+ * <p>部件不直接画：渲染器把全部部件的声明收在一起，统一走「同层同画法合并 → 画框 → 补格底」，
+ * 合并规则只有一份，新面板只要按 {@link Panel} 的形状交出来就接进同一套流程。
  *
- * <p>画在 {@code ContainerScreenEvent.Render.Background} 里（见 {@link ContainerUiRenderer}），
- * 位于原版背景之上、物品之下；坐标要自己加上屏幕原点。
+ * <p>需要挪槽位的部件（浮板）先 {@link #placeSlots} 再 {@link #declare}：格底坐标取自
+ * 摆好之后的槽位，两者永远一致。
  */
 interface ContainerUiComponent {
 
     /** 这一屏上现在有没有这个部件。 */
     boolean present(AbstractContainerScreen<?> screen);
 
-    void render(GuiGraphics graphics, AbstractContainerScreen<?> screen);
+    /** 把这一屏的槽位摆到本部件的位置；不挪槽位的部件不用实现。 */
+    default void placeSlots(AbstractContainerScreen<?> screen) {
+    }
+
+    /** 这一帧要画的面板。 */
+    List<Panel> declare(AbstractContainerScreen<?> screen);
 }
