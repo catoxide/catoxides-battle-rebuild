@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "name": "floor_230",
+  "canvas": [230, 9],
+  "layers": [
+    { "id": "panel", "type": "nine_slice", "ref": "vanilla/panel", "rect": [0, 0, 230, 9] }
+  ]
+}

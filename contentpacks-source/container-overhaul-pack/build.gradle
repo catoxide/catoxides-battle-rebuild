@@ -1,0 +1,23 @@
+// ============================================================
+// ContentPack: container-overhaul-pack
+// 引用方向：本包 ──▶ core（根项目），永不反向。
+// 构建约定全部在 ../contentpack.gradle（共享单一真源）。
+// ============================================================
+plugins {
+    id 'java-library'
+    id 'net.neoforged.gradle.userdev'
+}
+apply from: '../contentpack.gradle'
+
+// 容器规则（战利品箱锁定 / 掉落物寿命）：只用 core + MC + NeoForge
+
+// ui-specs/ 是贴图的生成源（PNG 由 texture-editor 从它渲染），运行期用不到
+tasks.named('contentpackJar') {
+    exclude 'ui-specs/**'
+}
+
+// 根 build.gradle 里那条 neoFormListLibraries 缓存修正只作用在根项目上，包项目要自己挂一次
+// （同一个 NeoGradle 缺陷：ng_execute 的 key 不含 gradleUserHome，缓存搬迁后恢复旧绝对路径 → NPE）
+tasks.matching { it.name in ['neoFormListLibraries', 'neoFormListTransformLibraries'] }.configureEach {
+    inputs.property('gradleUserHome', gradle.gradleUserHomeDir.absolutePath)
+}

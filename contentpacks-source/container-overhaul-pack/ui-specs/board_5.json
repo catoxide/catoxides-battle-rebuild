@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "name": "board_5",
+  "canvas": [170, 102],
+  "tokens": {
+    "border": "#0E141A",
+    "bevelLight": "#E6F0F7",
+    "bevelDark": "#46566A",
+    "body": "#C7D0DA"
+  },
+  "layers": [
+    { "id": "panel", "type": "nine_slice", "ref": "vanilla/panel", "rect": [0, 0, 170, 102] },
+    { "id": "row_0", "type": "grid", "stamp": "vanilla/slot", "origin": [4, 4], "pitch": 18, "cols": 9, "rows": 1 },
+    { "id": "row_1", "type": "grid", "stamp": "vanilla/slot", "origin": [4, 22], "pitch": 18, "cols": 9, "rows": 1 },
+    { "id": "row_2", "type": "grid", "stamp": "vanilla/slot", "origin": [4, 40], "pitch": 18, "cols": 9, "rows": 1 },
+    { "id": "row_3", "type": "grid", "stamp": "vanilla/slot", "origin": [4, 58], "pitch": 18, "cols": 9, "rows": 1 },
+    { "id": "row_4", "type": "grid", "stamp": "vanilla/slot", "origin": [4, 80], "pitch": 18, "cols": 9, "rows": 1 }
+  ]
+}

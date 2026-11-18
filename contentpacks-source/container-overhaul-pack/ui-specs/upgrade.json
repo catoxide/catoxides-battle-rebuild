@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "name": "upgrade",
+  "canvas": [80, 26],
+  "tokens": {
+    "border": "#0E141A",
+    "bevelLight": "#E6F0F7",
+    "bevelDark": "#46566A",
+    "body": "#C7D0DA"
+  },
+  "layers": [
+    { "id": "panel", "type": "nine_slice", "ref": "vanilla/panel", "rect": [0, 0, 80, 26] },
+    { "id": "row_0", "type": "grid", "stamp": "vanilla/slot", "origin": [4, 4], "pitch": 18, "cols": 4, "rows": 1 }
+  ]
+}

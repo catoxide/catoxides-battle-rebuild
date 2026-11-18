@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "name": "board_2",
+  "canvas": [170, 48],
+  "tokens": {
+    "border": "#0E141A",
+    "bevelLight": "#E6F0F7",
+    "bevelDark": "#46566A",
+    "body": "#C7D0DA"
+  },
+  "layers": [
+    { "id": "panel", "type": "nine_slice", "ref": "vanilla/panel", "rect": [0, 0, 170, 48] },
+    { "id": "row_0", "type": "grid", "stamp": "vanilla/slot", "origin": [4, 4], "pitch": 18, "cols": 9, "rows": 1 },
+    { "id": "row_1", "type": "grid", "stamp": "vanilla/slot", "origin": [4, 26], "pitch": 18, "cols": 9, "rows": 1 }
+  ]
+}
