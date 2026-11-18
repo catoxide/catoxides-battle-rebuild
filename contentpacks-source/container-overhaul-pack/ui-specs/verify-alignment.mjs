@@ -80,6 +80,116 @@ function layer(spec, id) {
 const slotSprite = png.decode(fs.readFileSync(path.join(libRoot, 'sprites', 'slot.png')));
 check(slotSprite.width === SLOT && slotSprite.height === SLOT, '元素库 slot 精灵不是 18×18');
 
+// 运行时格底：包内的 slot.png 必须就是原版 slot 精灵（逐像素），并且由 spec 生成。
+const packSlotPath = path.join(spriteDir, 'slot.png');
+const packSlotSpecPath = path.join(here, 'slot.json');
+check(fs.existsSync(packSlotSpecPath), 'slot: 缺少 spec slot.json');
+check(fs.existsSync(packSlotPath), 'slot: 缺少运行时格底贴图 slot.png');
+if (fs.existsSync(packSlotSpecPath) && fs.existsSync(packSlotPath)) {
+  const packSlot = png.decode(fs.readFileSync(packSlotPath));
+  check(packSlot.width === SLOT && packSlot.height === SLOT,
+    `slot: 运行时格底 ${packSlot.width}×${packSlot.height} ≠ ${SLOT}×${SLOT}`);
+  let same = packSlot.width === slotSprite.width && packSlot.height === slotSprite.height;
+  for (let i = 0; same && i < slotSprite.data.length; i++) {
+    same = packSlot.data[i] === slotSprite.data[i];
+  }
+  check(same, 'slot: 运行时格底与原版 slot 精灵不是逐像素一致');
+  checkReproducible('slot', packSlotSpecPath, packSlotPath);
+}
+
+// ---------- 运行时面板：panel_skin 九宫格 + 原版 slot 现拼，必须还原整板 ----------
+
+const skinPath = path.join(spriteDir, 'panel_skin.png');
+const skinSpecPath = path.join(here, 'panel_skin.json');
+/** 九宫格角边长（元素库 panel.cornerSize / PanelPainter.CORNER）。 */
+const CORNER = 4;
+
+/**
+ * 用 16×16 的 panel_skin 按九宫格拼出 w×h 的面板，算法与 PanelPainter 的九次 blit 相同：
+ * 四角 1:1、四边沿一个方向最近邻复制、中心填充。
+ */
+function nineSlice(skin, w, h, corner, size) {
+  const out = new Uint8Array(w * h * 4);
+  const put = (x, y, sx, sy) => {
+    const src = (sy * size + sx) * 4;
+    const dst = (y * w + x) * 4;
+    for (let k = 0; k < 4; k++) out[dst + k] = skin.data[src + k];
+  };
+  const far = size - corner;
+  for (let j = 0; j < corner; j++) {
+    for (let i = 0; i < corner; i++) {
+      put(i, j, i, j);
+      put(w - corner + i, j, far + i, j);
+      put(i, h - corner + j, i, far + j);
+      put(w - corner + i, h - corner + j, far + i, far + j);
+    }
+  }
+  for (let x = corner; x < w - corner; x++) {
+    for (let j = 0; j < corner; j++) {
+      put(x, j, corner, j);
+      put(x, h - corner + j, corner, far + j);
+    }
+  }
+  for (let y = corner; y < h - corner; y++) {
+    for (let i = 0; i < corner; i++) {
+      put(i, y, i, corner);
+      put(w - corner + i, y, far + i, corner);
+    }
+  }
+  for (let y = corner; y < h - corner; y++) {
+    for (let x = corner; x < w - corner; x++) put(x, y, corner, corner);
+  }
+  return out;
+}
+
+/** 运行时画出来的整板（面板 + 原版 slot 格）= 已提交的 board_N.png？ */
+function checkRuntimeRebuild(skin, pngName, spec, img, corner, size) {
+  const w = img.width;
+  const h = img.height;
+  const rebuilt = nineSlice(skin, w, h, corner, size);
+  for (const grid of spec.layers.filter((l) => l.type === 'grid')) {
+    for (let row = 0; row < grid.rows; row++) {
+      for (let col = 0; col < grid.cols; col++) {
+        const ox = grid.origin[0] + col * grid.pitch;
+        const oy = grid.origin[1] + row * grid.pitch;
+        for (let j = 0; j < slotSprite.height; j++) {
+          for (let i = 0; i < slotSprite.width; i++) {
+            const s = (j * slotSprite.width + i) * 4;
+            const d = ((oy + j) * w + ox + i) * 4;
+            for (let k = 0; k < 4; k++) rebuilt[d + k] = slotSprite.data[s + k];
+          }
+        }
+      }
+    }
+  }
+  let mismatch = 0;
+  let first = null;
+  for (let i = 0; i < rebuilt.length; i += 4) {
+    if (rebuilt[i] !== img.data[i] || rebuilt[i + 1] !== img.data[i + 1]
+      || rebuilt[i + 2] !== img.data[i + 2] || rebuilt[i + 3] !== img.data[i + 3]) {
+      mismatch++;
+      if (!first) first = [(i / 4) % w, Math.floor(i / 4 / w)];
+    }
+  }
+  check(mismatch === 0,
+    `${pngName}: 用 panel_skin 现拼的结果与整板差 ${mismatch}px（首个 ${first}）—— 运行时会画错`);
+}
+
+let skinImage = null;
+
+/** 运行时面板贴图：16×16 九宫格源图，已提交的内容必须等于 spec 渲染结果。 */
+function loadSkin() {
+  if (skinImage) return skinImage;
+  check(fs.existsSync(skinSpecPath), 'panel_skin: 缺少 spec panel_skin.json');
+  check(fs.existsSync(skinPath), 'panel_skin: 缺少生成贴图 panel_skin.png');
+  if (!fs.existsSync(skinSpecPath) || !fs.existsSync(skinPath)) return null;
+  skinImage = png.decode(fs.readFileSync(skinPath));
+  check(skinImage.width === CORNER * 4 && skinImage.height === CORNER * 4,
+    `panel_skin: 运行时贴图应为 ${CORNER * 4}×${CORNER * 4}，实际 ${skinImage.width}×${skinImage.height}`);
+  checkReproducible('panel_skin', skinSpecPath, skinPath);
+  return skinImage;
+}
+
 /** 已提交的 PNG 必须等于 spec 现渲染的结果（防止手改 PNG）。 */
 function checkReproducible(name, specPath, pngPath) {
   const tmp = path.join(os.tmpdir(), `verify-${name}-${process.pid}.png`);
@@ -98,9 +208,9 @@ function checkReproducible(name, specPath, pngPath) {
  * UV 只覆盖图的 256/W、256/H 比例的区域，像素被拉长。整板是 1:1 画，
  * 调用宽高必须同时等于贴图宽高。
  */
-function verifyBlits(screenName, source) {
+function verifyBlits(screenName, source, expected) {
   const calls = source.match(/\.blit\([^()]*\)/g) ?? [];
-  check(calls.length === 1, `${screenName}: 整板应共用一次 blit，实际 ${calls.length} 次`);
+  check(calls.length === expected, `${screenName}: blit 调用应为 ${expected} 次，实际 ${calls.length} 次`);
   for (const call of calls) {
     const args = call.slice(call.indexOf('(') + 1, -1).split(',').map((s) => s.trim());
     check(args.length === 9, `${screenName}: blit 应为 9 参（显式贴图尺寸），实际 ${args.length} 参`);
@@ -165,6 +275,11 @@ function checkBoard(specFile, pngName, rows, geom) {
     check(spriteEquals(img, slotSprite, expected[0], expected[1]),
       `${pngName}/row_${row}: (${expected}) 处不是原版 slot 像素（格子没烘进整板？）`);
   }
+
+  // 运行时不读这张整板：它按 panel_skin 九宫格现拼 + 原版 slot 现画。
+  // 两者必须逐像素一致，否则「烘出来的样子」和「玩家看到的样子」会分家。
+  const skin = loadSkin();
+  if (skin) checkRuntimeRebuild(skin, pngName, spec, img, CORNER, skin.width);
 }
 
 function verifyBoards() {
@@ -187,6 +302,13 @@ function verifyBoards() {
   check(hotbarGap === 4,
     `board: HOTBAR_GAP=${hotbarGap} ≠ 4（原版快捷栏 142 - 主栏底行 120 - 行距 18）`);
   check(maxRows === 5, `board: 板应最多 5 行（快捷栏 + 4 行背包），实际 ${maxRows}`);
+
+  // 运行时 skin 与整板必须用同一套色板，否则现拼的边框和整板不是一个颜色。
+  const boardTokens = readJson(path.join(here, 'board_1.json')).tokens;
+  const skinTokens = readJson(skinSpecPath).tokens;
+  const tokenKey = (t) => Object.keys(t).sort().map((k) => `${k}=${t[k]}`).join(',');
+  check(tokenKey(boardTokens) === tokenKey(skinTokens),
+    `panel_skin: tokens 与整板色板不一致（board_1: ${tokenKey(boardTokens)} / skin: ${tokenKey(skinTokens)}）`);
 
   for (let rows = 1; rows <= maxRows; rows++) {
     const gap = rows > 1 ? hotbarGap : 0;
@@ -221,30 +343,78 @@ function verifyBoards() {
     'board: SidePanel.boardHeight 不再是「行数×ROW_PITCH + 快捷栏缝 + 上下内边距」');
 }
 
-// ---------- 悬浮物品栏部件 + 截底 ----------
+// ---------- 运行时面板：合并 + 现画 + 截底 ----------
 
-function verifyFloat() {
-  const component = readJava(path.join('client', 'PlayerInventoryFloatComponent.java'));
+function verifyPanels() {
+  const skin = readJava(path.join('client', 'PanelPainter.java'));
+  const pc = javaConstants(skin, 'PanelPainter.java');
+  check(pc('CORNER') === CORNER,
+    `painter: 九宫格角 ${pc('CORNER')} ≠ 元素库 cornerSize ${CORNER}`);
+  check(pc('TEXTURE') === CORNER * 4,
+    `painter: 贴着图宽 ${pc('TEXTURE')} ≠ ${CORNER * 4}（16×16 四角各 4px，边/心各 1px）`);
+  check(skin.includes('textures/gui/panel_skin.png'),
+    'painter: 没引用运行时面板贴图 panel_skin.png');
+  // 九宫格必须九次 blit：四角 + 四边 + 心。少一次就是某块没画（角/边缺失）。
+  check((skin.match(/blit\(graphics,/g) ?? []).length === 9,
+    'painter: 九宫格应是九次 blit（四角 + 四边 + 心）');
+  // 格底要自己画：1.21 的原版 renderSlot 只画物品与悬停高亮，格底属于容器贴图。
+  check(skin.includes('textures/gui/slot.png'), 'painter: 没引用运行时格底贴图 slot.png');
+  const slotCall = skin.match(/graphics\.blit\(SLOT,([\s\S]*?)\);/);
+  check(!!slotCall, 'painter: 没有画格底（paintSlot）');
+  if (slotCall) {
+    const args = ['SLOT', ...slotCall[1].split(',')].map((s) => s.trim());
+    check(args.length === 9 && args[5] === 'SLOT_SIZE' && args[6] === 'SLOT_SIZE'
+      && args[7] === 'SLOT_SIZE' && args[8] === 'SLOT_SIZE',
+      `painter: 格底必须 18×18 1:1 画（显式贴图尺寸），实际 ${args.slice(5).join('×')}`);
+  }
+  // 16×16 的贴图在 11 参 blit 里显式给 texW/texH，7 参会按 256 采样把整张图缩进角落。
+  const scaled = skin.match(/graphics\.blit\(SKIN,([\s\S]*?)\);/);
+  check(!!scaled, 'painter: 没有走 GuiGraphics.blit(SKIN, ...)');
+  if (scaled) {
+    const args = ['SKIN', ...scaled[1].split(',')].map((s) => s.trim());
+    check(args.length === 11 && args[9] === 'TEXTURE' && args[10] === 'TEXTURE',
+      `painter: 必须用 11 参缩放 blit 并显式贴图尺寸，实际 ${args.length} 参`);
+  }
+
+  const merge = readJava(path.join('ui', 'PanelMerge.java'));
+  check(merge.includes('a.level() == b.level()'),
+    'merge: 合并没按层级过滤（不同层的板会并成一块）');
+  check(merge.includes('overlapX >= 0 && overlapY >= 0'),
+    'merge: 贴边判定不是「两轴都不分离」');
+  check(merge.includes('(overlapX > 0 || overlapY > 0)'),
+    'merge: 只碰一个角也算贴边（外包矩形会多出没人占的面积）');
+
+  const component = readJava(path.join('client', 'InventoryPanelsComponent.java'));
   check(component.includes('implements ContainerUiComponent'),
-    'float: 悬浮物品栏不是独立部件（没实现 ContainerUiComponent）');
-  check(component.includes('"textures/gui/board_" + rows + ".png"'),
-    'float: 贴图不是按行数取 board_N.png');
-  check(component.includes('BOARD_TEXTURES[rows]'),
-    'float: 没有按行数选整板贴图');
-  check(component.includes('SidePanel.boardRows(view.upgrades())'),
-    'float: 板行数不是由解锁的升级槽决定');
+    'panels: 物品栏板 / 升级板不是独立部件（没实现 ContainerUiComponent）');
+  check(component.includes('PanelMerge.merge'), 'panels: 没走同层合并（PanelMerge.merge）');
+  check(component.includes('PanelPainter.paint'), 'panels: 没走运行时画板（PanelPainter.paint）');
   check(component.includes('SidePanel.ROW_WIDTH, SidePanel.boardHeight(rows)'),
-    'float: 不是按「板宽 × 板高(行数)」整张画');
+    'panels: 物品栏板不是按「板宽 × 板高(行数)」现画');
+  check(component.includes('SidePanel.UPGRADE_WIDTH, SidePanel.UPGRADE_HEIGHT'),
+    'panels: 升级板不是按自身尺寸现画');
+  check(component.includes('SidePanel.boardRows(view.upgrades())'),
+    'panels: 板高不是由解锁的升级槽决定');
   check(component.includes('SidePanel.boardY(view.hotbarY(), rows)'),
-    'float: 板顶没用 boardY(view.hotbarY(), rows)（快捷栏行要钉在这一屏的原版位置）');
-  check(component.includes('board.place(view, screen.getXSize())'),
-    'float: 没把偏移/坐标落到槽位（place）');
-  check(component.includes('board.offsetX()') && component.includes('board.offsetY()'),
-    'float: 底板没用拖动偏移');
-  check(component.includes('ContainerUiRenderer.blitBoard'),
-    'float: 没走整板 1:1 画');
-  check(!component.includes('slot.png'),
-    'float: 还在盖独立 slot.png（格子应烘进整板贴图）');
+    'panels: 板顶没用 boardY(view.hotbarY(), rows)（快捷栏行要钉在这一屏的原版位置）');
+  check(component.includes('SidePanel.upgradePanelY(view.hotbarY())'),
+    'panels: 升级板 y 没跟这一屏的快捷栏行走');
+  check(component.includes('board.place(view, screen.getXSize())')
+    && component.includes('upgrades.place(view, screen.getXSize())'),
+    'panels: 没把偏移/坐标落到槽位（place）');
+  check(component.includes('board.offsetX()') && component.includes('upgrades.offsetY()'),
+    'panels: 底板没用拖动偏移（或升级板没联动物品栏板）');
+  check(!component.includes('board_'),
+    'panels: 还在取 board_N.png 整板贴图（应改为运行时现画）');
+  check(!component.includes('textures/gui/slot'),
+    'panels: 格底不应自己 blit（格底统一走 PanelPainter.paintSlot）');
+  check(component.includes('PanelPainter.paintSlot') && component.includes('slot.x - 1')
+    && component.includes('slot.y - 1'),
+    'panels: 格底没按槽位坐标左上各 1px 补画');
+  check(component.includes('SidePanel.unlockedCount(view.upgrades())') && component.includes('break;'),
+    'panels: 没跳过锁着的行（会在板上方画出空格底）');
+  check(component.indexOf('PanelPainter.paintSlot') > component.lastIndexOf('PanelPainter.paint(graphics'),
+    'panels: 格底应在面板之后画（否则被板身盖住）');
 
   const cut = readJava(path.join('client', 'ContainerCut.java'));
   check(cut.includes('implements ScreenCuts.Provider'),
@@ -329,7 +499,7 @@ function verifyFloor() {
   const hub = readJava(path.join('client', 'ContainerUiRenderer.java'));
   check(hub.includes('new ContainerFloorComponent()'),
     'floor: 渲染入口没挂底边条');
-  check(hub.indexOf('new ContainerFloorComponent()') < hub.indexOf('new PlayerInventoryFloatComponent()'),
+  check(hub.indexOf('new ContainerFloorComponent()') < hub.indexOf('new InventoryPanelsComponent()'),
     'floor: 底边条应在悬浮板之前画（叠放顺序）');
 }
 
@@ -376,40 +546,30 @@ function verifyLadder() {
 
 function verifyWiring() {
   const hub = readJava(path.join('client', 'ContainerUiRenderer.java'));
-  verifyBlits('ContainerUiRenderer.java', hub);
+  verifyBlits('ContainerUiRenderer.java', hub, 0);
   check(hub.includes('ContainerUiComponent'),
     'wiring: 渲染入口没按部件接口遍历');
   // 部件各自判断出场：入口若按侧面板挂载状态提前返回，会把所有部件一起带走。
   check(!hub.includes('SidePanelMounts'),
     'wiring: 渲染入口还看侧面板挂载状态（部件应各自判断出场）');
-  check(!hub.includes('drawBoard('),
-    'wiring: 渲染入口还在九宫格切图（整板应 1:1 画）');
-  check(hub.includes('new PlayerInventoryFloatComponent()') && hub.includes('new UpgradePanelComponent()'),
-    'wiring: 渲染入口没挂悬浮物品栏 / 升级板');
-  check(!hub.includes('StorageBoardComponent') && !hub.includes('PlayerInventoryBaseComponent'),
+  check(!hub.includes('drawBoard(') && !hub.includes('blitBoard('),
+    'wiring: 渲染入口还在整板 1:1 画（画板应收在 PanelPainter）');
+  check(hub.includes('new InventoryPanelsComponent()'),
+    'wiring: 渲染入口没挂物品栏板 / 升级板');
+  check(!hub.includes('PlayerInventoryFloatComponent') && !hub.includes('UpgradePanelComponent'),
     'wiring: 渲染入口还引用已删除的旧部件');
 
-  const upgrade = readJava(path.join('client', 'UpgradePanelComponent.java'));
-  check(upgrade.includes('implements ContainerUiComponent'),
-    'wiring: 升级板不是独立部件');
-  check(upgrade.includes('textures/gui/upgrade.png'), 'wiring: 升级板没引用 upgrade.png');
-  check(!upgrade.includes('slot.png'),
-    'wiring: 升级板还在盖独立 slot.png（格子应烘进整板贴图）');
+  const upgrade = readJava(path.join('client', 'InventoryPanelsComponent.java'));
   check(upgrade.includes('SidePanelLayout.upgrades()'),
     'wiring: 升级板没取浮板布局（SidePanelLayout.upgrades()）');
   check(upgrade.includes('upgrades.place(view, screen.getXSize())'),
     'wiring: 升级板没把偏移落到槽位（place）');
-  check(upgrade.includes('SidePanelLayout.storage().offsetX()')
-    && upgrade.includes('SidePanelLayout.storage().offsetY()'),
+  check(upgrade.includes('board.offsetX()') && upgrade.includes('board.offsetY()'),
     'wiring: 升级板没跟着物品栏板的偏移联动');
   check(upgrade.includes('upgrades.offsetX()') && upgrade.includes('upgrades.offsetY()'),
     'wiring: 升级板底板没用拖动偏移');
-  check(upgrade.includes('SidePanel.UPGRADE_WIDTH, SidePanel.UPGRADE_HEIGHT'),
-    'wiring: 升级板不是按自身尺寸整张画');
-  check(upgrade.includes('SidePanel.upgradePanelY(view.hotbarY())'),
-    'wiring: 升级板 y 没跟这一屏的快捷栏行走');
-  check(upgrade.includes('ContainerUiRenderer.blitBoard'),
-    'wiring: 升级板没走整板 1:1 画');
+  check(upgrade.includes('LEVEL_MAIN'),
+    'wiring: 两块板没有明确层级（合并规则按层级过滤）');
 
   // 拖动入口只在 hud-layout-pack 的 F8 里：本包自己再收鼠标事件就会有两份状态。
   const layout = readJava(path.join('client', 'SidePanelLayout.java'));
@@ -493,22 +653,22 @@ function verifyWiring() {
   check(mounts.includes('SidePanel.isVanillaMainSlot(slot.getContainerSlot())')
     && mounts.includes('Math.min(mainTop, slot.y)') && mounts.includes('mainTop - 1'),
     'mounts: 截线没按这一屏原版主栏槽位位置算');
-  const floatComponent = readJava(path.join('client', 'PlayerInventoryFloatComponent.java'));
+  const floatComponent = readJava(path.join('client', 'InventoryPanelsComponent.java'));
   check(floatComponent.includes('view.hotbarY()'),
     'float: 底板没钉在这一屏的快捷栏行上');
 
   for (const stale of ['side_panel.json', 'storage_row.json', 'upgrade_row.json',
-    'board.json', 'slot.json', 'base.json']) {
+    'board.json', 'base.json']) {
     check(!fs.existsSync(path.join(here, stale)), `wiring: 旧 spec ${stale} 还在`);
   }
   for (const stale of ['side_panel.png', 'storage_row.png', 'upgrade_row.png',
-    'board.png', 'slot.png', 'base.png']) {
+    'board.png', 'base.png']) {
     check(!fs.existsSync(path.join(spriteDir, stale)), `wiring: 旧贴图 ${stale} 还在`);
   }
 }
 
 verifyBoards();
-verifyFloat();
+verifyPanels();
 verifyFloor();
 verifyLadder();
 verifyWiring();

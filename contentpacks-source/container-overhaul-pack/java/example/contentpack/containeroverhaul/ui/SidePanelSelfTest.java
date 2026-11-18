@@ -1,6 +1,7 @@
 package example.contentpack.containeroverhaul.ui;
 
 import com.catoxide.catoxidesbattlerebuild.core.inventory.PlayerInventoryLayout;
+import com.catoxide.catoxidesbattlerebuild.core.ui.UiRect;
 import com.catoxide.catoxidesbattlerebuild.util.LogManager;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Inventory;
@@ -8,6 +9,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -53,6 +55,7 @@ public final class SidePanelSelfTest {
         tests.put("与 core 常量一致", SidePanelSelfTest::coreParity);
         tests.put("拔升级不锁住内容", SidePanelSelfTest::upgradePickupGuard);
         tests.put("旧存档迁移映射", SidePanelSelfTest::migrationMapping);
+        tests.put("同层贴边合并", SidePanelSelfTest::panelMerge);
         return tests;
     }
 
@@ -169,6 +172,45 @@ public final class SidePanelSelfTest {
         check(InventoryMigration.migratedSlot(27) == 36, "旧 27 应迁到 36");
         check(InventoryMigration.migratedSlot(36) == -1, "旧 36 没有对应格");
         check(InventoryMigration.migratedSlot(SidePanel.MAX_ITEM_SLOTS) == -1, "越界应为 -1");
+    }
+
+    private static PanelMerge.Section section(int x, int y, int w, int h, int level) {
+        return new PanelMerge.Section(new UiRect(x, y, w, h), level);
+    }
+
+    private static void panelMerge() {
+        // 有缝就不合并：默认升级板挂在物品栏板下方 2px 处，两块各自有框。
+        List<UiRect> apart = PanelMerge.merge(List.of(
+                section(0, 0, 100, 50, 0), section(0, 52, 80, 26, 0)));
+        check(apart.size() == 2, "隔开的同层板不该合并");
+
+        // 边贴边合并成外包矩形。
+        List<UiRect> joined = PanelMerge.merge(List.of(
+                section(0, 0, 100, 50, 0), section(0, 50, 80, 26, 0)));
+        check(joined.size() == 1 && joined.get(0).equals(new UiRect(0, 0, 100, 76)),
+                "贴边的同层板应并成 100×76，实际 " + joined);
+
+        // 层级不同永不合并。
+        List<UiRect> layered = PanelMerge.merge(List.of(
+                section(0, 0, 100, 50, 0), section(0, 50, 80, 26, 1)));
+        check(layered.size() == 2, "不同层级的板不该合并");
+
+        // 只碰一个角不算贴边。
+        List<UiRect> corner = PanelMerge.merge(List.of(
+                section(0, 0, 100, 50, 0), section(100, 50, 80, 26, 0)));
+        check(corner.size() == 2, "只碰一个角不该合并");
+
+        // 重叠也合并（拖动时两块压在一起）。
+        List<UiRect> overlap = PanelMerge.merge(List.of(
+                section(0, 0, 100, 50, 0), section(50, 40, 80, 60, 0)));
+        check(overlap.size() == 1 && overlap.get(0).equals(new UiRect(0, 0, 130, 100)),
+                "重叠的同层板应并成外包矩形，实际 " + overlap);
+
+        // 传递：三块串成一块。
+        List<UiRect> chain = PanelMerge.merge(List.of(
+                section(0, 0, 10, 10, 0), section(10, 0, 10, 10, 0), section(20, 0, 10, 10, 0)));
+        check(chain.size() == 1 && chain.get(0).equals(new UiRect(0, 0, 30, 10)),
+                "三块贴边应传递合并，实际 " + chain);
     }
 
     private static void check(boolean condition, String message) {

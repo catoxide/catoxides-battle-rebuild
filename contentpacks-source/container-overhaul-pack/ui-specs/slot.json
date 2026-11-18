@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "name": "slot",
+  "canvas": [18, 18],
+  "layers": [
+    { "id": "slot", "type": "stamp", "stamp": "vanilla/slot", "at": [0, 0] }
+  ]
+}
