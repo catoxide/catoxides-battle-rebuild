@@ -10,6 +10,10 @@ import example.contentpack.hudlayout.client.HudLayoutClient;
 import example.contentpack.hudlayout.client.HudLayoutSelfTest;
 import example.contentpack.hudlayout.layout.HudLayoutService;
 import example.contentpack.hudlayout.layout.LayoutStore;
+import example.contentpack.hudlayout.ui.UiEditMode;
+import example.contentpack.hudlayout.ui.UiLayoutClient;
+import example.contentpack.hudlayout.ui.UiLayoutSelfTest;
+import example.contentpack.hudlayout.ui.UiPanels;
 
 /**
  * HUD 布局（纯客户端内容包）：F8 打开拖拽编辑屏，把屏幕元素按组挪位置。
@@ -26,6 +30,9 @@ import example.contentpack.hudlayout.layout.LayoutStore;
  *   <li>每组的<b>移动轴</b>可在右键菜单里锁成「仅左右 / 仅上下 / 自由」，与偏移同存一份文件。</li>
  *   <li>元素还能声明 {@code options()}（→ 面板里读写它所属包的配置）和 {@code resize()}
  *       （→ 边角拉伸手柄，改写它自己那条尺寸配置）。两者都是声明：没声明的元素就是一块可拖的矩形。</li>
+ *   <li>二期（容器界面）：已登记的原版容器屏可按 {@code ui-layout.json} 整体偏移，
+ *       配方书开关按钮跟随面板；药水效果列可锚到面板右上/右下并往上磊。
+ *       开着容器时按 F8 进入拖拽编辑（{@link UiEditMode}），松手即落盘。</li>
  * </ul>
  *
  * <h3>A7</h3>
@@ -45,7 +52,7 @@ public final class HudLayoutPack implements ContentPack {
 
     @Override
     public String getVersion() {
-        return "0.1.0";
+        return "0.3.0";
     }
 
     @Override
@@ -59,8 +66,14 @@ public final class HudLayoutPack implements ContentPack {
         LayoutStore.load();
         HudLayoutApi.install(HudLayoutService.INSTANCE);
         HudLayoutClient.init(context.getModEventBus());
+
+        UiPanels.registerVanilla();
+        UiLayoutClient.init();
+        UiEditMode.init();
+        UiLayoutSelfTest.run();
         HudLayoutSelfTest.run();
         LogManager.clientStartup("HudLayout",
-                "HUD 布局已注册（F8 打开编辑屏；偏移存 config/catoxidesbattlerebuild/hud-layout.json）");
+                "HUD 布局已注册（F8 打开编辑屏；偏移存 config/catoxidesbattlerebuild/hud-layout.json）；"
+                        + "容器屏里按 F8 进入拖拽编辑，偏移存 config/catoxidesbattlerebuild/ui-layout.json");
     }
 }

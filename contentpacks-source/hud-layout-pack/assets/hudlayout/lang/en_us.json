@@ -1,5 +1,5 @@
 {
-  "key.hudlayoutpack.open_editor": "HUD layout editor",
+  "key.hudlayoutpack.open_editor": "Layout editor (HUD / containers)",
   "key.categories.hudlayoutpack": "HUD Layout",
 
   "catoxidesbattlerebuild.configuration.section.hud.layout.pack.client.toml": "HUD Layout",
@@ -26,5 +26,9 @@
   "hudlayout.axis.free": "Free",
   "hudlayout.axis.horizontal": "Horizontal only",
   "hudlayout.axis.vertical": "Vertical only",
-  "hudlayout.panel.restart_hint": "Orange: written, but needs a reload or restart to apply."
+  "hudlayout.panel.restart_hint": "Orange: written, but needs a reload or restart to apply.",
+
+  "hudlayout.ui_editor.title": "Container layout %s",
+  "hudlayout.ui_editor.hint": "Drag to move · grid %spx · edges/centers snap 2px · F8/ESC saves and exits · R resets",
+  "hudlayout.ui_editor.hint.effects": "Right-click the orange box: effects column top / bottom"
 }
