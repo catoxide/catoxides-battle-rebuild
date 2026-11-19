@@ -303,12 +303,11 @@ function verifyBoards() {
     `board: HOTBAR_GAP=${hotbarGap} ≠ 4（原版快捷栏 142 - 主栏底行 120 - 行距 18）`);
   check(maxRows === 5, `board: 板应最多 5 行（快捷栏 + 4 行背包），实际 ${maxRows}`);
 
-  // 运行时 skin 与整板必须用同一套色板，否则现拼的边框和整板不是一个颜色。
-  const boardTokens = readJson(path.join(here, 'board_1.json')).tokens;
-  const skinTokens = readJson(skinSpecPath).tokens;
-  const tokenKey = (t) => Object.keys(t).sort().map((k) => `${k}=${t[k]}`).join(',');
-  check(tokenKey(boardTokens) === tokenKey(skinTokens),
-    `panel_skin: tokens 与整板色板不一致（board_1: ${tokenKey(boardTokens)} / skin: ${tokenKey(skinTokens)}）`);
+  // 运行时 skin 与整板必须都走元素库的原版色板：spec 不写 tokens，换色只在库一处。
+  for (const spec of ['panel_skin', 'upgrade', ...[1, 2, 3, 4, 5].map((n) => `board_${n}`)]) {
+    check(!('tokens' in readJson(path.join(here, `${spec}.json`))),
+      `${spec}: spec 还带着 tokens（面板色板应统一继承元素库原版 roles）`);
+  }
 
   for (let rows = 1; rows <= maxRows; rows++) {
     const gap = rows > 1 ? hotbarGap : 0;
@@ -373,6 +372,10 @@ function verifyPanels() {
       && args[7] === 'SLOT_SIZE' && args[8] === 'SLOT_SIZE',
       `painter: 格底必须 18×18 1:1 画（显式贴图尺寸），实际 ${args.slice(5).join('×')}`);
   }
+  // 悬浮板与外框共用一张 skin：色板只有一套（原版），外框内侧那一行就是板身色，
+  // 压在 vanilla 板身上不会留色差；再按画法换贴图就是把色差又请回来。
+  check(!skin.includes('SKIN_DOCKED') && !skin.includes('panel_skin_docked'),
+    'painter: 还在按画法换 skin（外框与悬浮板应共用一套原版色板）');
   // 16×16 的贴图在 11 参 blit 里显式给 texW/texH，7 参会按 256 采样把整张图缩进角落。
   const scaled = skin.match(/graphics\.blit\(SKIN,([\s\S]*?)\);/);
   check(!!scaled, 'painter: 没有走 GuiGraphics.blit(SKIN, ...)');
@@ -463,6 +466,49 @@ function verifyDeclaration() {
 }
 
 // ---------- 原版容器屏上半部分：只换外框，底边收在截线上 ----------
+
+function pixelRgb(img, x, y) {
+  const a = (y * img.width + x) * 4;
+  return [img.data[a], img.data[a + 1], img.data[a + 2]];
+}
+
+function hexRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// ---------- 色板：全部对齐原版（悬浮板 / 外框 / 整板共用元素库 roles） ----------
+
+function verifyPalette() {
+  const lib = readJson(path.join(libRoot, 'elements.json'));
+  const vanilla = { border: '#000000', bevelLight: '#FFFFFF', bevelDark: '#555555', body: '#C6C6C6' };
+  for (const [name, hex] of Object.entries(vanilla)) {
+    check(lib.roles[name] === hex,
+      `palette: 元素库 ${name}=${lib.roles[name]} ≠ 原版 ${hex}（面板会与原版窗口有色差）`);
+  }
+
+  const img = loadSkin();
+  if (!img) return;
+  const at = (x, y) => pixelRgb(img, x, y).join(',');
+  const role = (name) => hexRgb(lib.roles[name]).join(',');
+  // 源图 16×16：四角 4px，边 1px 在源列 x=4 / 源行 y=4。
+  const points = [
+    [4, 0, 'border', '上边框'], [0, 4, 'border', '左边框'],
+    [4, 1, 'bevelLight', '上亮棱'], [1, 4, 'bevelLight', '左亮棱'],
+    [4, 13, 'bevelDark', '下暗棱'], [13, 4, 'bevelDark', '右暗棱'],
+    [4, 4, 'body', '板身'],
+  ];
+  for (const [x, y, name, label] of points) {
+    check(at(x, y) === role(name),
+      `palette: panel_skin (${x},${y}) ${label} 是 ${at(x, y)}，元素库 ${name} 是 ${role(name)}`);
+  }
+  // 外框与悬浮板共用这张 skin：四条边内侧那一行/列必须是板身色，
+  // 压在 vanilla 板身上才无缝（上 v=3、下 v=12、左 u=3、右 u=12）。
+  for (const [x, y, edge] of [[8, 3, '上'], [8, 12, '下'], [3, 8, '左'], [12, 8, '右']]) {
+    check(at(x, y) === role('body'),
+      `palette: skin ${edge}边内侧 (${x},${y}) 是 ${at(x, y)}，不是板身色 —— 外框与内部会留色差`);
+  }
+}
 
 function verifyUpper() {
   const component = readJava(path.join('client', 'ContainerUpperPanelComponent.java'));
@@ -651,11 +697,13 @@ function verifyWiring() {
     'float: 底板没钉在这一屏的快捷栏行上');
 
   for (const stale of ['side_panel.json', 'storage_row.json', 'upgrade_row.json',
-    'board.json', 'base.json', 'floor_176.json', 'floor_230.json', 'floor_256.json']) {
+    'board.json', 'base.json', 'floor_176.json', 'floor_230.json', 'floor_256.json',
+    'panel_skin_docked.json']) {
     check(!fs.existsSync(path.join(here, stale)), `wiring: 旧 spec ${stale} 还在`);
   }
   for (const stale of ['side_panel.png', 'storage_row.png', 'upgrade_row.png',
-    'board.png', 'base.png', 'floor_176.png', 'floor_230.png', 'floor_256.png']) {
+    'board.png', 'base.png', 'floor_176.png', 'floor_230.png', 'floor_256.png',
+    'panel_skin_docked.png']) {
     check(!fs.existsSync(path.join(spriteDir, stale)), `wiring: 旧贴图 ${stale} 还在`);
   }
 }
@@ -664,6 +712,7 @@ verifyBoards();
 verifyDeclaration();
 verifyPanels();
 verifyUpper();
+verifyPalette();
 verifyLadder();
 verifyWiring();
 

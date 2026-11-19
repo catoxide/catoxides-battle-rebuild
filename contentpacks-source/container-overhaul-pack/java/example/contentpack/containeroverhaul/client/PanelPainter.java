@@ -12,8 +12,12 @@ import net.minecraft.resources.ResourceLocation;
  *
  * <p>切法与贴图生产链的 {@code nine_slice} 同一套：四角 1:1，四边沿一个方向最近邻复制。
  * {@link Panel.Mode#BODY} 再补中心填充；{@link Panel.Mode#FRAME} 只画 4px 外框，
- * 用来压在原版容器屏的边框上、不动内部。同一份 tokens 生成的 skin 与 {@code board_N.png}
+ * 用来压在原版容器屏的边框上、不动内部。同一份 skin 与 {@code board_N.png}
  * 的边框逐像素一致（{@code ui-specs/verify-alignment.mjs} 用 skin 重拼整板来证明这一点）。
+ *
+ * <p>色板全部取原版：不写 tokens 的 spec 直接继承元素库 roles（边框 {@code #000000}、
+ * 亮棱 {@code #FFFFFF}、暗棱 {@code #555555}、板身 {@code #C6C6C6}）。悬浮板和外框共用同一张
+ * skin —— 外框内侧那一行就是原版板身色，压在 vanilla 板身上无缝，任一画法都不会留色差。
  *
  * <p>格底另画：原版 {@code renderSlot} 在 1.21 只画物品和悬停高亮，格底是容器贴图的一部分，
  * 面板现画之后要由 {@link #paintSlot} 补。物品叠在格底上。
@@ -44,15 +48,19 @@ final class PanelPainter {
         int innerH = h - CORNER * 2;
 
         blit(graphics, x, y, CORNER, CORNER, 0, 0, CORNER, CORNER);
-        blit(graphics, x + w - CORNER, y, CORNER, CORNER, TEXTURE - CORNER, 0, CORNER, CORNER);
-        blit(graphics, x, y + h - CORNER, CORNER, CORNER, 0, TEXTURE - CORNER, CORNER, CORNER);
+        blit(graphics, x + w - CORNER, y, CORNER, CORNER,
+                TEXTURE - CORNER, 0, CORNER, CORNER);
+        blit(graphics, x, y + h - CORNER, CORNER, CORNER,
+                0, TEXTURE - CORNER, CORNER, CORNER);
         blit(graphics, x + w - CORNER, y + h - CORNER, CORNER, CORNER,
                 TEXTURE - CORNER, TEXTURE - CORNER, CORNER, CORNER);
 
         blit(graphics, x + CORNER, y, innerW, CORNER, CORNER, 0, 1, CORNER);
-        blit(graphics, x + CORNER, y + h - CORNER, innerW, CORNER, CORNER, TEXTURE - CORNER, 1, CORNER);
+        blit(graphics, x + CORNER, y + h - CORNER, innerW, CORNER,
+                CORNER, TEXTURE - CORNER, 1, CORNER);
         blit(graphics, x, y + CORNER, CORNER, innerH, 0, CORNER, CORNER, 1);
-        blit(graphics, x + w - CORNER, y + CORNER, CORNER, innerH, TEXTURE - CORNER, CORNER, CORNER, 1);
+        blit(graphics, x + w - CORNER, y + CORNER, CORNER, innerH,
+                TEXTURE - CORNER, CORNER, CORNER, 1);
 
         if (mode == Panel.Mode.BODY) {
             blit(graphics, x + CORNER, y + CORNER, innerW, innerH, CORNER, CORNER, 1, 1);
@@ -64,7 +72,8 @@ final class PanelPainter {
         graphics.blit(SLOT, x, y, 0.0F, 0.0F, SLOT_SIZE, SLOT_SIZE, SLOT_SIZE, SLOT_SIZE);
     }
 
-    private static void blit(GuiGraphics graphics, int x, int y, int width, int height,
+    private static void blit(GuiGraphics graphics,
+                             int x, int y, int width, int height,
                              int u, int v, int uWidth, int vHeight) {
         graphics.blit(SKIN, x, y, width, height, (float) u, (float) v,
                 uWidth, vHeight, TEXTURE, TEXTURE);

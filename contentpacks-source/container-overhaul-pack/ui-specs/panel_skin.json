@@ -2,12 +2,6 @@
   "schema": 1,
   "name": "panel_skin",
   "canvas": [16, 16],
-  "tokens": {
-    "border": "#0E141A",
-    "bevelLight": "#E6F0F7",
-    "bevelDark": "#46566A",
-    "body": "#C7D0DA"
-  },
   "layers": [
     { "id": "panel", "type": "nine_slice", "ref": "vanilla/panel", "rect": [0, 0, 16, 16] }
   ]
